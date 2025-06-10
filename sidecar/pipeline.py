@@ -1,5 +1,6 @@
 import argparse
 import atexit
+import logging
 import os
 from pathlib import Path
 import tempfile
@@ -18,6 +19,9 @@ from sidecar.util import (
     make_data_records_from_image_path,
     read_data_records,
 )
+
+from snpit_utils.config import Config
+from snpit_utils.logger import SNLogger
 
 
 class Detection:
@@ -74,8 +78,15 @@ class Detection:
     TRANSIENTS_TO_CLEANED_SCORE_DETECTION_PREFIX = "transients_to_cleaned_score_detection_"
     CLEANED_SCORE_DETECTION_TO_TRANSIENTS_PREFIX = "cleaned_score_detection_to_transients_"
 
-    def __init__(self, data_records, temp_dir=None, output_dir="./output"):
-        self.data_records = data_records
+    def __init__(
+        self, data_records_path, temp_dir=None, output_dir="./output", verbose=False
+    ):
+        SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
+
+        self.data_records_path = data_records_path
+        self.data_records = pd.read_csv(
+            self.data_records_path, usecols=self.INPUT_COLUMNS
+        )
         self.temp_dir = temp_dir
         self.output_dir = output_dir
 
@@ -463,7 +474,37 @@ class Detection:
 
 
 def main():
-    parser = argparse.ArgumentParser("detection pipeline")
+    # Run one arg pass just to get the config file, so we can augment
+    #   the full arg parser later with config options
+    configparser = argparse.ArgumentParser(add_help=False)
+    configparser.add_argument(
+        "-c", "--config", default=None, help="Location of the .yaml config file"
+    )
+    args, leftovers = configparser.parse_known_args()
+
+    desc = "Run the detect_supernova pipeline."
+    try:
+        cfg = Config.get(args.config, setdefault=True)
+    except RuntimeError:
+        # If it failed to load the config file, just move on with life.  This
+        #   may mean that things will fail later, but it may also just mean
+        #   that somebody is doing '--help'
+        cfg = None
+        desc += (
+            " Include --config <configfile> before --help (or set SNPIT_CONFIG) for "
+            "help to show you all config options that can be passed on the command line."
+        )
+
+    parser = argparse.ArgumentParser(description=desc)
+
+    # The --config argument will have been consumed by configparser above, and
+    #   but include it so it shows up with --help.
+    parser.add_argument(
+        "-c",
+        "--config",
+        default=None,
+        help="Location of the .yaml config file.  Defaults to env var SNPIT_CONFIG.",
+    )
     parser.add_argument(
         "-d",
         "--data-records",
@@ -524,8 +565,32 @@ def main():
         default=None,
         help="Specify an image by template band.  This is optional and will default to --science-band",
     )
-    parser.add_argument("-t", "--temp-dir", default=None, help="Temporary directory.")
-    parser.add_argument("-o", "--output-dir", type=str, default="./output", help="Output directory.")
+    parser.add_argument(
+        "-t", "--temp_dir", type=str, default=None, help="Temporary directory."
+    )
+    parser.add_argument(
+        "-o", "--output_path", type=str, default="output", help="relative output path"
+    )
+
+    # 2025-06-10, MWV:  This is a little silly, but I wanted to capture
+    # this structure even though we're not using the config object yet.
+    NO_CONFIG_YET_FOR_DETECT_SUPERNOVA = True
+    if NO_CONFIG_YET_FOR_DETECT_SUPERNOVA:
+        pass
+    else:
+        if cfg is not None:
+            cfg.augment_argparse(parser)
+        args = parser.parse_args(leftovers)
+
+        if cfg is None:
+            raise ValueError(
+                "Must provide config file, by passing or setting SNPIT_CONFIG env"
+            )
+        cfg.parse_args(args)
+
+        # noqa because we're not using the config object yet.
+        config = Config.get(args.config, setdefault=True)  # noqa
+
     args = parser.parse_args()
 
     # Validate consistency
@@ -562,7 +627,7 @@ def main():
         print("Stopping.")
         return
 
-    detection = Detection(data_records, args.temp_dir, args.output_dir)
+    detection = Detection(args.data_records, args.temp_dir, args.output_path)
     detection.run()
 
 
