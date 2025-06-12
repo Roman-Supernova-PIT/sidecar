@@ -331,11 +331,13 @@ class Detection:
         }
         file_path = self.path_helper(science_id, template_id)
 
-        print(
-            "[INFO] Processing started for data records " f"| Science ID {science_id} " f"| Template ID {template_id} "
+        SNLogger.info(
+            "Processing started for data records "
+            f"| Science ID {science_id} "
+            f"| Template ID {template_id} "
         )
 
-        print("[INFO] Processing subtraction")
+        SNLogger.info("Processing subtraction")
         subtract = subtraction.Pipeline(
             science_band=science_band,
             science_pointing=science_pointing,
@@ -348,7 +350,7 @@ class Detection:
         )
         subtract.run()
 
-        print("[INFO] Processing detection")
+        SNLogger.info("Processing detection")
         source_detection.detect(
             file_path["difference_image_path"],
             file_path["difference_detection_path"],
@@ -358,13 +360,13 @@ class Detection:
             detection_filter=self.DETECTION_FILTER,
         )
 
-        print("[INFO] Processing score image detection")
+        SNLogger.info("Processing score image detection")
         source_detection.score_image_detect(
             file_path["score_image_path"],
             file_path["score_detection_path"],
         )
 
-        print("[INFO] Processing truth retrieval")
+        SNLogger.info("Processing truth retrieval")
         truth = self.__class__.retrieve_truth(
             file_path["science_image_path"],
             file_path["template_image_path"],
@@ -373,7 +375,7 @@ class Detection:
             file_path["difference_truth_path"],
         )
 
-        print("[INFO] Removing known stars from diffim image detection")
+        SNLogger.info("Removing known stars from diffim image detection")
         _ = self.__class__.reject_stars(
             truth,
             file_path["difference_image_path"],
@@ -384,7 +386,7 @@ class Detection:
             y_col="Y_IMAGE",
         )
 
-        print("[INFO] Processing diffim detection truth matching")
+        SNLogger.info("Processing diffim detection truth matching")
         _, _ = self.__class__.match_transients(
             truth,
             file_path["difference_image_path"],
@@ -397,7 +399,7 @@ class Detection:
             id_col="NUMBER",
         )
 
-        print("[INFO] Processing cleaned diffim detection truth matching")
+        SNLogger.info("Processing cleaned diffim detection truth matching")
         _, _ = self.__class__.match_transients(
             truth,
             file_path["difference_image_path"],
@@ -410,7 +412,7 @@ class Detection:
             id_col="NUMBER",
         )
 
-        print("[INFO] Removing known stars from score image detection")
+        SNLogger.info("Removing known stars from score image detection")
         _ = self.__class__.reject_stars(
             truth,
             file_path["difference_image_path"],
@@ -421,7 +423,7 @@ class Detection:
             y_col="y_peak",
         )
 
-        print("[INFO] Processing score image detection truth matching")
+        SNLogger.info("Processing score image detection truth matching")
         _, _ = self.__class__.match_transients(
             truth,
             file_path["difference_image_path"],
@@ -434,7 +436,7 @@ class Detection:
             id_col="id",
         )
 
-        print("[INFO] Processing cleaned score image detection truth matching")
+        SNLogger.info("Processing cleaned score image detection truth matching")
         _, _ = self.__class__.match_transients(
             truth,
             file_path["difference_image_path"],
@@ -447,7 +449,7 @@ class Detection:
             id_col="id",
         )
 
-        print("[INFO] Processing finished.")
+        SNLogger.info("Processing finished.")
 
     def run(self):
         os.makedirs(self.output_dir, exist_ok=True)
@@ -600,7 +602,7 @@ def main():
         or (args.science_sca is not None)
         or (args.science_band is not None)
     ):
-        print("It is an error to specify 'data_records_path' and any of 'science_(image_path,pointing,sca,band)'")
+        SNLogger.warning("It is an error to specify 'data_records_path' and any of 'science_(image_path,pointing,sca,band)'")
         return
 
     if args.data_records_path is not None:
@@ -623,8 +625,8 @@ def main():
             template_band=args.template_band,
         )
     else:
-        print("No valid set of input file, image, or pointing specified.")
-        print("Stopping.")
+        SNLogger.warning("No valid set of input file, image, or pointing specified.")
+        SNLogger.warning("Stopping.")
         return
 
     detection = Detection(args.data_records, args.temp_dir, args.output_path)
