@@ -79,7 +79,7 @@ class Detection:
     CLEANED_SCORE_DETECTION_TO_TRANSIENTS_PREFIX = "cleaned_score_detection_to_transients_"
 
     def __init__(
-        self, data_records_path, temp_dir=None, output_dir="./output", verbose=False
+        self, data_records_path, temp_dir=None, output_dir="output", verbose=False
     ):
         SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
 

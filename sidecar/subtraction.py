@@ -10,8 +10,9 @@ import numpy as np
 from astropy.io import fits
 import cupy as cp
 
-from sfft.SpaceSFFTCupyFlow import SpaceSFFT_CupyFlow
 from roman_imsim.utils import roman_utils
+from snappl.psf import PSF
+from sfft.SpaceSFFTCupyFlow import SpaceSFFT_CupyFlow
 from sfft.utils.SExSkySubtract import SEx_SkySubtract
 
 from sidecar.util import ImageInfo, GALSIM_CONFIG
