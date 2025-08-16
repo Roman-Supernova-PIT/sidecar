@@ -37,7 +37,7 @@ python sidecar/pipeline.py -d [path of the input file] -o [output directory]
 E.g.,
 
 ```
-python sidecar/pipeline.py -d test/test_one_data_record.csv -o /dia_out_dir
+python sidecar/pipeline.py -d tests/test_one_data_record.csv -o /dia_out_dir
 ```
 
 Note the `/dia_out_dir` only makes sense because we're running in the podman container, where we have bound /dia_out_dir to an output directory.
