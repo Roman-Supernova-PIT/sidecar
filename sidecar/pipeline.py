@@ -67,8 +67,12 @@ class Detection:
     DIFF_TRUTH_PREFIX = "truth_"
     TRANSIENTS_TO_DETECTION_PREFIX = "transients_to_detection_"
     DETECTION_TO_TRANSIENTS_PREFIX = "detection_to_transients_"
+    TRANSIENTS_TO_CLEANED_DETECTION_PREFIX = "transients_to_cleaned_detection_"
+    CLEANED_DETECTION_TO_TRANSIENTS_PREFIX = "cleaned_detection_to_transients_"
     TRANSIENTS_TO_SCORE_DETECTION_PREFIX = "transients_to_score_detection_"
     SCORE_DETECTION_TO_TRANSIENTS_PREFIX = "score_detection_to_transients_"
+    TRANSIENTS_TO_CLEANED_SCORE_DETECTION_PREFIX = "transients_to_cleaned_score_detection_"
+    CLEANED_SCORE_DETECTION_TO_TRANSIENTS_PREFIX = "cleaned_score_detection_to_transients_"
 
     def __init__(self, data_records, temp_dir=None, output_dir="./output"):
         self.data_records = data_records
@@ -257,6 +261,14 @@ class Detection:
         )
         # These are here because the cleaning is currently done based
         # on 'truth' catalogs of stars.
+        file_path["transients_to_cleaned_detection_path"] = Path(
+            file_path["full_output_dir"],
+            self.TRANSIENTS_TO_CLEANED_DETECTION_PREFIX + diff_pattern + ".ecsv",
+        )
+        file_path["cleaned_detection_to_transients_path"] = Path(
+            file_path["full_output_dir"],
+            self.CLEANED_DETECTION_TO_TRANSIENTS_PREFIX + diff_pattern + ".ecsv",
+        )
         file_path["cleaned_difference_detection_path"] = Path(
             file_path["full_output_dir"],
             self.CLEANED_DIFF_DETECTION_PREFIX + diff_pattern + ".cat",
@@ -272,6 +284,18 @@ class Detection:
         file_path["score_detection_to_transients_path"] = Path(
             file_path["full_output_dir"],
             self.SCORE_DETECTION_TO_TRANSIENTS_PREFIX + diff_pattern + ".ecsv",
+        )
+        file_path["transients_to_cleaned_score_detection_path"] = Path(
+            file_path["full_output_dir"],
+            self.TRANSIENTS_TO_CLEANED_SCORE_DETECTION_PREFIX + diff_pattern + ".ecsv",
+        )
+        file_path["score_detection_to_transients_path"] = Path(
+            file_path["full_output_dir"],
+            self.CLEANED_SCORE_DETECTION_TO_TRANSIENTS_PREFIX + diff_pattern + ".ecsv",
+        )
+        file_path["cleaned_score_detection_to_transients_path"] = Path(
+            file_path["full_output_dir"],
+            self.CLEANED_SCORE_DETECTION_TO_TRANSIENTS_PREFIX + diff_pattern + ".ecsv",
         )
         return file_path
 
@@ -362,6 +386,18 @@ class Detection:
             y_col="Y_IMAGE",
         )
 
+        print("[INFO] Processing cleaned diffim detection truth matching")
+        _, _ = self.__class__.match_transients(
+            truth,
+            file_path["difference_image_path"],
+            file_path["cleaned_difference_detection_path"],
+            self.MATCH_RADIUS,
+            file_path["transients_to_cleaned_detection_path"],
+            file_path["cleaned_detection_to_transients_path"],
+            x_col="X_IMAGE",
+            y_col="Y_IMAGE",
+        )
+
         print("[INFO] Removing known stars from score image detection")
         _ = self.__class__.reject_stars(
             truth,
@@ -381,6 +417,18 @@ class Detection:
             self.MATCH_RADIUS,
             file_path["transients_to_score_detection_path"],
             file_path["score_detection_to_transients_path"],
+            x_col="x_peak",
+            y_col="y_peak",
+        )
+
+        print("[INFO] Processing cleaned score image detection truth matching")
+        _, _ = self.__class__.match_transients(
+            truth,
+            file_path["difference_image_path"],
+            file_path["cleaned_score_detection_path"],
+            self.MATCH_RADIUS,
+            file_path["transients_to_cleaned_score_detection_path"],
+            file_path["cleaned_score_detection_to_transients_path"],
             x_col="x_peak",
             y_col="y_peak",
         )
