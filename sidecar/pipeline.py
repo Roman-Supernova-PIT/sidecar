@@ -5,6 +5,7 @@ from pathlib import Path
 import tempfile
 
 from astropy.coordinates import SkyCoord
+from astropy.table import Table
 from astropy.wcs.utils import pixel_to_skycoord
 import astropy.units as u
 
@@ -96,7 +97,7 @@ class Detection:
         truth = truth_retrieval.merge_science_and_template_truth(
             science_truth, template_truth, science_wcs, template_wcs, offset=50
         )
-        truth.to_csv(difference_truth_path, index=False)
+        Table.from_pandas(truth).write(difference_truth_path, overwrite=True)
         return truth
 
     @staticmethod
@@ -148,8 +149,8 @@ class Detection:
             detection, transients, detection_skycoord, transients_skycoord, match_radius
         )
 
-        transients_to_detection.to_csv(transients_to_detection_path, index=False)
-        detection_to_transients.to_csv(detection_to_transients_path, index=False)
+        Table.from_pandas(transients_to_detection).write(transients_to_detection_path, overwrite=True)
+        Table.from_pandas(detection_to_transients).write(detection_to_transients_path, overwrite=True)
         return transients_to_detection, detection_to_transients
 
     @staticmethod
@@ -205,7 +206,7 @@ class Detection:
             detection, bright_star, detection_skycoord, bright_star_skycoord, match_radius=match_radius
         )
 
-        cleaned_detection.to_csv(cleaned_difference_detection_path, index=False)
+        Table.from_pandas(cleaned_detection).write(cleaned_difference_detection_path, overwrite=True)
 
         return cleaned_detection
 
