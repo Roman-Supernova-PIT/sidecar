@@ -418,8 +418,8 @@ class Detection:
             self.MATCH_RADIUS,
             file_path["transients_to_score_detection_path"],
             file_path["score_detection_to_transients_path"],
-            x_col="x_peak",
-            y_col="y_peak",
+            x_col="x_centroid",
+            y_col="y_centroid",
         )
 
         print("[INFO] Processing cleaned score image detection truth matching")
@@ -430,8 +430,8 @@ class Detection:
             self.MATCH_RADIUS,
             file_path["transients_to_cleaned_score_detection_path"],
             file_path["cleaned_score_detection_to_transients_path"],
-            x_col="x_peak",
-            y_col="y_peak",
+            x_col="x_centroid",
+            y_col="y_centroid",
         )
 
         print("[INFO] Processing finished.")
