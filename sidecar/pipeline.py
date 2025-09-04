@@ -379,7 +379,7 @@ class Detection:
         _, _ = self.__class__.match_transients(
             truth,
             file_path["difference_image_path"],
-            file_path["cleaned_difference_detection_path"],
+            file_path["difference_detection_path"],
             self.MATCH_RADIUS,
             file_path["transients_to_detection_path"],
             file_path["detection_to_transients_path"],
