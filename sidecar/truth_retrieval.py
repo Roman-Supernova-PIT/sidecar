@@ -66,10 +66,10 @@ def merge_science_and_template_truth(
     template_truth = template_truth[template_in_science].copy().reset_index(drop=True)
 
     science_skycoord = SkyCoord(
-        science_truth.ra, science_truth.dec, frame="icrs", unit="deg"
+        science_truth.ra, science_truth.dec, frame="fk5", unit="deg"
     )
     template_skycoord = SkyCoord(
-        template_truth.ra, template_truth.dec, frame="icrs", unit="deg"
+        template_truth.ra, template_truth.dec, frame="fk5", unit="deg"
     )
 
     matched_status, matched_id = two_direction_skymatch(

@@ -5,8 +5,8 @@ from pathlib import Path
 import tempfile
 
 from astropy.coordinates import SkyCoord
-from astropy.table import Table
 from astropy.wcs.utils import pixel_to_skycoord
+from astropy.table import Table
 import astropy.units as u
 
 from sidecar import data_loader
@@ -108,7 +108,7 @@ class Detection:
         match_radius,
         transients_to_detection_path,
         detection_to_transients_path,
-        transient_frame="icrs",
+        transient_frame="fk5",
         x_col="X_IMAGE",
         y_col="Y_IMAGE",
     ):
@@ -160,7 +160,7 @@ class Detection:
         difference_detection_path,
         match_radius,
         cleaned_difference_detection_path,
-        star_frame="icrs",
+        star_frame="fk5",
         x_col="X_IMAGE",
         y_col="Y_IMAGE",
         bright=100,
@@ -195,16 +195,16 @@ class Detection:
         detection = data_loader.load_table(difference_detection_path)
         star = truth[truth.obj_type == "star"].copy().reset_index(drop=True)
         bright_star_idx = star["realized_flux"] > bright
+        print(sum(bright_star_idx))
         if sum(bright_star_idx) < 1:
-            return detection
+            cleaned_detection = detection.copy()
         else:
             bright_star = star.loc[bright_star_idx]
-
-        bright_star_skycoord = SkyCoord(bright_star.ra, bright_star.dec, frame=star_frame, unit="deg")
-        detection_skycoord = pixel_to_skycoord(detection[x_col], detection[y_col], difference_wcs)
-        cleaned_detection = truth_matching.skymatch_and_reject(
-            detection, bright_star, detection_skycoord, bright_star_skycoord, match_radius=match_radius
-        )
+            bright_star_skycoord = SkyCoord(bright_star.ra, bright_star.dec, frame=star_frame, unit="deg")
+            detection_skycoord = pixel_to_skycoord(detection[x_col], detection[y_col], difference_wcs)
+            cleaned_detection = truth_matching.skymatch_and_reject(
+                detection, bright_star, detection_skycoord, bright_star_skycoord, match_radius=match_radius
+            )
 
         Table.from_pandas(cleaned_detection).write(cleaned_difference_detection_path, overwrite=True)
 
