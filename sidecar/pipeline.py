@@ -206,7 +206,7 @@ class Detection:
                 detection, bright_star, detection_skycoord, bright_star_skycoord, match_radius=match_radius
             )
 
-        Table.from_pandas(cleaned_detection).write(cleaned_difference_detection_path, overwrite=True)
+        Table.from_pandas(cleaned_detection).write(cleaned_difference_detection_path, overwrite=True, format="ascii.ecsv")
 
         return cleaned_detection
 
@@ -289,10 +289,6 @@ class Detection:
         file_path["transients_to_cleaned_score_detection_path"] = Path(
             file_path["full_output_dir"],
             self.TRANSIENTS_TO_CLEANED_SCORE_DETECTION_PREFIX + diff_pattern + ".ecsv",
-        )
-        file_path["score_detection_to_transients_path"] = Path(
-            file_path["full_output_dir"],
-            self.CLEANED_SCORE_DETECTION_TO_TRANSIENTS_PREFIX + diff_pattern + ".ecsv",
         )
         file_path["cleaned_score_detection_to_transients_path"] = Path(
             file_path["full_output_dir"],
