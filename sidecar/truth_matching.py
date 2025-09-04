@@ -2,7 +2,7 @@ import astropy.units as u
 
 from sidecar.coord_projection import one_direction_skymatch, two_direction_skymatch
 
-MATCH_RADIUS = 0.4 * u.arcsec
+MATCH_RADIUS = 1.0 * u.arcsec
 
 
 def skymatch_and_join(left_table, right_table, left_skycoord, right_skycoord, match_radius=MATCH_RADIUS):
