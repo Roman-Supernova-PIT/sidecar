@@ -3,7 +3,7 @@ import pandas as pd
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 
-from coord_projection import xy_in_image, radec_in_image, two_direction_skymatch
+from sidecar.coord_projection import xy_in_image, radec_in_image, two_direction_skymatch
 
 MATCH_RADIUS = 0.4
 IMAGE_WIDTH = 4088

@@ -14,7 +14,7 @@ from sfft.SpaceSFFTCupyFlow import SpaceSFFT_CupyFlow
 from roman_imsim.utils import roman_utils
 from sfft.utils.SExSkySubtract import SEx_SkySubtract
 
-from util import ImageInfo, GALSIM_CONFIG
+from sidecar.util import ImageInfo, GALSIM_CONFIG
 
 
 def gz_and_ext(in_path, out_path):
