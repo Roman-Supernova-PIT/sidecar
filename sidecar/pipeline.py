@@ -163,9 +163,9 @@ class Detection:
         star_frame="fk5",
         x_col="X_IMAGE",
         y_col="Y_IMAGE",
-        bright=100,
+        bright=10,
     ):
-        """Reject bright stars from subtraction detection catalogs
+        """Reject stars from subtraction detection catalogs
 
         Parameter
         ---------
