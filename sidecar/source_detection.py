@@ -2,8 +2,13 @@ import subprocess
 
 from astropy.io import fits
 from astropy.table import vstack
+from astropy.wcs.utils import pixel_to_skycoord
 from photutils.centroids import centroid_com
 from photutils.detection import find_peaks
+
+from sidecar import data_loader
+from snappl.image import FITSImageOnDisk
+
 
 SOURCE_EXTRACTOR_EXECUTABLE = "source-extractor"
 DETECTION_CONFIG = "default.sex"
@@ -43,7 +48,7 @@ def detect(
 
 
 def score_image_detect(
-    score_image_path, catalog_save_path=None, threshold=10, box_size=11, negative=True, overwrite=True,
+    image_path, catalog_save_path=None, threshold=10, box_size=11, negative=True, overwrite=True,
 ):
     """Detect based on the peak pixels in the score image.
 
@@ -79,13 +84,30 @@ def score_image_detect(
     Based on
     https://photutils.readthedocs.io/en/stable/user_guide/detection.html
     """
-    image = fits.getdata(score_image_path)
+    image = FITSImageOnDisk(image_path, None, None)
+    data = image.get_data(which="data")[0]
+    ## Would like to do this, but WCS object doesn't work with AstroPy
+#    wcs = image.get_wcs()
+
+    wcs = data_loader.load_wcs(image_path, hdu_id=0)
+
     find_peaks_kwargs = {"threshold": threshold, "box_size": box_size, "centroid_func": centroid_com}
-    pos_obj = find_peaks(image, **find_peaks_kwargs)
-    neg_obj = find_peaks(-image, **find_peaks_kwargs)
+    pos_obj = find_peaks(data, **find_peaks_kwargs)
+    neg_obj = find_peaks(-data, **find_peaks_kwargs)
     neg_obj["peak_value"] = -neg_obj["peak_value"]
 
+    # Adjust obj_id values so that they are continuous
+    # The negative object detection will generate its own list, starting at 1
+    # Take the largest id from the positive detection and add that to the negative detection ids
+    # (which are all positive integers) to get a non-conflicting list of ids in the merged catalog.
+    id_offset = pos_obj["id"].max()
+    neg_obj["id"] += id_offset
+
     obj = vstack([pos_obj, neg_obj])
+
+    detection_skycoord = pixel_to_skycoord(obj["x_centroid"], obj["y_centroid"], wcs)
+    obj["ra"] = detection_skycoord.ra
+    obj["dec"] = detection_skycoord.dec
 
     if catalog_save_path is not None:
         obj.write(catalog_save_path, overwrite=overwrite)
