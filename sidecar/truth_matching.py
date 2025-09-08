@@ -26,6 +26,9 @@ def skymatch_and_join(left_table, right_table, left_skycoord, right_skycoord, ma
 
     matched_status, matched_id = two_direction_skymatch(left_skycoord, right_skycoord, radius=match_radius)
 
+    left_table = left_table.copy()
+    right_table = right_table.copy()
+
     right_table[key] = -1
     right_table[key][matched_id] = left_table[key]
 
