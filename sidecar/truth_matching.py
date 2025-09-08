@@ -7,7 +7,7 @@ MATCH_RADIUS = 1.0 * u.arcsec
 
 
 def skymatch_and_join(left_table, right_table, left_skycoord, right_skycoord, match_radius=MATCH_RADIUS, key="object_id"):
-    """Matched 'left_table' and -right_table' that are within 'radius' of entries in 'right_table'.
+    """Matched 'left_table' and 'right_table' that are within 'radius' of entries in 'right_table'.
 
     Parameters
     ----------

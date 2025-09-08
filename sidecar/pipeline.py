@@ -142,8 +142,8 @@ class Detection:
         difference_wcs = data_loader.load_wcs(difference_image_path, hdu_id=0)
 
         detection = data_loader.load_table(difference_detection_path)
-        transients = truth[truth["obj_type"] == "transient"]
-        transients_skycoord = SkyCoord(transients["ra"], transients["dec"], frame=transient_frame, unit="deg")
+        transients = truth[truth["object_type"] == "transient"]
+        transients_skycoord = SkyCoord(transients["object_ra"], transients["object_dec"], frame=transient_frame, unit="deg")
         detection_skycoord = pixel_to_skycoord(detection[x_col], detection[y_col], difference_wcs)
         transients_to_detection = truth_matching.skymatch_and_join(
             transients, detection, transients_skycoord, detection_skycoord, match_radius, key="object_id"
@@ -196,14 +196,14 @@ class Detection:
         difference_wcs = data_loader.load_wcs(difference_image_path, hdu_id=0)
 
         detection = data_loader.load_table(difference_detection_path)
-        star = truth[truth["obj_type"] == "star"]
+        star = truth[truth["object_type"] == "star"]
         bright_star_idx = star["realized_flux"] > bright
         print(sum(bright_star_idx))
         if sum(bright_star_idx) < 1:
             cleaned_detection = detection.copy()
         else:
             bright_star = star[bright_star_idx]
-            bright_star_skycoord = SkyCoord(bright_star["ra"], bright_star["dec"], frame=star_frame, unit="deg")
+            bright_star_skycoord = SkyCoord(bright_star["object_ra"], bright_star["object_dec"], frame=star_frame, unit="deg")
             detection_skycoord = pixel_to_skycoord(detection[x_col], detection[y_col], difference_wcs)
             cleaned_detection = truth_matching.skymatch_and_reject(
                 detection, bright_star, detection_skycoord, bright_star_skycoord, match_radius=match_radius

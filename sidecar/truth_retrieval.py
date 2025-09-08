@@ -100,4 +100,10 @@ def merge_science_and_template_truth(
     merged_truth = vstack([science_truth, template_truth_unmatched])
     merged_truth.remove_columns(["x", "y"])
 
+    # Standardize colum names for clarity and
+    # anticipating future merging with detection catalogs.
+    merged_truth.rename_column("ra", "object_ra")
+    merged_truth.rename_column("dec", "object_dec")
+    merged_truth.rename_column("obj_type", "object_type")
+
     return merged_truth
