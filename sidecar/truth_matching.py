@@ -31,6 +31,7 @@ def skymatch_and_join(left_table, right_table, left_skycoord, right_skycoord, ma
 
     right_table[key] = -1
     right_table[key][matched_id] = left_table[key]
+    right_table[key][matched_id][~matched_status] = -1
 
     left_table["matched_status"] = matched_status
 
