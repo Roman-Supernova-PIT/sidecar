@@ -29,9 +29,11 @@ def skymatch_and_join(left_table, right_table, left_skycoord, right_skycoord, ma
     left_table = left_table.copy()
     right_table = right_table.copy()
 
+    # This is a little tricky, because there will be duplicates for matched_id
+    # There can be good matches to an id in matched_id and bad matches from farther away objects.
+    # So we set to -1 and then only set values that are good matches
     right_table[key] = -1
-    right_table[key][matched_id] = left_table[key]
-    right_table[key][matched_id][~matched_status] = -1
+    right_table[key][matched_id[matched_status]] = left_table[key][matched_status].copy()
 
     left_table["matched_status"] = matched_status
 
@@ -57,6 +59,7 @@ def skymatch_and_reject(left_table, right_table, left_skycoord, right_skycoord, 
         Entries in left_table that are not within radius of objects in right_table
     """
     matched_status, matched_id = one_direction_skymatch(left_skycoord, right_skycoord, radius=match_radius)
+    left_table = left_table.copy()
     left_table = left_table[~matched_status]
 
     return left_table
