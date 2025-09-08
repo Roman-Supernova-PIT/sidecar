@@ -67,7 +67,7 @@ def score_image_detect(
 
     Returns
     -------
-    AstroPy Table of results
+    astropy.table.Table of results
 
     Notes
     -----

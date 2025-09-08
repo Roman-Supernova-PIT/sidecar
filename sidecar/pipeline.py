@@ -97,7 +97,7 @@ class Detection:
         truth = truth_retrieval.merge_science_and_template_truth(
             science_truth, template_truth, science_wcs, template_wcs, offset=50
         )
-        Table.from_pandas(truth).write(difference_truth_path, overwrite=True)
+        truth.write(difference_truth_path, overwrite=True)
         return truth
 
     @staticmethod
@@ -111,12 +111,13 @@ class Detection:
         transient_frame="fk5",
         x_col="X_IMAGE",
         y_col="Y_IMAGE",
+        id_col="id",
     ):
         """Match a truth catalog to subtraction detection catalogs
 
         Parameter
         ---------
-        truth : pandas dataframe
+        truth : astropy.table.Table
         difference_image_path : str
         difference_detection_path : str
         match_radius : float
@@ -129,6 +130,8 @@ class Detection:
             Name of column in detection table for x coordinate
         y_col : str
             Name of column in detection table for y coordinate
+        id_col : str
+            Name of column in detection table for ID
 
         Return
         ------
@@ -139,18 +142,18 @@ class Detection:
         difference_wcs = data_loader.load_wcs(difference_image_path, hdu_id=0)
 
         detection = data_loader.load_table(difference_detection_path)
-        transients = truth[truth.obj_type == "transient"].copy().reset_index(drop=True)
-        transients_skycoord = SkyCoord(transients.ra, transients.dec, frame=transient_frame, unit="deg")
+        transients = truth[truth["obj_type"] == "transient"]
+        transients_skycoord = SkyCoord(transients["ra"], transients["dec"], frame=transient_frame, unit="deg")
         detection_skycoord = pixel_to_skycoord(detection[x_col], detection[y_col], difference_wcs)
         transients_to_detection = truth_matching.skymatch_and_join(
-            transients, detection, transients_skycoord, detection_skycoord, match_radius
+            transients, detection, transients_skycoord, detection_skycoord, match_radius, key="object_id"
         )
         detection_to_transients = truth_matching.skymatch_and_join(
-            detection, transients, detection_skycoord, transients_skycoord, match_radius
+            detection, transients, detection_skycoord, transients_skycoord, match_radius, key=id_col
         )
 
-        Table.from_pandas(transients_to_detection).write(transients_to_detection_path, overwrite=True)
-        Table.from_pandas(detection_to_transients).write(detection_to_transients_path, overwrite=True)
+        transients_to_detection.write(transients_to_detection_path, overwrite=True)
+        detection_to_transients.write(detection_to_transients_path, overwrite=True)
         return transients_to_detection, detection_to_transients
 
     @staticmethod
@@ -169,7 +172,7 @@ class Detection:
 
         Parameter
         ---------
-        truth : pandas dataframe
+        truth : astropy.table.Table
         difference_image_path : str
         difference_detection_path : str
         match_radius : float
@@ -193,20 +196,20 @@ class Detection:
         difference_wcs = data_loader.load_wcs(difference_image_path, hdu_id=0)
 
         detection = data_loader.load_table(difference_detection_path)
-        star = truth[truth.obj_type == "star"].copy().reset_index(drop=True)
+        star = truth[truth["obj_type"] == "star"]
         bright_star_idx = star["realized_flux"] > bright
         print(sum(bright_star_idx))
         if sum(bright_star_idx) < 1:
             cleaned_detection = detection.copy()
         else:
-            bright_star = star.loc[bright_star_idx]
-            bright_star_skycoord = SkyCoord(bright_star.ra, bright_star.dec, frame=star_frame, unit="deg")
+            bright_star = star[bright_star_idx]
+            bright_star_skycoord = SkyCoord(bright_star["ra"], bright_star["dec"], frame=star_frame, unit="deg")
             detection_skycoord = pixel_to_skycoord(detection[x_col], detection[y_col], difference_wcs)
             cleaned_detection = truth_matching.skymatch_and_reject(
                 detection, bright_star, detection_skycoord, bright_star_skycoord, match_radius=match_radius
             )
 
-        Table.from_pandas(cleaned_detection).write(cleaned_difference_detection_path, overwrite=True, format="ascii.ecsv")
+        cleaned_detection.write(cleaned_difference_detection_path, overwrite=True, format="ascii.ecsv")
 
         return cleaned_detection
 
@@ -381,6 +384,7 @@ class Detection:
             file_path["detection_to_transients_path"],
             x_col="X_IMAGE",
             y_col="Y_IMAGE",
+            id_col="NUMBER",
         )
 
         print("[INFO] Processing cleaned diffim detection truth matching")
@@ -393,6 +397,7 @@ class Detection:
             file_path["cleaned_detection_to_transients_path"],
             x_col="X_IMAGE",
             y_col="Y_IMAGE",
+            id_col="NUMBER",
         )
 
         print("[INFO] Removing known stars from score image detection")
@@ -416,6 +421,7 @@ class Detection:
             file_path["score_detection_to_transients_path"],
             x_col="x_centroid",
             y_col="y_centroid",
+            id_col="id",
         )
 
         print("[INFO] Processing cleaned score image detection truth matching")
@@ -428,6 +434,7 @@ class Detection:
             file_path["cleaned_score_detection_to_transients_path"],
             x_col="x_centroid",
             y_col="y_centroid",
+            id_col="id",
         )
 
         print("[INFO] Processing finished.")

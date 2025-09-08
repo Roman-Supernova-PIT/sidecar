@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 import requests
 
+from astropy.table import Table
 import pandas as pd
 
 from snappl.image import OpenUniverse2024FITSImage
@@ -47,7 +48,7 @@ def get_image_info_for_ra_dec(ra, dec, band=None):
     result = req.post(f"{server_url}/findromanimages", json=json)
     if result.status_code != 200:
         raise RuntimeError(f"Got status code {result.status_code}\n{result.text}")
-    df = pd.DataFrame(result.json())
+    df = Table.from_pandas(pd.DataFrame(result.json()))
     return df
 
 
@@ -63,7 +64,7 @@ def get_templates_for_points(points, band, min_points=3):
 
     Returns
     -------
-    images : List of DataFrames of image info from Roman-DESC-simdex
+    images : astropy.table.Table of image info from Roman-DESC-simdex
 
     Notes
     -----
@@ -82,7 +83,7 @@ def get_templates_for_points(points, band, min_points=3):
     matches = matches.groupby(matches.columns.tolist()).size().reset_index().rename(columns={0: "counts"})
     good_matches = matches.loc[matches.counts >= min_points]
 
-    return good_matches
+    return Table.from_pandas(good_matches)
 
 
 def get_templates_for_image(im, min_points=3):

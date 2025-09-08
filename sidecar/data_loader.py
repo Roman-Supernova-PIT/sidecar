@@ -40,12 +40,12 @@ def load_image_and_wcs(image_path, hdu_id=0):
 
 
 def load_truth(truth_path):
-    truth = Table.read(truth_path, format="ascii").to_pandas()
+    truth = Table.read(truth_path, format="ascii")
     return truth
 
 
 def load_table(table_path):
-    table = Table.read(table_path, format="ascii").to_pandas()
+    table = Table.read(table_path, format="ascii")
     return table
 
 
