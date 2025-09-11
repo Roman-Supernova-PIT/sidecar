@@ -86,9 +86,10 @@ def score_image_detect(
     """
     image = FITSImageOnDisk(image_path, None, None)
     data = image.get_data(which="data")[0]
-    ## Would like to do this, but WCS object doesn't work with AstroPy
-#    wcs = image.get_wcs()
-
+    ## Would like to do this, but the WCS object we get doesn't work with AstroPy pixel_to_skycoord
+    # "AttributeError: 'AstropyWCS' object has no attribute 'cpdis1'"
+    # wcs = image.get_wcs()
+    # Filed as Issue #40
     wcs = data_loader.load_wcs(image_path, hdu_id=0)
 
     find_peaks_kwargs = {"threshold": threshold, "box_size": box_size, "centroid_func": centroid_com}
