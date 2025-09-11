@@ -27,9 +27,6 @@ def radec_to_xy(ra, dec, wcs, frame="fk5"):
         Open Universe is in FK5, not ICRS
     """
     sky_coord = SkyCoord(ra, dec, frame=frame, unit="deg")
-    # ra and dec are in degree unit
-    # Open Universe is in FK5, not ICRS
-    sky_coord = SkyCoord(ra, dec, frame="fk5", unit="deg")
     pixel_coords = skycoord_to_pixel(coords=sky_coord, wcs=wcs, origin=0)
     return pixel_coords[0], pixel_coords[1]
 
