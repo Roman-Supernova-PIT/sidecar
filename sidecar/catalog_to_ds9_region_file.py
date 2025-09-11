@@ -6,8 +6,8 @@ from astropy.table import Table
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("catalog_file", type=str)
-    parser.add_argument("--x_colname", "-x", type=str, default="x_peak")
-    parser.add_argument("--y_colname", "-y", type=str, default="y_peak")
+    parser.add_argument("--x_colname", "-x", type=str, default="x_centroid")
+    parser.add_argument("--y_colname", "-y", type=str, default="y_centroid")
     parser.add_argument("--label_colname", "-l", type=str, default="peak_value")
     parser.add_argument("--coordinate_system", "--coord", "-c", type=str, default="image")
     args = parser.parse_args()
