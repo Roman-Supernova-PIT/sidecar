@@ -1,7 +1,7 @@
 """Take a candidate catalog and generate a phrosty
 lightcurve command file and associated template, science files.
 
-Heaviliy inspired from Lauren Aldoroty's bulk_sne.py
+Heavily inspired from Lauren Aldoroty's bulk_sne.py
 """
 
 import requests
@@ -12,14 +12,14 @@ import pandas as pd
 
 bands = ['R062', 'Z087', 'Y106', 'J129', 'H158', 'F184', 'K213']
 
-def construct_phrosty_script(oid, ra, dec):
+def construct_phrosty_script(oid, ra, dec, n_templates=10):
     """
     oid : int
     ra : float, decimal degrees
     dec : float, decimal degrees
     """
     
-    templates_filename, science_filename = write_image_list_for_ra_dec(oid, ra, dec)
+    templates_filename, science_filename = write_image_list_for_ra_dec(oid, ra, dec, n_templates=n_templates)
 
     oc = "manual"
     ic = "ou2024"
@@ -45,7 +45,7 @@ def construct_phrosty_script(oid, ra, dec):
 def get_images_for_ra_dec_mjd(ra, dec,
                               start_mjd, end_mjd,
                               bands=bands,
-                              n_templates=10,
+                              n_templates=1,
                               server_url="https://roman-desc-simdex.lbl.gov",
                               verbose=False):
     """
@@ -89,7 +89,7 @@ def get_images_for_ra_dec_mjd(ra, dec,
     return temp, sci
 
 
-def write_image_list_for_ra_dec(oid, ra, dec):
+def write_image_list_for_ra_dec(oid, ra, dec, n_templates=10):
     """
     oid : int, just used for creating output filename
     ra : float, decimal degrees
@@ -99,7 +99,7 @@ def write_image_list_for_ra_dec(oid, ra, dec):
     templates_filename = f"{oid}_templates.csv"
     science_filename = f"{oid}_science.csv"
 
-    temp, sci = get_images_for_ra_dec_mjd(ra, dec, start_mjd, end_mjd)
+    temp, sci = get_images_for_ra_dec_mjd(ra, dec, start_mjd, end_mjd, n_templates=n_templates)
     with open(templates_filename, 'w') as f:
         f.write(temp)
     with open(science_filename, 'w') as f:
