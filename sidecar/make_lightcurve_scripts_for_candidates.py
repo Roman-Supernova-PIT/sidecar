@@ -115,4 +115,15 @@ if __name__ == "__main__":
     start_mjd = 62300
     end_mjd = 62500
 
-    construct_phrosty_script(oid, ra, dec)
+    oid = "455"
+    ra = 8.860834063180558
+    dec = -43.117056343060206
+    disc_mjd = 62725.094
+#    start_mjd = 62650
+#    end_mjd = 62800
+    start_mjd = 62450.0
+    end_mjd = 62881.0
+
+#    n_templates = 10
+    n_templates = 1
+    construct_phrosty_script(oid, ra, dec, n_templates=n_templates)
