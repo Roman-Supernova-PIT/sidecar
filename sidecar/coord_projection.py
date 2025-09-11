@@ -12,7 +12,21 @@ def xy_to_radec(x, y, wcs):
     return radec.ra.deg, radec.dec.deg
 
 
-def radec_to_xy(ra, dec, wcs):
+def radec_to_xy(ra, dec, wcs, frame="fk5"):
+    """Transform RA, Dec to x, y based on wcs.
+
+    This is a convenience function that wraps the converting to SkyCoord
+
+    Parameters
+    ----------
+    ra : float or np.array(float), degree
+    deg : float or np.array(float), degree
+    wcs : astropy.wcs
+
+    frame : str, astropy.coordinates frame
+        Open Universe is in FK5, not ICRS
+    """
+    sky_coord = SkyCoord(ra, dec, frame=frame, unit="deg")
     # ra and dec are in degree unit
     # Open Universe is in FK5, not ICRS
     sky_coord = SkyCoord(ra, dec, frame="fk5", unit="deg")
