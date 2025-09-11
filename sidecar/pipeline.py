@@ -6,6 +6,7 @@ import tempfile
 
 from astropy.coordinates import SkyCoord
 from astropy.wcs.utils import pixel_to_skycoord
+import astropy.units as u
 
 from sidecar import data_loader
 from sidecar import subtraction
@@ -53,18 +54,25 @@ class Detection:
     DETECTION_FILTER = Path(Path(__file__).parent, "..", "configs", "default.conv")
 
     # Source Matching
-    MATCH_RADIUS = 0.4  # in arcsec unit
+    MATCH_RADIUS = 0.4 * u.arcsec
+    REJECT_MATCH_RADIUS = 5 * u.arcsec
 
     # file prefix
     DIFF_IMAGE_PREFIX = "decorr_diff_"
     DIFF_SCORE_PREFIX = "score_"
     DIFF_DETECTION_PREFIX = "detection_"
     SCORE_DETECTION_PREFIX = "score_detection_"
+    CLEANED_DIFF_DETECTION_PREFIX = "cleaned_" + DIFF_DETECTION_PREFIX
+    CLEANED_SCORE_DETECTION_PREFIX = "cleaned_" + SCORE_DETECTION_PREFIX
     DIFF_TRUTH_PREFIX = "truth_"
     TRANSIENTS_TO_DETECTION_PREFIX = "transients_to_detection_"
     DETECTION_TO_TRANSIENTS_PREFIX = "detection_to_transients_"
+    TRANSIENTS_TO_CLEANED_DETECTION_PREFIX = "transients_to_cleaned_detection_"
+    CLEANED_DETECTION_TO_TRANSIENTS_PREFIX = "cleaned_detection_to_transients_"
     TRANSIENTS_TO_SCORE_DETECTION_PREFIX = "transients_to_score_detection_"
     SCORE_DETECTION_TO_TRANSIENTS_PREFIX = "score_detection_to_transients_"
+    TRANSIENTS_TO_CLEANED_SCORE_DETECTION_PREFIX = "transients_to_cleaned_score_detection_"
+    CLEANED_SCORE_DETECTION_TO_TRANSIENTS_PREFIX = "cleaned_score_detection_to_transients_"
 
     def __init__(self, data_records, temp_dir=None, output_dir="./output"):
         self.data_records = data_records
@@ -88,7 +96,7 @@ class Detection:
         truth = truth_retrieval.merge_science_and_template_truth(
             science_truth, template_truth, science_wcs, template_wcs, offset=50
         )
-        truth.to_csv(difference_truth_path, index=False)
+        truth.write(difference_truth_path, overwrite=True)
         return truth
 
     @staticmethod
@@ -99,27 +107,30 @@ class Detection:
         match_radius,
         transients_to_detection_path,
         detection_to_transients_path,
-        transient_frame="icrs",
+        frame="fk5",
         x_col="X_IMAGE",
         y_col="Y_IMAGE",
+        id_col="id",
     ):
         """Match a truth catalog to subtraction detection catalogs
 
         Parameter
         ---------
-        truth : pandas dataframe
+        truth : astropy.table.Table
         difference_image_path : str
         difference_detection_path : str
         match_radius : float
             Match radius in arcseconds
         transients_to_detection_path : str
         detection_to_transients_path : str
-        transient_frame : str
-            AstroPy coordinate frame.  E.g., "icrs" or "fk5"
+        frame : str
+            astropy.wcs coordinate frame.  E.g., "icrs" or "fk5"
         x_col : str
             Name of column in detection table for x coordinate
-        y_col
+        y_col : str
             Name of column in detection table for y coordinate
+        id_col : str
+            Name of column in detection table for ID
 
         Return
         ------
@@ -130,19 +141,76 @@ class Detection:
         difference_wcs = data_loader.load_wcs(difference_image_path, hdu_id=0)
 
         detection = data_loader.load_table(difference_detection_path)
-        transients = truth[truth.obj_type == "transient"].copy().reset_index(drop=True)
-        transients_skycoord = SkyCoord(transients.ra, transients.dec, frame=transient_frame, unit="deg")
+        transients = truth[truth["object_type"] == "transient"]
+        transients_skycoord = SkyCoord(transients["object_ra"], transients["object_dec"], frame=frame, unit="deg")
         detection_skycoord = pixel_to_skycoord(detection[x_col], detection[y_col], difference_wcs)
         transients_to_detection = truth_matching.skymatch_and_join(
-            transients, detection, transients_skycoord, detection_skycoord, match_radius
+            transients, detection, transients_skycoord, detection_skycoord, match_radius, key="object_id"
         )
         detection_to_transients = truth_matching.skymatch_and_join(
-            detection, transients, detection_skycoord, transients_skycoord, match_radius
+            detection, transients, detection_skycoord, transients_skycoord, match_radius, key=id_col
         )
 
-        transients_to_detection.to_csv(transients_to_detection_path, index=False)
-        detection_to_transients.to_csv(detection_to_transients_path, index=False)
+        transients_to_detection.write(transients_to_detection_path, overwrite=True)
+        detection_to_transients.write(detection_to_transients_path, overwrite=True)
         return transients_to_detection, detection_to_transients
+
+    @staticmethod
+    def reject_stars(
+        truth,
+        difference_image_path,
+        difference_detection_path,
+        match_radius,
+        cleaned_difference_detection_path,
+        frame="fk5",
+        x_col="X_IMAGE",
+        y_col="Y_IMAGE",
+        bright=10,
+    ):
+        """Reject stars from subtraction detection catalogs
+
+        Parameter
+        ---------
+        truth : astropy.table.Table
+        difference_image_path : str
+        difference_detection_path : str
+        match_radius : float
+            Match radius in arcseconds
+        cleaned_difference_detection_path : str
+        frame : str
+            astropy.wcs coordinate frame.  E.g., "icrs" or "fk5"
+        x_col : str
+            Name of column in detection table for x coordinate
+        y_col : str
+            Name of column in detection table for y coordinate
+        bright : float
+            Minim counts for a star to be considered bright
+
+        Return
+        ------
+        astropy.table.Table :
+            cleaned catalog with matches to bright stars removed.
+        """
+        difference_wcs = data_loader.load_wcs(difference_image_path, hdu_id=0)
+
+        detection = data_loader.load_table(difference_detection_path)
+        star = truth[truth["object_type"] == "star"]
+        bright_star_idx = star["realized_flux"] > bright
+        if sum(bright_star_idx) < 1:
+            cleaned_detection = detection.copy()
+        else:
+            bright_star = star[bright_star_idx]
+            bright_star_skycoord = SkyCoord(
+                bright_star["object_ra"], bright_star["object_dec"], frame=frame, unit="deg"
+            )
+            detection_skycoord = pixel_to_skycoord(detection[x_col], detection[y_col], difference_wcs)
+            cleaned_detection = truth_matching.skymatch_and_reject(
+                detection, bright_star, detection_skycoord, bright_star_skycoord, match_radius=match_radius
+            )
+
+        cleaned_detection.write(cleaned_difference_detection_path, overwrite=True, format="ascii.ecsv")
+
+        return cleaned_detection
 
     @staticmethod
     def get_difference_id(science_id, template_id):
@@ -166,7 +234,6 @@ class Detection:
             file_path["full_output_dir"],
             self.DIFF_IMAGE_PREFIX + diff_pattern + ".fits",
         )
-        # detection
         file_path["difference_detection_path"] = Path(
             file_path["full_output_dir"],
             self.DIFF_DETECTION_PREFIX + diff_pattern + ".cat",
@@ -175,15 +242,9 @@ class Detection:
             file_path["full_output_dir"],
             self.DIFF_SCORE_PREFIX + diff_pattern + ".fits",
         )
-        # diff score image detection
-        file_path["score_image_detection_path"] = Path(
+        file_path["score_detection_path"] = Path(
             file_path["full_output_dir"],
             self.SCORE_DETECTION_PREFIX + diff_pattern + ".ecsv",
-        )
-        # decorr diff image detection
-        file_path["difference_detection_path"] = Path(
-            file_path["full_output_dir"],
-            self.DIFF_DETECTION_PREFIX + diff_pattern + ".cat",
         )
         # truth retrieval
         file_path["science_truth_path"] = self.INPUT_TRUTH_PATTERN.format(**science_id)
@@ -201,6 +262,24 @@ class Detection:
             file_path["full_output_dir"],
             self.DETECTION_TO_TRANSIENTS_PREFIX + diff_pattern + ".ecsv",
         )
+        # These are here because the cleaning is currently done based
+        # on 'truth' catalogs of stars.
+        file_path["transients_to_cleaned_detection_path"] = Path(
+            file_path["full_output_dir"],
+            self.TRANSIENTS_TO_CLEANED_DETECTION_PREFIX + diff_pattern + ".ecsv",
+        )
+        file_path["cleaned_detection_to_transients_path"] = Path(
+            file_path["full_output_dir"],
+            self.CLEANED_DETECTION_TO_TRANSIENTS_PREFIX + diff_pattern + ".ecsv",
+        )
+        file_path["cleaned_difference_detection_path"] = Path(
+            file_path["full_output_dir"],
+            self.CLEANED_DIFF_DETECTION_PREFIX + diff_pattern + ".cat",
+        )
+        file_path["cleaned_score_detection_path"] = Path(
+            file_path["full_output_dir"],
+            self.CLEANED_SCORE_DETECTION_PREFIX + diff_pattern + ".ecsv",
+        )
         file_path["transients_to_score_detection_path"] = Path(
             file_path["full_output_dir"],
             self.TRANSIENTS_TO_SCORE_DETECTION_PREFIX + diff_pattern + ".ecsv",
@@ -208,6 +287,14 @@ class Detection:
         file_path["score_detection_to_transients_path"] = Path(
             file_path["full_output_dir"],
             self.SCORE_DETECTION_TO_TRANSIENTS_PREFIX + diff_pattern + ".ecsv",
+        )
+        file_path["transients_to_cleaned_score_detection_path"] = Path(
+            file_path["full_output_dir"],
+            self.TRANSIENTS_TO_CLEANED_SCORE_DETECTION_PREFIX + diff_pattern + ".ecsv",
+        )
+        file_path["cleaned_score_detection_to_transients_path"] = Path(
+            file_path["full_output_dir"],
+            self.CLEANED_SCORE_DETECTION_TO_TRANSIENTS_PREFIX + diff_pattern + ".ecsv",
         )
         return file_path
 
@@ -263,7 +350,7 @@ class Detection:
         print("[INFO] Processing score image detection")
         source_detection.score_image_detect(
             file_path["score_image_path"],
-            file_path["score_image_detection_path"],
+            file_path["score_detection_path"],
         )
 
         print("[INFO] Processing truth retrieval")
@@ -273,6 +360,17 @@ class Detection:
             file_path["science_truth_path"],
             file_path["template_truth_path"],
             file_path["difference_truth_path"],
+        )
+
+        print("[INFO] Removing known stars from diffim image detection")
+        _ = self.__class__.reject_stars(
+            truth,
+            file_path["difference_image_path"],
+            file_path["difference_detection_path"],
+            self.REJECT_MATCH_RADIUS,
+            file_path["cleaned_difference_detection_path"],
+            x_col="X_IMAGE",
+            y_col="Y_IMAGE",
         )
 
         print("[INFO] Processing diffim detection truth matching")
@@ -285,18 +383,57 @@ class Detection:
             file_path["detection_to_transients_path"],
             x_col="X_IMAGE",
             y_col="Y_IMAGE",
+            id_col="NUMBER",
+        )
+
+        print("[INFO] Processing cleaned diffim detection truth matching")
+        _, _ = self.__class__.match_transients(
+            truth,
+            file_path["difference_image_path"],
+            file_path["cleaned_difference_detection_path"],
+            self.MATCH_RADIUS,
+            file_path["transients_to_cleaned_detection_path"],
+            file_path["cleaned_detection_to_transients_path"],
+            x_col="X_IMAGE",
+            y_col="Y_IMAGE",
+            id_col="NUMBER",
+        )
+
+        print("[INFO] Removing known stars from score image detection")
+        _ = self.__class__.reject_stars(
+            truth,
+            file_path["difference_image_path"],
+            file_path["score_detection_path"],
+            self.REJECT_MATCH_RADIUS,
+            file_path["cleaned_score_detection_path"],
+            x_col="x_peak",
+            y_col="y_peak",
         )
 
         print("[INFO] Processing score image detection truth matching")
         _, _ = self.__class__.match_transients(
             truth,
             file_path["difference_image_path"],
-            file_path["score_image_detection_path"],
+            file_path["score_detection_path"],
             self.MATCH_RADIUS,
             file_path["transients_to_score_detection_path"],
             file_path["score_detection_to_transients_path"],
-            x_col="x_peak",
-            y_col="y_peak",
+            x_col="x_centroid",
+            y_col="y_centroid",
+            id_col="id",
+        )
+
+        print("[INFO] Processing cleaned score image detection truth matching")
+        _, _ = self.__class__.match_transients(
+            truth,
+            file_path["difference_image_path"],
+            file_path["cleaned_score_detection_path"],
+            self.MATCH_RADIUS,
+            file_path["transients_to_cleaned_score_detection_path"],
+            file_path["cleaned_score_detection_to_transients_path"],
+            x_col="x_centroid",
+            y_col="y_centroid",
+            id_col="id",
         )
 
         print("[INFO] Processing finished.")

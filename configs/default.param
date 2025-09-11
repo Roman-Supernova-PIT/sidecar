@@ -1,4 +1,4 @@
-#NUMBER                   Running object number                                    
+NUMBER                   Running object number
 #ID_PARENT                Parent ID (before deblending)                            
 #EXT_NUMBER               FITS extension number                                    
 #FLUX_ISO                 Isophotal flux                                            [count]

@@ -3,7 +3,7 @@ name = "sidecar"
 description = "Supernova discovery for Roman SNPIT"
 requires-python = ">=3.11"
 dynamic = ["version"]
-authors = [{ name = "Roman Supernove Project Infrastructure Team"}]
+authors = [{ name = "Roman Supernova Project Infrastructure Team"}]
 
 maintainers = [
  {name = "Michael Wood-Vasey and Shu Liu", email = "wmwv@pitt.edu"}
@@ -24,6 +24,7 @@ dependencies = [
   "numpy",
   "astropy>=3.2",
   "photutils",
+  "roman_snpit_snappl",
   "snpit_utils",
   "sfft-romansnpit>=1.6.4.dev6",
   "sep",
