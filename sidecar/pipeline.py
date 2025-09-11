@@ -108,7 +108,7 @@ class Detection:
         match_radius,
         transients_to_detection_path,
         detection_to_transients_path,
-        transient_frame="fk5",
+        frame="fk5",
         x_col="X_IMAGE",
         y_col="Y_IMAGE",
         id_col="id",
@@ -124,8 +124,8 @@ class Detection:
             Match radius in arcseconds
         transients_to_detection_path : str
         detection_to_transients_path : str
-        transient_frame : str
-            AstroPy coordinate frame.  E.g., "icrs" or "fk5"
+        frame : str
+            astropy.wcs coordinate frame.  E.g., "icrs" or "fk5"
         x_col : str
             Name of column in detection table for x coordinate
         y_col : str
@@ -143,7 +143,7 @@ class Detection:
 
         detection = data_loader.load_table(difference_detection_path)
         transients = truth[truth["object_type"] == "transient"]
-        transients_skycoord = SkyCoord(transients["object_ra"], transients["object_dec"], frame=transient_frame, unit="deg")
+        transients_skycoord = SkyCoord(transients["object_ra"], transients["object_dec"], frame=frame, unit="deg")
         detection_skycoord = pixel_to_skycoord(detection[x_col], detection[y_col], difference_wcs)
         transients_to_detection = truth_matching.skymatch_and_join(
             transients, detection, transients_skycoord, detection_skycoord, match_radius, key="object_id"
@@ -163,7 +163,7 @@ class Detection:
         difference_detection_path,
         match_radius,
         cleaned_difference_detection_path,
-        star_frame="fk5",
+        frame="fk5",
         x_col="X_IMAGE",
         y_col="Y_IMAGE",
         bright=10,
@@ -177,10 +177,9 @@ class Detection:
         difference_detection_path : str
         match_radius : float
             Match radius in arcseconds
-        transients_to_detection_path : str
-        detection_to_transients_path : str
-        transient_frame : str
-            AstroPy coordinate frame.  E.g., "icrs" or "fk5"
+        cleaned_difference_detection_path : str
+        frame : str
+            astropy.wcs coordinate frame.  E.g., "icrs" or "fk5"
         x_col : str
             Name of column in detection table for x coordinate
         y_col : str
@@ -198,12 +197,11 @@ class Detection:
         detection = data_loader.load_table(difference_detection_path)
         star = truth[truth["object_type"] == "star"]
         bright_star_idx = star["realized_flux"] > bright
-        print(sum(bright_star_idx))
         if sum(bright_star_idx) < 1:
             cleaned_detection = detection.copy()
         else:
             bright_star = star[bright_star_idx]
-            bright_star_skycoord = SkyCoord(bright_star["object_ra"], bright_star["object_dec"], frame=star_frame, unit="deg")
+            bright_star_skycoord = SkyCoord(bright_star["object_ra"], bright_star["object_dec"], frame=frame, unit="deg")
             detection_skycoord = pixel_to_skycoord(detection[x_col], detection[y_col], difference_wcs)
             cleaned_detection = truth_matching.skymatch_and_reject(
                 detection, bright_star, detection_skycoord, bright_star_skycoord, match_radius=match_radius
