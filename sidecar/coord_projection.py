@@ -35,7 +35,14 @@ def radec_in_image(ra, dec, wcs, width, height, offset=0):
 
 
 def one_direction_skymatch(coord, cat_coord, radius=0.4 * u.arcsec):
-    # coord is in degree unit
+    """Match coord to cat_coord and given coord idx, match
+
+    Parameters
+    ----------
+    coord : astropy.coordinates.SkyCoord
+    cat_coord : astropy.coordinates.SkyCoord
+    radius : float * astropy.units.arcsec
+    """
     idx, sep2d, _ = match_coordinates_sky(coord, cat_coord)
     sep2d = sep2d.to(u.arcsec)
     matched_status = sep2d < radius
@@ -43,7 +50,17 @@ def one_direction_skymatch(coord, cat_coord, radius=0.4 * u.arcsec):
 
 
 def two_direction_skymatch(coord, cat_coord, radius=0.4 * u.arcsec):
-    # coord is in degree unit
+    """Match coord to cat_coord and give cat_coord idx, match
+
+    This differs from one_direction_skymatch in that it returns
+    the entries in cat_coord that were matched by entries in coord.
+
+    Parameters
+    ----------
+    coord : astropy.coordinates.SkyCoord
+    cat_coord : astropy.coordinates.SkyCoord
+    radius : float * astropy.units.arcsec
+    """
     idx, sep2d, _ = match_coordinates_sky(coord, cat_coord)
     idx_, _, _ = match_coordinates_sky(cat_coord, coord)
     sep2d = sep2d.to(u.arcsec)
@@ -54,10 +71,14 @@ def two_direction_skymatch(coord, cat_coord, radius=0.4 * u.arcsec):
 
 
 def one_direction_sky_reject(coord, cat_coord, radius=0.4 * u.arcsec):
+    """Reject entries in coord that are within radius of entry in cat_coord
+
+    Parameters
+    ----------
+    coord : astropy.coordinates.SkyCoord
+    cat_coord : astropy.coordinates.SkyCoord
+    radius : float * astropy.units.arcsec
     """
-    Reject entries in coord that are within radius of entry in cat_coord
-    """
-    # coord is in degree unit
     idx, sep2d, _ = match_coordinates_sky(coord, cat_coord)
     sep2d = sep2d.to(u.arcsec)
     matched_status = sep2d > radius
