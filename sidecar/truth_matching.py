@@ -6,7 +6,8 @@ from sidecar.coord_projection import one_direction_skymatch, two_direction_skyma
 MATCH_RADIUS = 1.0 * u.arcsec
 
 
-def skymatch_and_join(left_table, right_table, left_skycoord, right_skycoord, match_radius=MATCH_RADIUS, key="object_id"):
+def skymatch_and_join(left_table, right_table, left_skycoord, right_skycoord,
+                      match_radius=MATCH_RADIUS, key="object_id"):
     """Matched 'left_table' and 'right_table' that are within 'radius' of entries in 'right_table'.
 
     Parameters
@@ -58,7 +59,7 @@ def skymatch_and_reject(left_table, right_table, left_skycoord, right_skycoord, 
     astropy.table.Table
         Entries in left_table that are not within radius of objects in right_table
     """
-    matched_status, matched_id = one_direction_skymatch(left_skycoord, right_skycoord, radius=match_radius)
+    matched_status, _ = one_direction_skymatch(left_skycoord, right_skycoord, radius=match_radius)
     left_table = left_table.copy()
     left_table = left_table[~matched_status]
 

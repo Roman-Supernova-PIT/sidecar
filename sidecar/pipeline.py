@@ -6,7 +6,6 @@ import tempfile
 
 from astropy.coordinates import SkyCoord
 from astropy.wcs.utils import pixel_to_skycoord
-from astropy.table import Table
 import astropy.units as u
 
 from sidecar import data_loader
@@ -201,7 +200,9 @@ class Detection:
             cleaned_detection = detection.copy()
         else:
             bright_star = star[bright_star_idx]
-            bright_star_skycoord = SkyCoord(bright_star["object_ra"], bright_star["object_dec"], frame=frame, unit="deg")
+            bright_star_skycoord = SkyCoord(
+                bright_star["object_ra"], bright_star["object_dec"], frame=frame, unit="deg"
+            )
             detection_skycoord = pixel_to_skycoord(detection[x_col], detection[y_col], difference_wcs)
             cleaned_detection = truth_matching.skymatch_and_reject(
                 detection, bright_star, detection_skycoord, bright_star_skycoord, match_radius=match_radius

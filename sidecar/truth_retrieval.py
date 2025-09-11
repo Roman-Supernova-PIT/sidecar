@@ -2,7 +2,7 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.table import vstack
 
-from sidecar.coord_projection import xy_in_image, radec_in_image, two_direction_skymatch
+from sidecar.coord_projection import radec_in_image, two_direction_skymatch
 
 MATCH_RADIUS = 0.4
 IMAGE_WIDTH = 4088
@@ -25,21 +25,6 @@ def merge_science_and_template_truth(
     image_width = image_width or IMAGE_WIDTH
     image_height = image_height or IMAGE_HEIGHT
     offset = offset or OFFSET
-
-    science_in_science = xy_in_image(
-        science_truth["x"],
-        science_truth["y"],
-        width=image_width,
-        height=image_height,
-        offset=offset,
-    )
-    template_in_template = xy_in_image(
-        template_truth["x"],
-        template_truth["y"],
-        width=image_width,
-        height=image_height,
-        offset=offset,
-    )
 
     science_in_template = radec_in_image(
         science_truth["ra"],

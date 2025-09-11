@@ -1,6 +1,5 @@
 import subprocess
 
-from astropy.io import fits
 from astropy.table import vstack
 from astropy.wcs.utils import pixel_to_skycoord
 from photutils.centroids import centroid_com
