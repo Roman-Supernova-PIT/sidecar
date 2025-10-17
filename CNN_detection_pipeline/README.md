@@ -177,6 +177,76 @@ def normalize_with_zscale(data):
     normalized = (data - vmin) / (vmax - vmin)
     return normalized
 ```
+# Git LFS
+
+# Accessing Model Files with Git LFS
+
+This repository uses **Git Large File Storage (Git LFS)** to store large model files (`.pth` files) efficiently.
+
+## Model Files
+
+The following DenseNet model files are stored using Git LFS:
+- `CNN_detection_pipeline/DenseNet121_best.pth` (84 MB)
+- `CNN_detection_pipeline/DenseNet169_best.pth` (151 MB)
+
+## Storage Location
+
+The actual model files are stored on **GitHub's LFS servers**, not in the regular Git repository. When you clone or pull the repository, Git LFS automatically downloads these files from GitHub's LFS storage.
+
+## How to Access the Files
+
+### 1. Install Git LFS
+
+First, install Git LFS on your system:
+```bash
+# Ubuntu/Debian
+sudo apt-get install git-lfs
+
+# macOS
+brew install git-lfs
+
+# Windows
+# Download from: https://git-lfs.github.com/
+```
+
+### 2. Initialize Git LFS
+```bash
+git lfs install
+```
+
+### 3. Clone the Repository
+
+When you clone the repository, Git LFS will automatically download the model files:
+```bash
+git clone https://github.com/Roman-Supernova-PIT/sidecar.git
+cd CNN_detection_pipeline
+```
+
+The `.pth` files will be automatically downloaded to the correct locations.
+
+### 4. Verify Files Were Downloaded
+```bash
+git lfs ls-files
+```
+
+You should see the model files listed. You can also check the file sizes:
+```bash
+ls -lh CNN_detection_pipeline/*.pth
+```
+
+## Authentication
+
+**No special authentication is needed** beyond normal GitHub access:
+If you already have access to clone this repository, you automatically have access to the LFS files.
+
+## For Repository Maintainers
+
+To track new large files with LFS:
+```bash
+git lfs track "*.pth"
+git add .gitattributes
+git commit -m "Track model files with LFS"
+```
 
 **Author**: [BC Nagam]
 **Last Updated**: October 2025
