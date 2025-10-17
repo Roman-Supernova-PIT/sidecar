@@ -1,1 +1,1 @@
-Added CNN detection pipeline with ECSV cutout generator and DenseNet inference for transient detection, including comprehensive test suite. Made everything linter proof.
+Added CNN detection pipeline with ECSV cutout generator and DenseNet inference for transient detection, including comprehensive test suite. In this commit, everything is linter proof.
