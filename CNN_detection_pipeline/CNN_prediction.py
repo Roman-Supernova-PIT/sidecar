@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-User: BCN
+"""User: BCN
 Date: 14 Oct 2025
 
 Prerequisite: make_cutouts.py should have been executed before this.
@@ -618,3 +617,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    
