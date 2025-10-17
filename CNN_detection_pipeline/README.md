@@ -1,10 +1,8 @@
-# How to Use
-
-STEP 1: python3 make_cutouts.py
-STEP 2: python3 CNN_prediction.py
-
-# ---------------------------- make_cutouts.py --------------------------------------
-
+# Step 1: Run make_cutouts.py 
+## General Usage:
+```
+python3 make_cutouts.py
+```
 ### Required Dependencies
 ```bash
 pip install numpy astropy matplotlib tqdm
@@ -91,8 +89,11 @@ normalized = (data - data_min) / (data_max - data_min)
 ```
 
 
-#------------------------------CNN_prediction.py---------------------------------------
-
+# Step 2: CNN_prediction.py
+## General Usage
+```
+python3 CNN_prediction.py
+```
 ## Overview
 
 This script processes 64×64 FITS cutouts using a trained DenseNet classifier to identify positive detections (transients/supernovae). It uses the same ZScale normalization as the training pipeline to ensure consistent preprocessing.
