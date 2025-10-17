@@ -1,0 +1,1 @@
+Added CNN detection pipeline with make_cutouts.py for ECSV cutout generation and CNN_prediction.py for DenseNet inference on FITS files.
