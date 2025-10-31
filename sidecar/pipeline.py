@@ -20,9 +20,10 @@ from sidecar.util import (
     read_data_records,
 )
 
-from snpit_utils.config import Config
-from snpit_utils.logger import SNLogger
-from snappl import ImageCollection
+from snappl.dbclient import SNPITDBClient
+from snappl.imagecollection import ImageCollection
+from snappl.config import Config
+from snappl.logger import SNLogger
 
 
 class Detection:
@@ -636,8 +637,9 @@ def main():
         SNLogger.warning("Stopping.")
         return
 
+    dbclient = SNPITDBClient()
     image_collection = ImageCollection.get_collection(
-        collection=args.image_collection, subset=args.image_subset, base_path=args.base_path
+        provenance_tag="ou2024", process="load_ou2024_image", dbclient=dbclient
     )
 
     detection = Detection(image_collection, data_records, args.temp_dir, args.output_dir)
