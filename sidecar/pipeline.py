@@ -22,6 +22,7 @@ from sidecar.util import (
 
 from snpit_utils.config import Config
 from snpit_utils.logger import SNLogger
+from snappl import ImageCollection
 
 
 class Detection:
@@ -41,10 +42,7 @@ class Detection:
 
     SIMS_DIR = os.getenv("SIMS_DIR", None)
 
-    INPUT_IMAGE_PATTERN = (
-        SIMS_DIR
-        + "/RomanTDS/images/simple_model/{band}/{pointing}/Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits.gz"
-    )
+    BASE_PATH = "/global/cfs/cdirs/lsst/shared/external/roman-desc-sims/Roman_data/" "RomanTDS/images/simple_model/"
     INPUT_TRUTH_PATTERN = SIMS_DIR + "/RomanTDS/truth/{band}/{pointing}/Roman_TDS_index_{band}_{pointing}_{sca}.txt"
 
     DIFF_PATTERN = (
@@ -78,12 +76,11 @@ class Detection:
     TRANSIENTS_TO_CLEANED_SCORE_DETECTION_PREFIX = "transients_to_cleaned_score_detection_"
     CLEANED_SCORE_DETECTION_TO_TRANSIENTS_PREFIX = "cleaned_score_detection_to_transients_"
 
-    def __init__(
-        self, data_records_path, temp_dir=None, output_dir="output", verbose=False
-    ):
-        SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
 
-        self.data_records_path = data_records_path
+    def __init__(self, image_collection, data_records, temp_dir=None, output_dir="./output", verbose=False):
+        SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
+        self.image_collection = image_collection
+        self.data_records = data_records
         self.data_records = pd.read_csv(
             self.data_records_path, usecols=self.INPUT_COLUMNS
         )
@@ -238,9 +235,10 @@ class Detection:
         file_path["full_output_dir"] = Path(self.output_dir, diff_pattern)
         os.makedirs(file_path["full_output_dir"], exist_ok=True)
 
+        file_path["science_image_path"] = self.image_collection.get_image_path(**science_id)
+        file_path["template_image_path"] = self.image_collection.get_image_path(**template_id)
+
         # subtraction
-        file_path["science_image_path"] = self.INPUT_IMAGE_PATTERN.format(**science_id)
-        file_path["template_image_path"] = self.INPUT_IMAGE_PATTERN.format(**template_id)
         file_path["difference_image_path"] = Path(
             file_path["full_output_dir"],
             self.DIFF_IMAGE_PREFIX + diff_pattern + ".fits",
@@ -311,6 +309,7 @@ class Detection:
 
     def run_one_subtraction(
         self,
+        image_collection,
         science_band,
         science_pointing,
         science_sca,
@@ -339,6 +338,7 @@ class Detection:
 
         SNLogger.info("Processing subtraction")
         subtract = subtraction.Pipeline(
+            image_collection=image_collection,
             science_band=science_band,
             science_pointing=science_pointing,
             science_sca=science_sca,
@@ -515,6 +515,13 @@ def main():
         help="Input file with data records.  It is an error to specify --data-records and --science-path.",
     )
     parser.add_argument(
+        "--image-collection", "--ic", required=True, help="Collection of the images we're using", default="ou2024"
+    )
+    parser.add_argument("--image-subset", "--is", default=None, help="Image collection subset")
+    parser.add_argument(
+        "--base-path", type=str, default="", help='Base path for images.  Required for "manual_fits" image collection'
+    )
+    parser.add_argument(
         "--science-image-path",
         "--science-path",
         type=str,
@@ -629,7 +636,11 @@ def main():
         SNLogger.warning("Stopping.")
         return
 
-    detection = Detection(args.data_records, args.temp_dir, args.output_path)
+    image_collection = ImageCollection.get_collection(
+        collection=args.image_collection, subset=args.image_subset, base_path=args.base_path
+    )
+
+    detection = Detection(image_collection, data_records, args.temp_dir, args.output_dir)
     detection.run()
 
 
