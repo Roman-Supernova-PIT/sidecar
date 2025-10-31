@@ -76,7 +76,6 @@ class Detection:
     TRANSIENTS_TO_CLEANED_SCORE_DETECTION_PREFIX = "transients_to_cleaned_score_detection_"
     CLEANED_SCORE_DETECTION_TO_TRANSIENTS_PREFIX = "cleaned_score_detection_to_transients_"
 
-
     def __init__(self, image_collection, data_records, temp_dir=None, output_dir="./output", verbose=False):
         SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
         self.image_collection = image_collection
@@ -465,6 +464,7 @@ class Detection:
 
         for i, row in self.data_records.iterrows():
             self.run_one_subtraction(
+                self.image_collection,
                 row["science_band"],
                 row["science_pointing"],
                 row["science_sca"],
