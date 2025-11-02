@@ -8,6 +8,8 @@ from astropy.table import Table
 import pandas as pd
 
 from snappl.image import OpenUniverse2024FITSImage
+from snappl.dbclient import SNPITDBClient
+from snappl.imagecollection import ImageCollection
 
 
 INPUT_IMAGE_PATTERN = (
@@ -39,20 +41,21 @@ class ImageInfo:
         self.psf_path = self.temp_dir / f"psf_{self.image_name}"
 
 
-def get_image_info_for_ra_dec(ra, dec, band=None):
-    server_url = "https://roman-desc-simdex.lbl.gov"
-    req = requests.Session()
-    json = {"containing": [ra, dec]}
-    if band is not None:
-        json["filter"] = band
-    result = req.post(f"{server_url}/findromanimages", json=json)
-    if result.status_code != 200:
-        raise RuntimeError(f"Got status code {result.status_code}\n{result.text}")
-    df = Table.from_pandas(pd.DataFrame(result.json()))
-    return df
+def get_image_info_for_ra_dec(ra, dec, provenance_tag, process, band=None, dbclient=None):
+    if dbclient is None:
+        dbclient = SNPITDBClient()
+
+    dbclient = SNPITDBClient()
+    image_collection = ImageCollection.get_collection(
+        provenance_tag=provenance_tag, process=process, dbclient=dbclient
+    )
+
+    image_list = image_collection.find_images(ra=ra, dec=dec, dbclient=dbclient)
+
+    return image_list
 
 
-def get_templates_for_points(points, band, min_points=3):
+def get_templates_for_points(points, band, provenance_tag, process, min_points=3):
     """Returns all images in the same bandpass that overlap at least min_points
     out of the list of points passed in.
 
@@ -74,7 +77,7 @@ def get_templates_for_points(points, band, min_points=3):
     """
     matches = []
     for i, (ra, dec) in enumerate(points):
-        matching_images = get_image_info_for_ra_dec(ra, dec, band=band)
+        matching_images = get_image_info_for_ra_dec(ra, dec, provenance_tag, process, band=band)
         matches.append(matching_images)
 
     matches = pd.concat(matches)
