@@ -20,9 +20,9 @@ def test_ra_dec_query():
     collection = "snpitdb"
     provenance_tag = "ou2024"
     process = "load_ou2024_image"
-    collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
+    image_collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
 
-    images = collection.find_images(ra=ra, dec=dec, band="H158")
+    images = image_collection.find_images(ra=ra, dec=dec, band="H158")
 
     assert len(images) == 127
 
@@ -45,19 +45,16 @@ def test_get_templates_for_points():
 
 
 def test_get_center_and_corners():
-    image_path = Path(
-        Path(__file__).parent,
-        "photometry_test_data",
-        "RomanTDS",
-        "images",
-        "simple_model",
-        "R062",
-        "35083",
-        "Roman_TDS_simple_model_R062_35083_8.fits.gz",
-    )
+    cfg = Config.get()
+    collection = "snpitdb"
+    provenance_tag = "ou2024"
+    process = "load_ou2024_image"
+    image_collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
+
     expected_columns = ("ra", "dec", "ra_00", "dec_00", "ra_01", "dec_01", "ra_10", "dec_10", "ra_11", "dec_11")
 
-    points = get_center_and_corners(image_path)
+    image = image_collection.get_image(pointing=2979, band="F184", sca=12)
+    points = get_center_and_corners(image)
 
     assert len(points) == 14
 
