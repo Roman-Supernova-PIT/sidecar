@@ -1,5 +1,8 @@
 from pathlib import Path
 
+from snappl.config import Config
+from snappl.imagecollection import ImageCollection
+
 from sidecar.util import (
     get_center_and_corners,
     get_earliest_template_for_image,
@@ -12,9 +15,14 @@ from sidecar.util import (
 )
 
 
-def test_query():
+def test_ra_dec_query():
     ra, dec = 8.2, -43.0
-    images = get_image_info_for_ra_dec(ra, dec, band=None)
+    collection = "snpitdb"
+    provenance_tag = "ou2024"
+    process = "load_ou2024_image"
+    collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
+
+    images = collection.find_images(ra, dec, band=None)
 
     assert len(images) == 1110
 
@@ -116,7 +124,9 @@ def test_get_image_info_for_ra_dec():
     )
 
     ra, dec = 8.3, -42
-    images = get_image_info_for_ra_dec(ra, dec)
+    provenance_tag = "dbou2024_test"
+    process = "import_ou2024_l2images"
+    images = get_image_info_for_ra_dec(ra, dec, provenance_tag, process)
     assert set(images.columns) == set(expected_columns)
 
     print(images.dtypes)
