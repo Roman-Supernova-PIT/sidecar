@@ -16,15 +16,15 @@ from sidecar.util import (
 
 
 def test_ra_dec_query():
-    ra, dec = 8.2, -43.0
+    ra, dec = 7.55, -44.8
     collection = "snpitdb"
     provenance_tag = "ou2024"
     process = "load_ou2024_image"
     collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
 
-    images = collection.find_images(ra, dec, band=None)
+    images = collection.find_images(ra=ra, dec=dec, band="H158")
 
-    assert len(images) == 1110
+    assert len(images) == 127
 
 
 def test_get_templates_for_points():
