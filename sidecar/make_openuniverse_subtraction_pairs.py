@@ -55,7 +55,7 @@ def run(
     head = "science_band,science_pointing,science_sca,template_band,template_pointing,template_sca"
     print(head)
     for s, t in zip(science_images, template_images):
-        print(s.get("filter"), s.pointing, s.sca, t.get("filter"), t.pointing, t.sca)
+        print(s.get("band"), s.pointing, s.sca, t.get("band"), t.pointing, t.sca)
 
     return science_images, template_images
 

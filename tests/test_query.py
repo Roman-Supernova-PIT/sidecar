@@ -55,12 +55,12 @@ def test_get_center_and_corners():
     process = "load_ou2024_image"
     image_collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
 
-    expected_columns = ("ra", "dec", "ra_00", "dec_00", "ra_01", "dec_01", "ra_10", "dec_10", "ra_11", "dec_11")
+    expected_columns = ("ra", "dec", "ra_corner_00", "dec_corner_00", "ra_corner_01", "dec_corner_01", "ra_corner_10", "dec_corner_10", "ra_corner_11", "dec_corner_11")
 
     image = image_collection.get_image(pointing=2979, band="F184", sca=12)
     points = get_center_and_corners(image)
 
-    assert len(points) == 14
+    assert len(points) == 10
 
     # Make sure we have the columns we expect
     assert len(set(expected_columns)) == len(set(expected_columns).intersection(set(points.to_dict().keys())))
@@ -85,21 +85,17 @@ def test_get_pointing_sca_band_from_image_path():
 
 
 def test_get_earliest_template_for_image():
-    image_path = Path(
-        Path(__file__).parent,
-        "photometry_test_data",
-        "RomanTDS",
-        "images",
-        "simple_model",
-        "R062",
-        "35083",
-        "Roman_TDS_simple_model_R062_35083_8.fits.gz",
-    )
+    pointing, sca, band = 35083, 8, "R062"
 
-    points = get_center_and_corners(image_path)
-    earliest_template = get_earliest_template_for_image(points)
+    collection = "snpitdb"
+    provenance_tag = "ou2024"
+    process = "load_ou2024_image"
+    image_collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
 
-    assert len(earliest_template) == 19
+    image = image_collection.get_image(pointing=pointing, sca=sca, band=band)
+    earliest_template = get_earliest_template_for_image(image_collection, image)
+
+    assert len(earliest_template) == 6
 
 
 def test_get_image_info_for_ra_dec():

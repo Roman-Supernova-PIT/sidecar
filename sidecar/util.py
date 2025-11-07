@@ -3,7 +3,6 @@ import os
 from pathlib import Path
 import re
 
-from astropy.table import Table
 import pandas as pd
 
 from snappl.image import OpenUniverse2024FITSImage
@@ -68,13 +67,13 @@ def get_templates_for_points(image_collection, points, band, min_points=3):
 
     Returns
     -------
-    images : astropy.table.Table of image info from Roman-DESC-simdex
+    images : pandas DataFrame of image pointing, sca, band, exptime, mjd
     """
     matches = []
     for i, (ra, dec) in enumerate(points):
         matching_images = image_collection.find_images(ra=ra, dec=dec, band=band)
-        entries = [(im.pointing, im.band, im.sca) for im in matching_images]
-        this_df = pd.DataFrame.from_records(entries, columns=("pointing", "band", "sca"))
+        entries = [(im.pointing, im.band, im.sca, im.exptime, im.mjd) for im in matching_images]
+        this_df = pd.DataFrame.from_records(entries, columns=("pointing", "band", "sca", "exptime", "mjd"))
         matches.append(this_df)
 
     matches = pd.concat(matches)
@@ -83,7 +82,7 @@ def get_templates_for_points(image_collection, points, band, min_points=3):
     matches = matches.groupby(matches.columns.tolist()).size().reset_index().rename(columns={0: "counts"})
     good_matches = matches.loc[matches.counts >= min_points]
 
-    return Table.from_pandas(good_matches)
+    return good_matches
 
 
 def get_templates_for_image(image_collection, im, min_points=3):
@@ -95,8 +94,8 @@ def get_templates_for_image(image_collection, im, min_points=3):
     Parameters
     ----------
     images: Object with data attributes
-    ("ra", "dec", "ra_00", "dec_00", "ra_01", "dec_01", "ra_10", "dec_10", "ra_11", "dec_11")
-    and get method for "filter"
+    ("ra", "dec", "ra_corner_00", "dec_corner_00", "ra_corner_01", "dec_corner_01", "ra_corner_10", "dec_corner_10", "ra_corner_11", "dec_corner_11")
+    and get method for "band"
     min_points: int
 
     Returns
@@ -104,17 +103,15 @@ def get_templates_for_image(image_collection, im, min_points=3):
     images : list of (pointing, sca, band) tuples of overlapping images
     """
     corners = [
-        (im.ra_00, im.dec_00),
-        (im.ra_01, im.dec_01),
-        (im.ra_10, im.dec_10),
-        (im.ra_11, im.dec_11),
+        (im.ra_corner_00, im.dec_corner_00),
+        (im.ra_corner_01, im.dec_corner_01),
+        (im.ra_corner_10, im.dec_corner_10),
+        (im.ra_corner_11, im.dec_corner_11),
     ]
     center = [(im.ra, im.dec)]
     points = center + corners
 
-    # band.filter would be a method so we can't use data attribute of same name
-    # and instead use `get` to access
-    band = im.get("filter")
+    band = im.band
 
     return get_templates_for_points(image_collection, points, band=band, min_points=min_points)
 
@@ -134,7 +131,7 @@ def get_earliest_template_for_image(image_collection, image, **kwargs):
 
 
 def get_center_and_corners(image):
-    """Calculate the RA, Dec center and corners of an image
+    """Retrieve the RA, Dec center and corners of an image
 
     Parameters
     ----------
@@ -143,105 +140,40 @@ def get_center_and_corners(image):
     Returns
     -------
     pd.DataFrame of center and corners RA, Dec.
-
-    Notes
-    -----
-    This a a work-around for the fact that roman-desc-simdex doesn't currently
-    support looking up an image by pointing, sca, band through the NERSC Spin.
-    So we read the image and calculate the corners using code copied
-    over from roman-desc-simdex
     """
-
-    CALCULATE_OUR_OWN_CORNERS = True
-    if CALCULATE_OUR_OWN_CORNERS:
-        wcs = image.get_wcs()
-
-        nx, ny = image.image_shape
-
-        # Here's the code from roman-desc-simdex to calculate corners
-        corner_ra, corner_dec = wcs.pixel_to_world([0, 0, nx - 1, nx - 1], [0, ny - 1, 0, ny - 1])
-        # Off by 0.5 or 1 pixel isn't a concern here.
-        center_ra, center_dec = wcs.pixel_to_world(nx / 2, ny / 2)
-
-        min_ra = min(corner_ra)
-        max_ra = max(corner_ra)
-        min_dec = min(corner_dec)
-        max_dec = max(corner_dec)
-
-        # Attempt to order them so that 00, 01, 10, 11 makes sense on the sky
-        ra_order = [0, 1, 2, 3]
-        ra_order.sort(key=lambda i: corner_ra[i])
-
-        # Try to detect an RA that spans 0
-        if corner_ra[ra_order[3]] - corner_ra[ra_order[0]] > 180.0:
-            newras = [r - 360.0 if r > 180.0 else r for r in corner_ra]
-            ra_order.sort(key=lambda i: newras[i])
-            min_ra = min(newras)
-            max_ra = max(newras)
-            min_ra = min_ra if min_ra > 0 else min_ra + 360.0
-            max_ra = max_ra if max_ra > 0 else max_ra + 360.0
-
-        # Of the two lowest ras, of those pick the one with the lower dec;
-        #   that's 00, the other one is 01
-        dex00 = ra_order[0] if corner_dec[ra_order[0]] < corner_dec[ra_order[1]] else ra_order[1]
-        dex01 = ra_order[1] if corner_dec[ra_order[0]] < corner_dec[ra_order[1]] else ra_order[0]
-
-        # Same thing, now high ra
-        dex10 = ra_order[2] if corner_dec[ra_order[2]] < corner_dec[ra_order[3]] else ra_order[3]
-        dex11 = ra_order[3] if corner_dec[ra_order[2]] < corner_dec[ra_order[3]] else ra_order[2]
-
-        ra_00 = corner_ra[dex00]
-        dec_00 = corner_dec[dex00]
-        ra_01 = corner_ra[dex01]
-        dec_01 = corner_dec[dex01]
-        ra_10 = corner_ra[dex10]
-        dec_10 = corner_dec[dex10]
-        ra_11 = corner_ra[dex11]
-        dec_11 = corner_dec[dex11]
-
     coords = (
-        center_ra,
-        center_dec,
-        ra_00,
-        dec_00,
-        ra_01,
-        dec_01,
-        ra_10,
-        dec_10,
-        ra_11,
-        dec_11,
-        min_ra,
-        max_ra,
-        min_dec,
-        max_dec,
+        image.ra,
+        image.dec,
+        image.ra_corner_00,
+        image.dec_corner_00,
+        image.ra_corner_01,
+        image.dec_corner_01,
+        image.ra_corner_10,
+        image.dec_corner_10,
+        image.ra_corner_11,
+        image.dec_corner_11,
     )
     names = (
         "ra",
         "dec",
-        "ra_00",
-        "dec_00",
-        "ra_01",
-        "dec_01",
-        "ra_10",
-        "dec_10",
-        "ra_11",
-        "dec_11",
-        "min_ra",
-        "max_ra",
-        "min_dec",
-        "max_dec",
+        "ra_corner_00",
+        "dec_corner_00",
+        "ra_corner_01",
+        "dec_corner_01",
+        "ra_corner_10",
+        "dec_corner_10",
+        "ra_corner_11",
+        "dec_corner_11",
     )
 
     df = pd.DataFrame.from_records([coords], columns=names)
     df = df.iloc[-1]
-    #    df = pd.Series([coords], columns=names)
-    #    data_dict = {n: c for n, c in zip(coords, names)}
-    #    df = pd.Series(data_dict)
 
     return df
 
 
 def make_data_records_from_pointing(
+    image_collection,
     science_pointing=None,
     science_sca=None,
     science_band=None,
@@ -258,6 +190,8 @@ def make_data_records_from_pointing(
 
     Parameters
     ----------
+    image_collection: snapp.ImageCollection
+        Source of information about and pointers to images
     science_pointing: int, None
         Pointing of science image
     science_sca: int, None
@@ -289,15 +223,14 @@ def make_data_records_from_pointing(
             "band": template_band,
         }
     else:
-        science_image_path = Path(INPUT_IMAGE_PATTERN.format(**science_id))
-        science_image_points = get_center_and_corners(science_image_path)
-        science_image_points["filter"] = science_id["band"]
+        science_image = image_collection.get_image(**science_id)
+        science_image_points = get_center_and_corners(science_image)
 
-        template_image_info = get_earliest_template_for_image(science_image_points)
+        template_image_info = get_earliest_template_for_image(image_collection, science_image_points)
         template_id = {
             "pointing": template_image_info.pointing,
             "sca": template_image_info.sca,
-            "band": template_image_info.get("filter"),
+            "band": template_image_info.band,
         }
 
     # Create a DataFrame that looks just like what we were loading in from the file.
@@ -326,7 +259,7 @@ def make_data_records_from_pointing(
     return data_records
 
 
-def make_data_records_from_image_path(science_image_path, template_image_path=None):
+def make_data_records_from_image_path(science_image_path, image_collection, template_image_path=None):
     """Create the pointing, sca, band records for an image path.
 
     If a template path is not given, then automatically finds one.
@@ -342,7 +275,7 @@ def make_data_records_from_image_path(science_image_path, template_image_path=No
     """
     science_pointing, science_sca, science_band = get_pointing_sca_band_from_image_path(science_image_path)
 
-    data_records = make_data_records_from_pointing(science_pointing, science_sca, science_band)
+    data_records = make_data_records_from_pointing(image_collection, science_pointing, science_sca, science_band)
 
     return data_records
 
