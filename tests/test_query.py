@@ -29,17 +29,21 @@ def test_ra_dec_query():
 
 def test_get_templates_for_points():
     band = "R062"
+    collection = "snpitdb"
+    provenance_tag = "ou2024"
+    process = "load_ou2024_image"
+    image_collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
 
     corners = [
-        (8.2, -43.1),
-        (8.2, -42.9),
-        (8.25, -43.1),
-        (8.25, -43.9),
+        (7.35, -44.9),
+        (7.35, -44.7),
+        (7.65, -44.9),
+        (7.65, -44.7),
     ]
-    center = [(8.3, -43.0)]
+    center = [(7.5, -44.8)]
     points = center + corners
 
-    templates = get_templates_for_points(points, band)
+    templates = get_templates_for_points(image_collection, points, band)
 
     assert len(templates) == 7
 

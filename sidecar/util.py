@@ -40,13 +40,13 @@ class ImageInfo:
         self.psf_path = self.temp_dir / f"psf_{self.image_name}"
 
 
-def get_image_info_for_ra_dec(ra, dec, provenance_tag, process, band=None, dbclient=None):
+def get_image_info_for_ra_dec(ra, dec, collection, provenance_tag, process, band=None, dbclient=None):
     if dbclient is None:
         dbclient = SNPITDBClient()
 
     dbclient = SNPITDBClient()
     image_collection = ImageCollection().get_collection(
-        provenance_tag=provenance_tag, process=process, dbclient=dbclient
+        collection=collection, provenance_tag=provenance_tag, process=process, dbclient=dbclient
     )
 
     image_list = image_collection.find_images(ra=ra, dec=dec, dbclient=dbclient)
@@ -54,7 +54,7 @@ def get_image_info_for_ra_dec(ra, dec, provenance_tag, process, band=None, dbcli
     return image_list
 
 
-def get_templates_for_points(points, band, provenance_tag, process, min_points=3):
+def get_templates_for_points(image_collection, points, band, min_points=3):
     """Returns all images in the same bandpass that overlap at least min_points
     out of the list of points passed in.
 
@@ -67,17 +67,13 @@ def get_templates_for_points(points, band, provenance_tag, process, min_points=3
     Returns
     -------
     images : astropy.table.Table of image info from Roman-DESC-simdex
-
-    Notes
-    -----
-    This uses the roman-desc-simdex NERSC Spin server.
-    The DB server query for image info as a function of RA, Dec sometimes fails.
-    If it does then it will raise a RuntimeError, this function will let that pass through.
     """
     matches = []
     for i, (ra, dec) in enumerate(points):
-        matching_images = get_image_info_for_ra_dec(ra, dec, provenance_tag, process, band=band)
-        matches.append(matching_images)
+        matching_images = image_collection.find_images(ra=ra, dec=dec, band=band)
+        entries = [(im.pointing, im.band, im.sca) for im in matching_images]
+        this_df = pd.DataFrame.from_records(entries, columns=("pointing", "band", "sca"))
+        matches.append(this_df)
 
     matches = pd.concat(matches)
     # From
@@ -88,7 +84,7 @@ def get_templates_for_points(points, band, provenance_tag, process, min_points=3
     return Table.from_pandas(good_matches)
 
 
-def get_templates_for_image(im, min_points=3):
+def get_templates_for_image(image_collection, im, min_points=3):
     """Return a list of matching images that could be used as templates.
 
     Returns all images in the same bandpass that overlap at least min_points
@@ -118,24 +114,24 @@ def get_templates_for_image(im, min_points=3):
     # and instead use `get` to access
     band = im.get("filter")
 
-    return get_templates_for_points(points, band=band, min_points=min_points)
+    return get_templates_for_points(image_collection, points, band=band, min_points=min_points)
 
 
-def get_earliest_template_for_image(image, **kwargs):
+def get_earliest_template_for_image(image_collection, image, **kwargs):
     """Get the earliest template that overlaps at least half the image.
 
     Parameters
     ----------
     image : DataFrame of image info from Roman-DESC-simdex
     """
-    templates = get_templates_for_image(image, **kwargs)
+    templates = get_templates_for_image(image_collection, image, **kwargs)
     # Get earliest MJD
     earliest_template = templates.iloc[templates.mjd.argsort()].iloc[0]
 
     return earliest_template
 
 
-def get_center_and_corners(image_path):
+def get_center_and_corners(image):
     """Calculate the RA, Dec center and corners of an image
 
     Parameters
@@ -153,51 +149,53 @@ def get_center_and_corners(image_path):
     So we read the image and calculate the corners using code copied
     over from roman-desc-simdex
     """
-    science_image = OpenUniverse2024FITSImage(image_path, None, None)
-    wcs = science_image.get_wcs()
 
-    nx, ny = science_image.image_shape
+    CALCULATE_OUR_OWN_CORNERS = True
+    if CALCULATE_OUR_OWN_CORNERS:
+        wcs = image.get_wcs()
 
-    # Here's the code from roman-desc-simdex to calculate corners
-    corner_ra, corner_dec = wcs.pixel_to_world([0, 0, nx - 1, nx - 1], [0, ny - 1, 0, ny - 1])
-    # Off by 0.5 or 1 pixel isn't a concern here.
-    center_ra, center_dec = wcs.pixel_to_world(nx / 2, ny / 2)
+        nx, ny = image.image_shape
 
-    min_ra = min(corner_ra)
-    max_ra = max(corner_ra)
-    min_dec = min(corner_dec)
-    max_dec = max(corner_dec)
+        # Here's the code from roman-desc-simdex to calculate corners
+        corner_ra, corner_dec = wcs.pixel_to_world([0, 0, nx - 1, nx - 1], [0, ny - 1, 0, ny - 1])
+        # Off by 0.5 or 1 pixel isn't a concern here.
+        center_ra, center_dec = wcs.pixel_to_world(nx / 2, ny / 2)
 
-    # Attempt to order them so that 00, 01, 10, 11 makes sense on the sky
-    ra_order = [0, 1, 2, 3]
-    ra_order.sort(key=lambda i: corner_ra[i])
+        min_ra = min(corner_ra)
+        max_ra = max(corner_ra)
+        min_dec = min(corner_dec)
+        max_dec = max(corner_dec)
 
-    # Try to detect an RA that spans 0
-    if corner_ra[ra_order[3]] - corner_ra[ra_order[0]] > 180.0:
-        newras = [r - 360.0 if r > 180.0 else r for r in corner_ra]
-        ra_order.sort(key=lambda i: newras[i])
-        min_ra = min(newras)
-        max_ra = max(newras)
-        min_ra = min_ra if min_ra > 0 else min_ra + 360.0
-        max_ra = max_ra if max_ra > 0 else max_ra + 360.0
+        # Attempt to order them so that 00, 01, 10, 11 makes sense on the sky
+        ra_order = [0, 1, 2, 3]
+        ra_order.sort(key=lambda i: corner_ra[i])
 
-    # Of the two lowest ras, of those pick the one with the lower dec;
-    #   that's 00, the other one is 01
-    dex00 = ra_order[0] if corner_dec[ra_order[0]] < corner_dec[ra_order[1]] else ra_order[1]
-    dex01 = ra_order[1] if corner_dec[ra_order[0]] < corner_dec[ra_order[1]] else ra_order[0]
+        # Try to detect an RA that spans 0
+        if corner_ra[ra_order[3]] - corner_ra[ra_order[0]] > 180.0:
+            newras = [r - 360.0 if r > 180.0 else r for r in corner_ra]
+            ra_order.sort(key=lambda i: newras[i])
+            min_ra = min(newras)
+            max_ra = max(newras)
+            min_ra = min_ra if min_ra > 0 else min_ra + 360.0
+            max_ra = max_ra if max_ra > 0 else max_ra + 360.0
 
-    # Same thing, now high ra
-    dex10 = ra_order[2] if corner_dec[ra_order[2]] < corner_dec[ra_order[3]] else ra_order[3]
-    dex11 = ra_order[3] if corner_dec[ra_order[2]] < corner_dec[ra_order[3]] else ra_order[2]
+        # Of the two lowest ras, of those pick the one with the lower dec;
+        #   that's 00, the other one is 01
+        dex00 = ra_order[0] if corner_dec[ra_order[0]] < corner_dec[ra_order[1]] else ra_order[1]
+        dex01 = ra_order[1] if corner_dec[ra_order[0]] < corner_dec[ra_order[1]] else ra_order[0]
 
-    ra_00 = corner_ra[dex00]
-    dec_00 = corner_dec[dex00]
-    ra_01 = corner_ra[dex01]
-    dec_01 = corner_dec[dex01]
-    ra_10 = corner_ra[dex10]
-    dec_10 = corner_dec[dex10]
-    ra_11 = corner_ra[dex11]
-    dec_11 = corner_dec[dex11]
+        # Same thing, now high ra
+        dex10 = ra_order[2] if corner_dec[ra_order[2]] < corner_dec[ra_order[3]] else ra_order[3]
+        dex11 = ra_order[3] if corner_dec[ra_order[2]] < corner_dec[ra_order[3]] else ra_order[2]
+
+        ra_00 = corner_ra[dex00]
+        dec_00 = corner_dec[dex00]
+        ra_01 = corner_ra[dex01]
+        dec_01 = corner_dec[dex01]
+        ra_10 = corner_ra[dex10]
+        dec_10 = corner_dec[dex10]
+        ra_11 = corner_ra[dex11]
+        dec_11 = corner_dec[dex11]
 
     coords = (
         center_ra,
