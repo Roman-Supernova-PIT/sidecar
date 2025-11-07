@@ -35,17 +35,17 @@ def test_get_templates_for_points():
     image_collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
 
     corners = [
-        (7.35, -44.9),
-        (7.35, -44.7),
-        (7.65, -44.9),
-        (7.65, -44.7),
+        (7.44, -44.86),
+        (7.44, -44.74),
+        (7.49, -44.86),
+        (7.49, -44.74),
     ]
     center = [(7.5, -44.8)]
     points = center + corners
 
     templates = get_templates_for_points(image_collection, points, band)
 
-    assert len(templates) == 7
+    assert len(templates) == 61
 
 
 def test_get_center_and_corners():
