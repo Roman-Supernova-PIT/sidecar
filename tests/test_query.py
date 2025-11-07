@@ -106,32 +106,19 @@ def test_get_image_info_for_ra_dec():
     expected_columns = (
         "mjd",
         "exptime",
-        "pa",
-        "boredec",
-        "borera",
-        "filter",
+        "band",
         "pointing",
         "sca",
-        "ra",
-        "dec",
-        "ra_00",
-        "dec_00",
-        "ra_01",
-        "dec_01",
-        "ra_10",
-        "dec_10",
-        "ra_11",
-        "dec_11",
     )
 
-    ra, dec = 8.3, -42
-    provenance_tag = "dbou2024_test"
-    process = "import_ou2024_l2images"
-    images = get_image_info_for_ra_dec(ra, dec, provenance_tag, process)
+    ra, dec = 7.55, -44.8
+    collection = "snpitdb"
+    provenance_tag = "ou2024"
+    process = "load_ou2024_image"
+    images = get_image_info_for_ra_dec(ra, dec, collection, provenance_tag, process)
     assert set(images.columns) == set(expected_columns)
 
-    print(images.dtypes)
-    assert len(images) == 484
+    assert len(images) == 854
 
 
 def test_read_data_records_from_file():

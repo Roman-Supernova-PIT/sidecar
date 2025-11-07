@@ -50,8 +50,10 @@ def get_image_info_for_ra_dec(ra, dec, collection, provenance_tag, process, band
     )
 
     image_list = image_collection.find_images(ra=ra, dec=dec, dbclient=dbclient)
+    entries = [(im.pointing, im.band, im.sca, im.exptime, im.mjd) for im in image_list]
+    image_df = pd.DataFrame.from_records(entries, columns=("pointing", "band", "sca", "exptime", "mjd"))
 
-    return image_list
+    return image_df
 
 
 def get_templates_for_points(image_collection, points, band, min_points=3):
