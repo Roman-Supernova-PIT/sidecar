@@ -12,7 +12,6 @@ import cupy as cp
 
 from sfft.SpaceSFFTCupyFlow import SpaceSFFT_CupyFlow
 from sfft.utils.SExSkySubtract import SEx_SkySubtract
-from sidecar.util import ImageInfo
 from snappl.psf import PSF
 
 

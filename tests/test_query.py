@@ -132,7 +132,6 @@ def test_make_data_records_from_science_id_and_template_id():
         template_pointing=26565,
         template_sca=18,
         template_band="R062",
-        base_image_location=Path(__file__).parent / "photometry_test_data",
     )
 
     assert data_records.template_pointing[0] == 26565
@@ -144,7 +143,6 @@ def test_make_data_records_from_just_science_id():
         science_pointing=35083,
         science_sca=8,
         science_band="R062",
-        base_image_location=Path(__file__).parent / "photometry_test_data",
     )
 
     assert data_records.template_pointing[0] == 5044
