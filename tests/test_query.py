@@ -125,7 +125,12 @@ def test_read_data_records_from_file():
 
 
 def test_make_data_records_from_science_id_and_template_id():
+    collection = "snpitdb"
+    provenance_tag = "ou2024"
+    process = "load_ou2024_image"
+    image_collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
     data_records = make_data_records_from_pointing(
+        image_collection,
         science_pointing=54670,
         science_sca=18,
         science_band="R062",
@@ -139,7 +144,12 @@ def test_make_data_records_from_science_id_and_template_id():
 
 
 def test_make_data_records_from_just_science_id():
+    collection = "snpitdb"
+    provenance_tag = "ou2024"
+    process = "load_ou2024_image"
+    image_collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
     data_records = make_data_records_from_pointing(
+        image_collection,
         science_pointing=35083,
         science_sca=8,
         science_band="R062",
@@ -152,6 +162,10 @@ def test_make_data_records_from_just_science_id():
 
 
 def test_make_data_records_from_just_science_path():
+    collection = "snpitdb"
+    provenance_tag = "ou2024"
+    process = "load_ou2024_image"
+    image_collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
     image_path = Path(
         Path(__file__).parent,
         "photometry_test_data",
@@ -163,7 +177,7 @@ def test_make_data_records_from_just_science_path():
         "Roman_TDS_simple_model_R062_35083_8.fits.gz",
     )
 
-    data_records = make_data_records_from_image_path(image_path)
+    data_records = make_data_records_from_image_path(image_collection, image_path)
 
     assert data_records.template_pointing[0] == 5044
     assert data_records.template_sca[0] == 8

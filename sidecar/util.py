@@ -225,7 +225,7 @@ def make_data_records_from_pointing(
         science_image = image_collection.get_image(**science_id)
         science_image_points = get_center_and_corners(science_image)
 
-        template_image_info = get_earliest_template_for_image(image_collection, science_image_points)
+        template_image_info = get_earliest_template_for_image(image_collection, science_image)
         template_id = {
             "pointing": template_image_info.pointing,
             "sca": template_image_info.sca,
@@ -258,7 +258,7 @@ def make_data_records_from_pointing(
     return data_records
 
 
-def make_data_records_from_image_path(science_image_path, image_collection, template_image_path=None):
+def make_data_records_from_image_path(image_collection, science_image_path, template_image_path=None):
     """Create the pointing, sca, band records for an image path.
 
     If a template path is not given, then automatically finds one.
