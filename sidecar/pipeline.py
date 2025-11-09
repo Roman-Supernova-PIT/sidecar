@@ -8,6 +8,7 @@ import tempfile
 from astropy.coordinates import SkyCoord
 from astropy.wcs.utils import pixel_to_skycoord
 import astropy.units as u
+import pandas as pd
 
 from sidecar import data_loader
 from sidecar import subtraction
@@ -81,9 +82,6 @@ class Detection:
         SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
         self.image_collection = image_collection
         self.data_records = data_records
-        self.data_records = pd.read_csv(
-            self.data_records_path, usecols=self.INPUT_COLUMNS
-        )
         self.temp_dir = temp_dir
         self.output_dir = output_dir
 
