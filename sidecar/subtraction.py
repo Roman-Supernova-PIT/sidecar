@@ -163,29 +163,36 @@ class Pipeline:
         self.run_get_imsim_psf(self.science_info)  # saved to science_info.psf_path
         self.run_get_imsim_psf(self.template_info)  # saved to template_info.psf_path
 
+        science_skysub_path = self.temp_dir / f"skysub_{Path(self.science_info.path).name}"
+        science_detmask_path = self.temp_dir / f"detmask_{Path(self.science_info.path).name}"
+        science_psf_path = self.temp_dir / f"psf_{Path(self.science_info.path).name}"
+        template_skysub_path = self.temp_dir / f"skysub_{Path(self.template_info.path).name}"
+        template_detmask_path = self.temp_dir / f"detmask_{Path(self.template_info.path).name}"
+        template_psf_path = self.temp_dir / f"psf_{Path(self.template_info.path).name}"
+
         # sky subtraction
         sci_skyrms = sky_subtract(
-            self.science_info.image_path,
-            self.science_info.skysub_path,
-            self.science_info.detmask_path,
+            self.science_info.path,
+            science_skysub_path,
+            science_detmask_path,
             temp_dir=self.temp_dir,
             force=False,
         )
         templ_skyrms = sky_subtract(
-            self.template_info.image_path,
-            self.template_info.skysub_path,
-            self.template_info.detmask_path,
+            self.template_info.path,
+            science_skysub_path,
+            science_detmask_path,
             temp_dir=self.temp_dir,
             force=False,
         )
 
         # get data
-        sci_hdr, sci_data = load_fits_to_cp(self.science_info.skysub_path, dtype=cp.float64)
-        templ_hdr, templ_data = load_fits_to_cp(self.template_info.skysub_path, dtype=cp.float64)
-        _, sci_psf = load_fits_to_cp(self.science_info.psf_path, return_hdr=False, dtype=cp.float64)
-        _, templ_psf = load_fits_to_cp(self.template_info.psf_path, return_hdr=False, dtype=cp.float64)
-        _, sci_detmask = load_fits_to_cp(self.science_info.detmask_path, return_hdr=False)
-        _, templ_detmask = load_fits_to_cp(self.template_info.detmask_path, return_hdr=False)
+        sci_hdr, sci_data = load_fits_to_cp(science_skysub_path, dtype=cp.float64)
+        templ_hdr, templ_data = load_fits_to_cp(template_skysub_path, dtype=cp.float64)
+        _, sci_psf = load_fits_to_cp(science_psf_path, return_hdr=False, dtype=cp.float64)
+        _, templ_psf = load_fits_to_cp(template_psf_path, return_hdr=False, dtype=cp.float64)
+        _, sci_detmask = load_fits_to_cp(science_detmask_path, return_hdr=False)
+        _, templ_detmask = load_fits_to_cp(template_detmask_path, return_hdr=False)
         # 2025-06-06 MWV:
         # In principle need to get the actual variance
         # But SFFT renormalize the score image to the sky background variance
