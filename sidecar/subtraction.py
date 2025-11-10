@@ -135,6 +135,17 @@ class Pipeline:
             **{"band": template_band, "pointing": template_pointing, "sca": template_sca},
         )
 
+        # Intermediate artifact paths
+        self.science_name = Path(self.science_info.path).name
+        self.science_skysub_path = self.temp_dir / f"skysub_{self.science_name}"
+        self.science_detmask_path = self.temp_dir / f"detmask_{self.science_name}"
+        self.science_psf_path = self.temp_dir / f"psf_{self.science_name}"
+
+        self.template_name = Path(self.template_info.path).name
+        self.template_skysub_path = self.temp_dir / f"skysub_{self.template_name}"
+        self.template_detmask_path = self.temp_dir / f"detmask_{self.template_name}"
+        self.template_psf_path = self.temp_dir / f"psf_{self.template_name}"
+
         # data products paths
         self.diff_pattern = (
             f"{self.science_info.band}_{self.science_info.pointing}_{self.science_info.sca}"
@@ -145,77 +156,70 @@ class Pipeline:
         self.decorr_zptimg_path = self.out_dir / f"decorr_zptimg_{self.diff_pattern}.fits"
         self.decorr_psf_path = self.out_dir / f"decorr_psf_{self.diff_pattern}.fits"
 
-    def run_get_imsim_psf(self, image_info):
-
-        get_imsim_psf(
-            x=image_info.width // 2,
-            y=image_info.height // 2,
-            pointing=image_info.pointing,
-            sca=image_info.sca,
-            band=image_info.band,
+    def run_get_imsim_psf(self, image):
+        psf = get_imsim_psf(
+            x=image.width // 2,
+            y=image.height // 2,
+            pointing=image.pointing,
+            sca=image.sca,
+            band=image.band,
         )
+        return psf
+
 
     def run(self):
 
         os.makedirs(self.out_dir, exist_ok=True)
 
         # get psf
-        self.run_get_imsim_psf(self.science_info)  # saved to science_info.psf_path
-        self.run_get_imsim_psf(self.template_info)  # saved to template_info.psf_path
-
-        science_skysub_path = self.temp_dir / f"skysub_{Path(self.science_info.path).name}"
-        science_detmask_path = self.temp_dir / f"detmask_{Path(self.science_info.path).name}"
-        science_psf_path = self.temp_dir / f"psf_{Path(self.science_info.path).name}"
-        template_skysub_path = self.temp_dir / f"skysub_{Path(self.template_info.path).name}"
-        template_detmask_path = self.temp_dir / f"detmask_{Path(self.template_info.path).name}"
-        template_psf_path = self.temp_dir / f"psf_{Path(self.template_info.path).name}"
+        science_psf = self.run_get_imsim_psf(self.science_info)  # saved to science_info.psf_path
+        template_psf = self.run_get_imsim_psf(self.template_info)  # saved to template_info.psf_path
 
         # sky subtraction
-        sci_skyrms = sky_subtract(
+        science_skyrms = sky_subtract(
             self.science_info.path,
-            science_skysub_path,
-            science_detmask_path,
+            self.science_skysub_path,
+            self.science_detmask_path,
             temp_dir=self.temp_dir,
             force=False,
         )
-        templ_skyrms = sky_subtract(
+        template_skyrms = sky_subtract(
             self.template_info.path,
-            science_skysub_path,
-            science_detmask_path,
+            self.template_skysub_path,
+            self.template_detmask_path,
             temp_dir=self.temp_dir,
             force=False,
         )
 
         # get data
-        sci_hdr, sci_data = load_fits_to_cp(science_skysub_path, dtype=cp.float64)
-        templ_hdr, templ_data = load_fits_to_cp(template_skysub_path, dtype=cp.float64)
-        _, sci_psf = load_fits_to_cp(science_psf_path, return_hdr=False, dtype=cp.float64)
-        _, templ_psf = load_fits_to_cp(template_psf_path, return_hdr=False, dtype=cp.float64)
-        _, sci_detmask = load_fits_to_cp(science_detmask_path, return_hdr=False)
-        _, templ_detmask = load_fits_to_cp(template_detmask_path, return_hdr=False)
+        science_hdr, science_data = load_fits_to_cp(self.science_skysub_path, dtype=cp.float64)
+        template_hdr, template_data = load_fits_to_cp(self.template_skysub_path, dtype=cp.float64)
+        _, science_detmask = load_fits_to_cp(self.science_detmask_path, return_hdr=False)
+        _, template_detmask = load_fits_to_cp(self.template_detmask_path, return_hdr=False)
+
         # 2025-06-06 MWV:
         # In principle need to get the actual variance
         # But SFFT renormalize the score image to the sky background variance
         # So at this point this is fine.
         # Eventually you could imagine wanting to do the variance correctly
         # for sources.
-        sci_var = np.zeros_like(sci_data)
-        templ_var = np.zeros_like(templ_data)
+        science_var = np.zeros_like(science_data)
+        template_var = np.zeros_like(template_data)
 
         # cupy flow
         sfftifier = SpaceSFFT_CupyFlow(
-            sci_hdr,
-            templ_hdr,
-            sci_skyrms,
-            templ_skyrms,
-            sci_data,
-            templ_data,
-            sci_var,
-            templ_var,
-            sci_detmask,
-            templ_detmask,
-            sci_psf,
-            templ_psf,
+            science_hdr,
+            template_hdr,
+            science_skyrms,
+            template_skyrms,
+            science_data,
+            template_data,
+            science_var,
+            template_var,
+            science_detmask,
+            template_detmask,
+            science_psf,
+            template_psf,
         )
 
         sfftifier.resampling_image_mask_psf()

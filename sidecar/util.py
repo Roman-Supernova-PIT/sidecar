@@ -22,22 +22,6 @@ IMAGE_WIDTH = 4088
 IMAGE_HEIGHT = 4088
 
 
-@dataclass
-class ImageInfo:
-    data_id: dict
-    temp_dir: Path
-
-    def __post_init__(self):
-        self.image_path = Path(INPUT_IMAGE_PATTERN.format(**self.data_id))
-        self.cx = IMAGE_WIDTH // 2
-        self.cy = IMAGE_HEIGHT // 2
-
-        self.image_name = self.image_path.name
-        self.skysub_path = self.temp_dir / f"skysub_{self.image_name}"
-        self.detmask_path = self.temp_dir / f"detmask_{self.image_name}"
-        self.psf_path = self.temp_dir / f"psf_{self.image_name}"
-
-
 def get_image_info_for_ra_dec(ra, dec, collection, provenance_tag, process, band=None, dbclient=None):
     if dbclient is None:
         dbclient = SNPITDBClient()

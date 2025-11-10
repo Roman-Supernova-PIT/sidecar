@@ -20,12 +20,10 @@ def test_get_psf_object():
     collection = "snpitdb"
     provenance_tag = "ou2024"
     process = "load_ou2024_images"
-#    pointing, band, sca = 35303, "H158", 8
     pointing, band, sca = 39140, "H158", 3
     x, y = 2044, 2044
 
-    import pdb; pdb.set_trace()
-    psf_type="ou24PSF"
+    psf_type="ou24PSF_slow"
     psf_obj = PSF.get_psf_object(psf_type, x=x, y=y, pointing=pointing, sca=sca, band=band)
-
+    stamp = psf_obj.get_stamp(x, y)
 
