@@ -21,7 +21,6 @@ from sidecar.util import (
     read_data_records,
 )
 
-from snappl.dbclient import SNPITDBClient
 from snappl.imagecollection import ImageCollection
 from snappl.config import Config
 from snappl.logger import SNLogger
@@ -517,8 +516,8 @@ def main():
         "--base-path", type=str, default="", help='Base path for images.  Required for "manual_fits" image collection'
     )
     parser.add_argument("--image-id", default=None, type=str, help="Image uuid")
-    parser.add_argument("--image-provenance-tag", required=True, type=str)
-    parser.add_argument("--image-process", required=True, type=str)
+    parser.add_argument("--image-provenance-tag", type=str)
+    parser.add_argument("--image-process", type=str)
     parser.add_argument(
         "--science-image-path",
         "--science-path",
@@ -586,7 +585,7 @@ def main():
         args = parser.parse_args(leftovers)
 
         if cfg is None:
-            raise ValueError("Must provide config file, by passing or setting SNPIT_CONFIG env")
+            raise ValueError("Must provide config file, by passing filename or setting SNPIT_CONFIG env")
         cfg.parse_args(args)
 
         # noqa because we're not using the config object yet.
@@ -606,9 +605,10 @@ def main():
         )
         return
 
-    dbclient = SNPITDBClient()
     image_collection = ImageCollection.get_collection(
-        provenance_tag=args.image_provenance_tag, process=args.image_process, dbclient=dbclient
+        collection=args.image_collection,
+        provenance_tag=args.image_provenance_tag,
+        process=args.image_process,
     )
 
     if args.data_records_path is not None:
@@ -616,7 +616,9 @@ def main():
     elif args.science_image_path is not None:
         # If the template_image path is not specified, then a template will be searched for.
         data_records = make_data_records_from_image_path(
-            science_image_path=args.science_image_path, template_image_path=args.template_image_path
+            image_collection=image_collection,
+            science_image_path=args.science_image_path,
+            template_image_path=args.template_image_path
         )
     elif (args.science_pointing is not None) and (args.science_sca is not None):
         # In principle the band is already specified by the pointing,

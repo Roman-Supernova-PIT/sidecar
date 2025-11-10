@@ -65,7 +65,7 @@ python sidecar/pipeline.py --image-collection ou2024 --science-path ${image_path
 
 Nov 2025 example
 ```
-python sidecar/pipeline.py --image-provenance-tag ou2024 --image-process load_ou2024_image --pointing 36846 --sca 15 --band H158 --output-dir /dia_out_dir
+python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2024 --image-process load_ou2024_image --pointing 36846 --sca 15 --band H158 --output-dir /dia_out_dir
 ```
 
 ## sidecar Workflow
