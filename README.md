@@ -53,7 +53,7 @@ python sidecar/pipeline.py --image-collection ou2024 --pointing 53526 --sca 1 --
 Can also run by just specifying the pointing, sca, band of the science image
 
 ```
-python sidecar/pipeline.py --image-collection ou2024 --pointing 53526 --sca 1 --band R062 -output-dir /dia_out_dir
+python sidecar/pipeline.py --image-collection ou2024 --pointing 53526 --sca 1 --band R062 --output-dir /dia_out_dir
 ```
 
 or just by passing the image path
@@ -61,6 +61,11 @@ or just by passing the image path
 ```
 image_path=/dvs_ro/cfs/cdirs/lsst/shared/external/roman-desc-sims/Roman_data/RomanTDS/images/simple_model/R062/53526/Roman_TDS_simple_model_R062_53526_1.fits.gz
 python sidecar/pipeline.py --image-collection ou2024 --science-path ${image_path} --output-dir /dia_out_dir
+```
+
+Nov 2025 example
+```
+python sidecar/pipeline.py --image-provenance-tag ou2024 --image-process load_ou2024_image --pointing 36846 --sca 15 --band H158 --output-dir /dia_out_dir
 ```
 
 ## sidecar Workflow

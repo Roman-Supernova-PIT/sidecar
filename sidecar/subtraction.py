@@ -128,19 +128,17 @@ class Pipeline:
 
         # science_info and template_info contains the data_ids of images and paths of temporary files:
         #   (sky subtracted images, detection masks, psfs)
-        self.science_info = ImageInfo(
-            {"band": science_band, "pointing": science_pointing, "sca": science_sca},
-            self.temp_dir,
+        self.science_info = image_collection.get_image(
+            **{"band": science_band, "pointing": science_pointing, "sca": science_sca},
         )
-        self.template_info = ImageInfo(
-            {"band": template_band, "pointing": template_pointing, "sca": template_sca},
-            self.temp_dir,
+        self.template_info = image_collection.get_image(
+            **{"band": template_band, "pointing": template_pointing, "sca": template_sca},
         )
 
         # data products paths
         self.diff_pattern = (
-            f"{self.science_info.data_id['band']}_{self.science_info.data_id['pointing']}_{self.science_info.data_id['sca']}"
-            f"_-_{self.template_info.data_id['band']}_{self.template_info.data_id['pointing']}_{self.template_info.data_id['sca']}"
+            f"{self.science_info.band}_{self.science_info.pointing}_{self.science_info.sca}"
+            f"_-_{self.template_info.band}_{self.template_info.pointing}_{self.template_info.sca}"
         )
         self.score_image_path = self.out_dir / f"score_{self.diff_pattern}.fits"
         self.decorr_diff_path = self.out_dir / f"decorr_diff_{self.diff_pattern}.fits"
@@ -150,10 +148,11 @@ class Pipeline:
     def run_get_imsim_psf(self, image_info):
 
         get_imsim_psf(
-            x=image_info.cx,
-            y=image_info.cy,
-            pointing=image_info.data_id["pointing"],
-            sca=image_info.data_id["sca"],
+            x=image_info.width // 2,
+            y=image_info.height // 2,
+            pointing=image_info.pointing,
+            sca=image_info.sca,
+            band=image_info.band
         )
 
     def run(self):

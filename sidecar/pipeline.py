@@ -233,8 +233,8 @@ class Detection:
         file_path["full_output_dir"] = Path(self.output_dir, diff_pattern)
         os.makedirs(file_path["full_output_dir"], exist_ok=True)
 
-        file_path["science_image_path"] = self.image_collection.get_image_path(**science_id)
-        file_path["template_image_path"] = self.image_collection.get_image_path(**template_id)
+        file_path["science_image_path"] = self.image_collection.get_image(**science_id).path
+        file_path["template_image_path"] = self.image_collection.get_image(**template_id).path
 
         # subtraction
         file_path["difference_image_path"] = Path(
@@ -514,12 +514,15 @@ def main():
         help="Input file with data records.  It is an error to specify --data-records and --science-path.",
     )
     parser.add_argument(
-        "--image-collection", "--ic", required=True, help="Collection of the images we're using", default="ou2024"
+        "--image-collection", "--ic", help="Collection of the images we're using", default="ou2024"
     )
     parser.add_argument("--image-subset", "--is", default=None, help="Image collection subset")
     parser.add_argument(
         "--base-path", type=str, default="", help='Base path for images.  Required for "manual_fits" image collection'
     )
+    parser.add_argument("--image-id", default=None, type=str, help="Image uuid")
+    parser.add_argument("--image-provenance-tag", required=True, type=str)
+    parser.add_argument("--image-process", required=True, type=str)
     parser.add_argument(
         "--science-image-path",
         "--science-path",
@@ -574,10 +577,10 @@ def main():
         help="Specify an image by template band.  This is optional and will default to --science-band",
     )
     parser.add_argument(
-        "-t", "--temp_dir", type=str, default=None, help="Temporary directory."
+        "-t", "--temp-dir", type=str, default=None, help="Temporary directory."
     )
     parser.add_argument(
-        "-o", "--output_path", type=str, default="output", help="relative output path"
+        "-o", "--output-dir", type=str, default="output", help="relative output path"
     )
 
     # 2025-06-10, MWV:  This is a little silly, but I wanted to capture
@@ -611,6 +614,11 @@ def main():
         SNLogger.warning("It is an error to specify 'data_records_path' and any of 'science_(image_path,pointing,sca,band)'")
         return
 
+    dbclient = SNPITDBClient()
+    image_collection = ImageCollection.get_collection(
+        provenance_tag=args.image_provenance_tag, process=args.image_process, dbclient=dbclient
+    )
+
     if args.data_records_path is not None:
         data_records = read_data_records(args.data_records_path)
     elif args.science_image_path is not None:
@@ -623,6 +631,7 @@ def main():
         #   so we won't explicitly require it here.
         # As for image_path, if template values aren't specified, a template will be searched for.
         data_records = make_data_records_from_pointing(
+            image_collection=image_collection,
             science_pointing=args.science_pointing,
             science_sca=args.science_sca,
             science_band=args.science_band,
@@ -634,11 +643,6 @@ def main():
         SNLogger.warning("No valid set of input file, image, or pointing specified.")
         SNLogger.warning("Stopping.")
         return
-
-    dbclient = SNPITDBClient()
-    image_collection = ImageCollection.get_collection(
-        provenance_tag="ou2024", process="load_ou2024_image", dbclient=dbclient
-    )
 
     detection = Detection(image_collection, data_records, args.temp_dir, args.output_dir)
     detection.run()
