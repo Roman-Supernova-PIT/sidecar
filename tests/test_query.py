@@ -20,7 +20,9 @@ def test_ra_dec_query():
     collection = "snpitdb"
     provenance_tag = "ou2024"
     process = "load_ou2024_image"
-    image_collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
+    image_collection = ImageCollection.get_collection(
+        collection=collection, provenance_tag=provenance_tag, process=process
+    )
 
     images = image_collection.find_images(ra=ra, dec=dec, band="H158")
 
@@ -32,7 +34,9 @@ def test_get_templates_for_points():
     collection = "snpitdb"
     provenance_tag = "ou2024"
     process = "load_ou2024_image"
-    image_collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
+    image_collection = ImageCollection.get_collection(
+        collection=collection, provenance_tag=provenance_tag, process=process
+    )
 
     corners = [
         (7.44, -44.86),
@@ -53,9 +57,22 @@ def test_get_center_and_corners():
     collection = "snpitdb"
     provenance_tag = "ou2024"
     process = "load_ou2024_image"
-    image_collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
+    image_collection = ImageCollection.get_collection(
+        collection=collection, provenance_tag=provenance_tag, process=process
+    )
 
-    expected_columns = ("ra", "dec", "ra_corner_00", "dec_corner_00", "ra_corner_01", "dec_corner_01", "ra_corner_10", "dec_corner_10", "ra_corner_11", "dec_corner_11")
+    expected_columns = (
+        "ra",
+        "dec",
+        "ra_corner_00",
+        "dec_corner_00",
+        "ra_corner_01",
+        "dec_corner_01",
+        "ra_corner_10",
+        "dec_corner_10",
+        "ra_corner_11",
+        "dec_corner_11",
+    )
 
     image = image_collection.get_image(pointing=2979, band="F184", sca=12)
     points = get_center_and_corners(image)
@@ -90,7 +107,9 @@ def test_get_earliest_template_for_image():
     collection = "snpitdb"
     provenance_tag = "ou2024"
     process = "load_ou2024_image"
-    image_collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
+    image_collection = ImageCollection.get_collection(
+        collection=collection, provenance_tag=provenance_tag, process=process
+    )
 
     image = image_collection.get_image(pointing=pointing, sca=sca, band=band)
     earliest_template = get_earliest_template_for_image(image_collection, image)
@@ -128,7 +147,9 @@ def test_make_data_records_from_science_id_and_template_id():
     collection = "snpitdb"
     provenance_tag = "ou2024"
     process = "load_ou2024_image"
-    image_collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
+    image_collection = ImageCollection.get_collection(
+        collection=collection, provenance_tag=provenance_tag, process=process
+    )
     data_records = make_data_records_from_pointing(
         image_collection,
         science_pointing=54670,
@@ -147,7 +168,9 @@ def test_make_data_records_from_just_science_id():
     collection = "snpitdb"
     provenance_tag = "ou2024"
     process = "load_ou2024_image"
-    image_collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
+    image_collection = ImageCollection.get_collection(
+        collection=collection, provenance_tag=provenance_tag, process=process
+    )
     data_records = make_data_records_from_pointing(
         image_collection,
         science_pointing=35083,
@@ -165,7 +188,9 @@ def test_make_data_records_from_just_science_path():
     collection = "snpitdb"
     provenance_tag = "ou2024"
     process = "load_ou2024_image"
-    image_collection = ImageCollection.get_collection(collection=collection, provenance_tag=provenance_tag, process=process)
+    image_collection = ImageCollection.get_collection(
+        collection=collection, provenance_tag=provenance_tag, process=process
+    )
     image_path = Path(
         Path(__file__).parent,
         "photometry_test_data",
