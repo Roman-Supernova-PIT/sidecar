@@ -478,9 +478,7 @@ def main():
     # Run one arg pass just to get the config file, so we can augment
     #   the full arg parser later with config options
     configparser = argparse.ArgumentParser(add_help=False)
-    configparser.add_argument(
-        "-c", "--config", default=None, help="Location of the .yaml config file"
-    )
+    configparser.add_argument("-c", "--config", default=None, help="Location of the .yaml config file")
     args, leftovers = configparser.parse_known_args()
 
     desc = "Run the detect_supernova pipeline."
@@ -513,9 +511,7 @@ def main():
         type=str,
         help="Input file with data records.  It is an error to specify --data-records and --science-path.",
     )
-    parser.add_argument(
-        "--image-collection", "--ic", help="Collection of the images we're using", default="ou2024"
-    )
+    parser.add_argument("--image-collection", "--ic", help="Collection of the images we're using", default="ou2024")
     parser.add_argument("--image-subset", "--is", default=None, help="Image collection subset")
     parser.add_argument(
         "--base-path", type=str, default="", help='Base path for images.  Required for "manual_fits" image collection'
@@ -576,12 +572,8 @@ def main():
         default=None,
         help="Specify an image by template band.  This is optional and will default to --science-band",
     )
-    parser.add_argument(
-        "-t", "--temp-dir", type=str, default=None, help="Temporary directory."
-    )
-    parser.add_argument(
-        "-o", "--output-dir", type=str, default="output", help="relative output path"
-    )
+    parser.add_argument("-t", "--temp-dir", type=str, default=None, help="Temporary directory.")
+    parser.add_argument("-o", "--output-dir", type=str, default="output", help="relative output path")
 
     # 2025-06-10, MWV:  This is a little silly, but I wanted to capture
     # this structure even though we're not using the config object yet.
@@ -594,9 +586,7 @@ def main():
         args = parser.parse_args(leftovers)
 
         if cfg is None:
-            raise ValueError(
-                "Must provide config file, by passing or setting SNPIT_CONFIG env"
-            )
+            raise ValueError("Must provide config file, by passing or setting SNPIT_CONFIG env")
         cfg.parse_args(args)
 
         # noqa because we're not using the config object yet.
@@ -611,7 +601,9 @@ def main():
         or (args.science_sca is not None)
         or (args.science_band is not None)
     ):
-        SNLogger.warning("It is an error to specify 'data_records_path' and any of 'science_(image_path,pointing,sca,band)'")
+        SNLogger.warning(
+            "It is an error to specify 'data_records_path' and any of 'science_(image_path,pointing,sca,band)'"
+        )
         return
 
     dbclient = SNPITDBClient()

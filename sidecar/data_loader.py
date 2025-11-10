@@ -67,9 +67,7 @@ class Exposure:
 
         # Load all information at once. Avoid open fits file multiple times.
         if fetch_image:
-            self._image, self._wcs = load_image_and_wcs(
-                self.image_path, hdu_id=self.hdu_id
-            )
+            self._image, self._wcs = load_image_and_wcs(self.image_path, hdu_id=self.hdu_id)
             self._shape = self._image.shape
         # Remove the noqa once MWV traces down where load_shape.
         if fetch_source:
@@ -146,18 +144,10 @@ class RomanExposure(Exposure):
         fetch_source=False,
     ):
         self.data_id = data_id
-        self.image_path_pattern = (
-            image_path_pattern or self.__class__.IMAGE_PATH_PATTERN
-        )
-        self.source_path_pattern = (
-            source_path_pattern or self.__class__.SOURCE_PATH_PATTERN
-        )
-        self.image_path = self.__class__._format_path(
-            self.image_path_pattern, **self.data_id
-        )
-        self.source_path = self.__class__._format_path(
-            self.source_path_pattern, **self.data_id
-        )
+        self.image_path_pattern = image_path_pattern or self.__class__.IMAGE_PATH_PATTERN
+        self.source_path_pattern = source_path_pattern or self.__class__.SOURCE_PATH_PATTERN
+        self.image_path = self.__class__._format_path(self.image_path_pattern, **self.data_id)
+        self.source_path = self.__class__._format_path(self.source_path_pattern, **self.data_id)
         self.hdu_id = hdu_id
 
         super().__init__(fetch_image=fetch_image, fetch_source=fetch_source)
@@ -185,12 +175,8 @@ class DiffExposure(Exposure):
     ):
         self.template_id = template_id
         self.science_id = science_id
-        self.image_path_pattern = (
-            image_path_pattern or self.__class__.IMAGE_PATH_PATTERN
-        )
-        self.source_path_pattern = (
-            source_path_pattern or self.__class__.SOURCE_PATH_PATTERN
-        )
+        self.image_path_pattern = image_path_pattern or self.__class__.IMAGE_PATH_PATTERN
+        self.source_path_pattern = source_path_pattern or self.__class__.SOURCE_PATH_PATTERN
         self.image_path = self.image_path_pattern.format(
             template_band=template_id["band"],
             template_pointing=template_id["pointing"],
@@ -212,12 +198,8 @@ class DiffExposure(Exposure):
         prefixed_science = {f"science_{k}": v for k, v in self.science_id.items()}
         self.data_id = {**prefixed_template, **prefixed_science}
 
-        self.image_path = self.__class__._format_path(
-            self.image_path_pattern, **self.data_id
-        )
-        self.source_path = self.__class__._format_path(
-            self.source_path_pattern, **self.data_id
-        )
+        self.image_path = self.__class__._format_path(self.image_path_pattern, **self.data_id)
+        self.source_path = self.__class__._format_path(self.source_path_pattern, **self.data_id)
         self.hdu_id = hdu_id
 
         super().__init__(fetch_image=fetch_image, fetch_source=fetch_source)

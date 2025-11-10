@@ -152,7 +152,7 @@ class Pipeline:
             y=image_info.height // 2,
             pointing=image_info.pointing,
             sca=image_info.sca,
-            band=image_info.band
+            band=image_info.band,
         )
 
     def run(self):
