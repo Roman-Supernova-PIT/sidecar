@@ -68,6 +68,10 @@ Nov 2025 example
 python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2024 --image-process load_ou2024_image --pointing 36846 --sca 15 --band H158 --output-dir /dia_out_dir
 ```
 
+```
+python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2024 --image-process load_ou2024_image --science-pointing 35303 --science-sca 8 --science-band H158 --template-pointing 39140 --template-sca 3 --template-band H158 --output-dir /dia_out_dir
+```
+
 ## sidecar Workflow
 <img src="workflow.png" alt="Workflow of the detection pipeline." style="width:800px; height:auto;">
 
