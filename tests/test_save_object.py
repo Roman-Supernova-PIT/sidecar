@@ -1,13 +1,19 @@
-from snappl.imagecollection import ImageCollection
-from snappl.provenance import Provenance
+import pytest
+
 from snappl.diaobject import DiaObject
-
+from snappl.imagecollection import ImageCollection
 from snappl.logger import SNLogger
+from snappl.provenance import Provenance
 
 
-def test_get_dia_object(ra, dec):
-    dia_object = DiaObject.find_objects(ra, dec)
-    print(dia_object)
+@pytest.mark.parametrize("ra,dec,name", [(7.55110, -44.80718, "foo2")])
+def test_get_dia_object(ra, dec, name):
+    collection = "snpitdb"
+    diaobject_provenance_tag = "nov2025_test2"
+    diaobject_process = "sidecar"
+    dia_object = DiaObject.find_objects(collection=collection, provenance_tag=diaobject_provenance_tag, process=diaobject_process,
+                                        ra=ra, dec=dec)
+    assert dia_object[0].name == name
 
 
 def save_dia_object(name, ra, dec, mjd, provenance_id,
@@ -30,9 +36,11 @@ def save_dia_object(name, ra, dec, mjd, provenance_id,
     diaobj.save_object()
 
 
-# def test_save_dia_object(science_pointing=56613, science_sca=15, science_band="R062",
-#                          template_pointing=1954, template_sca=4, template_band="R062"):
-def test_save_dia_object(science_pointing=36846, science_sca=15, science_band="H158"):
+@pytest.mark.skip(reason="Don't have a test DB, so we don't want to add an object each time.")
+def test_save_dia_object():
+    science_pointing=36846
+    science_sca=15
+    science_band="H158"
     ## Favorite test SN
     # SN 20172782
     # RA: 7.551093401915147
@@ -45,16 +53,15 @@ def test_save_dia_object(science_pointing=36846, science_sca=15, science_band="H
     collection = "snpitdb"
     image_provenance_tag = "ou2024"
     image_process = "load_ou2024_image"
-    diaobject_provenance_tag = "nov2025_test"
+    diaobject_provenance_tag = "nov2025_test2"
     diaobject_process = "sidecar"
 
     image_collection = ImageCollection.get_collection(
         collection=collection, provenance_tag=image_provenance_tag, process=image_process
     )
     science = image_collection.get_image(pointing=science_pointing, sca=science_sca, band=science_band)
-#    template = image_collection.get_image(pointing=template_pointing, sca=template_sca, band=template_band)
-    (ra, dec, image, mjd) = (8.439390244869715, -43.124842656095396, science, science.mjd)
-    name = "foo"
+
+    (name, ra, dec, image, mjd) = ("foo2", 7.55110, -44.80718, science, science.mjd)
 
     major, minor = 0, 1
 # config = Config.get()
@@ -70,6 +77,4 @@ def test_save_dia_object(science_pointing=36846, science_sca=15, science_band="H
 
 if __name__ == "__main__":
     test_save_dia_object()
-    ra = 8.439390244869715
-    dec = -43.124842656095396
-#    test_get_dia_object(ra, dec)
+    test_get_dia_object()
