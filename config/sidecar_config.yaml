@@ -1,0 +1,16 @@
+replaceable_preloads:
+  - /home/environment/snpit_system_config.yaml
+
+photometry:
+  sidecar:
+    diaobject:
+      diaobject_provenance_tag: "nov2025_test3"
+      diaobject_process: "sidecar"
+
+    paths:
+      scratch_dir: /snpit_temp
+      temp_dir: /snpit_temp
+      dia_out_dir: /dia_out_dir
+
+    psf:
+      type: ou24PSF

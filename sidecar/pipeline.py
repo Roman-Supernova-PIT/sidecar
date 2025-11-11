@@ -8,7 +8,6 @@ import tempfile
 from astropy.coordinates import SkyCoord
 from astropy.wcs.utils import pixel_to_skycoord
 import astropy.units as u
-import pandas as pd
 
 from sidecar import data_loader
 from sidecar import subtraction
@@ -21,8 +20,8 @@ from sidecar.util import (
     read_data_records,
 )
 
-from snappl.imagecollection import ImageCollection
 from snappl.config import Config
+from snappl.imagecollection import ImageCollection
 from snappl.logger import SNLogger
 
 
@@ -77,12 +76,20 @@ class Detection:
     TRANSIENTS_TO_CLEANED_SCORE_DETECTION_PREFIX = "transients_to_cleaned_score_detection_"
     CLEANED_SCORE_DETECTION_TO_TRANSIENTS_PREFIX = "cleaned_score_detection_to_transients_"
 
-    def __init__(self, image_collection, data_records, temp_dir=None, output_dir="./output", verbose=False):
+    def __init__(self, image_collection, data_records, temp_dir=None, output_dir=None, verbose=False):
         SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
+        self.config = Config.get()
+
         self.image_collection = image_collection
         self.data_records = data_records
-        self.temp_dir = temp_dir
-        self.output_dir = output_dir
+        if temp_dir is not None:
+            self.temp_dir = temp_dir
+        else:
+            self.temp_dir = self.config.value("photometry.sidecar.paths.temp_dir")
+        if output_dir is not None:
+            self.output_dir = output_dir
+        else:
+            self.output_dir = self.config.value("photometry.sidecar.paths.output_dir")
 
     @staticmethod
     def retrieve_truth(
@@ -328,9 +335,7 @@ class Detection:
         file_path = self.path_helper(science_id, template_id)
 
         SNLogger.info(
-            "Processing started for data records "
-            f"| Science ID {science_id} "
-            f"| Template ID {template_id} "
+            "Processing started for data records " f"| Science ID {science_id} " f"| Template ID {template_id} "
         )
 
         SNLogger.info("Processing subtraction")
@@ -572,26 +577,11 @@ def main():
         help="Specify an image by template band.  This is optional and will default to --science-band",
     )
     parser.add_argument("-t", "--temp-dir", type=str, default=None, help="Temporary directory.")
-    parser.add_argument("-o", "--output-dir", type=str, default="output", help="relative output path")
+    parser.add_argument("-o", "--output-dir", type=str, default=None, help="Output path")
 
-    # 2025-06-10, MWV:  This is a little silly, but I wanted to capture
-    # this structure even though we're not using the config object yet.
-    NO_CONFIG_YET_FOR_DETECT_SUPERNOVA = True
-    if NO_CONFIG_YET_FOR_DETECT_SUPERNOVA:
-        pass
-    else:
-        if cfg is not None:
-            cfg.augment_argparse(parser)
-        args = parser.parse_args(leftovers)
-
-        if cfg is None:
-            raise ValueError("Must provide config file, by passing filename or setting SNPIT_CONFIG env")
-        cfg.parse_args(args)
-
-        # noqa because we're not using the config object yet.
-        config = Config.get(args.config, setdefault=True)  # noqa
-
-    args = parser.parse_args()
+    cfg.augment_argparse(parser)
+    args = parser.parse_args(leftovers)
+    cfg.parse_args(args)
 
     # Validate consistency
     if args.data_records_path is not None and (
@@ -618,7 +608,7 @@ def main():
         data_records = make_data_records_from_image_path(
             image_collection=image_collection,
             science_image_path=args.science_image_path,
-            template_image_path=args.template_image_path
+            template_image_path=args.template_image_path,
         )
     elif (args.science_pointing is not None) and (args.science_sca is not None):
         # In principle the band is already specified by the pointing,
@@ -638,7 +628,9 @@ def main():
         SNLogger.warning("Stopping.")
         return
 
-    detection = Detection(image_collection, data_records, args.temp_dir, args.output_dir)
+    detection = Detection(
+        image_collection=image_collection, data_records=data_records, temp_dir=args.temp_dir, output_dir=args.output_dir
+    )
     detection.run()
 
 

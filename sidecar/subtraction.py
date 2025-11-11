@@ -168,14 +168,15 @@ class Pipeline:
         fitsio.write(save_path, stamp, clobber=True)
         return stamp
 
-
     def run(self):
 
         os.makedirs(self.out_dir, exist_ok=True)
 
         # get psf
         science_psf = self.run_get_imsim_psf(self.science_info, self.science_psf_path)  # saved to science_info.psf_path
-        template_psf = self.run_get_imsim_psf(self.template_info, self.template_psf_path)  # saved to template_info.psf_path
+        template_psf = self.run_get_imsim_psf(
+            self.template_info, self.template_psf_path
+        )  # saved to template_info.psf_path
 
         # sky subtraction
         science_skyrms = sky_subtract(
