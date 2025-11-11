@@ -1,5 +1,5 @@
 replaceable_preloads:
-  - /home/environment/snpit_system_config.yaml
+  - /home/environment/nov2025_container_config.yaml
 
 photometry:
   sidecar:

@@ -1,14 +1,16 @@
 import pytest
 
+from snappl.config import Config
 from snappl.diaobject import DiaObject
 from snappl.imagecollection import ImageCollection
-from sidecar.database import save_dia_object
+from sidecar.database import save_one_dia_object
 
 
+# @pytest.mark.skip(reason="Need to make matching provenance tag first.")
 @pytest.mark.parametrize("ra,dec,name", [(7.55110, -44.80718, "foo2")])
 def test_get_dia_object(ra, dec, name):
     collection = "snpitdb"
-    diaobject_provenance_tag = "nov2025_test2"
+    diaobject_provenance_tag = "nov2025_test3"
     diaobject_process = "sidecar"
     dia_object = DiaObject.find_objects(collection=collection, provenance_tag=diaobject_provenance_tag, process=diaobject_process,
                                         ra=ra, dec=dec)
@@ -32,7 +34,7 @@ def test_save_dia_object():
     collection = "snpitdb"
     image_provenance_tag = "ou2024"
     image_process = "load_ou2024_image"
-    diaobject_provenance_tag = "nov2025_test2"
+    diaobject_provenance_tag = "nov2025_test3"
     diaobject_process = "sidecar"
 
     image_collection = ImageCollection.get_collection(
@@ -43,15 +45,14 @@ def test_save_dia_object():
     (name, ra, dec, image, mjd) = ("foo2", 7.55110, -44.80718, science, science.mjd)
 
     major, minor = 0, 1
-# config = Config.get()
-# params = config.get("photometry.sidecar")
-    params = {"photometry": {"sidecar": {"alpha": 1}}}
+    config = Config.get()
+    params = config.value("photometry.sidecar")
 
-    save_dia_object(name=name, ra=ra, dec=dec, mjd=mjd,
-                    provenance_id=science.provenance_id,
-                    major=major, minor=minor, params=params,
-                    diaobject_provenance_tag=diaobject_provenance_tag,
-                    diaobject_process=diaobject_process)
+    save_one_dia_object(name=name, ra=ra, dec=dec, mjd=mjd,
+                        provenance_id=science.provenance_id,
+                        major=major, minor=minor, params=params,
+                        diaobject_provenance_tag=diaobject_provenance_tag,
+                        diaobject_process=diaobject_process)
 
 
 if __name__ == "__main__":
