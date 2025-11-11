@@ -46,17 +46,16 @@ def save_dia_objects_from_subtraction(
     """
     dia_sources = Table.read(dia_source_catalog_path, format="ascii.ecsv")
     science = image_collection.get_image(pointing=science_pointing, sca=science_sca, band=science_band)
-    mjd = science.mjd
 
     major, minor = 0, 1
-    params = Config.get().value("photometry.sidecar")
+    params = Config.get()
 
     for name, ra, dec in dia_sources[["name", "ra", "dec"]].rows():
         save_one_dia_object(
             name=name,
             ra=ra,
             dec=dec,
-            mjd=mjd,
+            mjd=science.mjd,
             provenance_id=science.provenance_id,
             major=major,
             minor=minor,
@@ -64,5 +63,3 @@ def save_dia_objects_from_subtraction(
             diaobject_provenance_tag=diaobject_provenance_tag,
             diaobject_process=diaobject_process,
         )
-
-    save_one_dia_object()
