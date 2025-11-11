@@ -2,8 +2,7 @@ import pytest
 
 from snappl.diaobject import DiaObject
 from snappl.imagecollection import ImageCollection
-from snappl.logger import SNLogger
-from snappl.provenance import Provenance
+from sidecar.database import save_dia_object
 
 
 @pytest.mark.parametrize("ra,dec,name", [(7.55110, -44.80718, "foo2")])
@@ -16,31 +15,11 @@ def test_get_dia_object(ra, dec, name):
     assert dia_object[0].name == name
 
 
-def save_dia_object(name, ra, dec, mjd, provenance_id,
-                    major, minor, params,
-                    diaobject_provenance_tag,
-                    diaobject_process):
-    imageprov = Provenance.get_by_id(provenance_id)
-
-    prov = Provenance(process=diaobject_process, major=major, minor=minor, params=params,
-                      keepkeys=["photometry.sidecar"],
-                      upstreams=[imageprov])
-    # You only have to do this next line once for a given provenance;
-    #   once the provenance is in the database, you never need to save it again.
-    prov.save_to_db(tag=diaobject_provenance_tag)   # See note below
-
-    SNLogger.info("Creating DiaObject: ")
-    diaobj = DiaObject(name=name, provenance_id=prov.id, ra=ra, dec=dec, mjd_discovery=mjd)
-    SNLogger.info("Saving diaobj: ")
-    SNLogger.info(diaobj)
-    diaobj.save_object()
-
-
 @pytest.mark.skip(reason="Don't have a test DB, so we don't want to add an object each time.")
 def test_save_dia_object():
-    science_pointing=36846
-    science_sca=15
-    science_band="H158"
+    science_pointing = 36846
+    science_sca = 15
+    science_band = "H158"
     ## Favorite test SN
     # SN 20172782
     # RA: 7.551093401915147
