@@ -9,6 +9,7 @@ import numpy as np
 
 from astropy.io import fits
 import cupy as cp
+import fitsio
 
 from sfft.SpaceSFFTCupyFlow import SpaceSFFT_CupyFlow
 from sfft.utils.SExSkySubtract import SEx_SkySubtract
@@ -156,15 +157,16 @@ class Pipeline:
         self.decorr_zptimg_path = self.out_dir / f"decorr_zptimg_{self.diff_pattern}.fits"
         self.decorr_psf_path = self.out_dir / f"decorr_psf_{self.diff_pattern}.fits"
 
-    def run_get_imsim_psf(self, image):
-        psf = get_imsim_psf(
+    def run_get_imsim_psf(self, image, save_path):
+        stamp = get_imsim_psf(
             x=image.width // 2,
             y=image.height // 2,
             pointing=image.pointing,
             sca=image.sca,
             band=image.band,
         )
-        return psf
+        fitsio.write(save_path, stamp, clobber=True)
+        return stamp
 
 
     def run(self):
@@ -172,8 +174,8 @@ class Pipeline:
         os.makedirs(self.out_dir, exist_ok=True)
 
         # get psf
-        science_psf = self.run_get_imsim_psf(self.science_info)  # saved to science_info.psf_path
-        template_psf = self.run_get_imsim_psf(self.template_info)  # saved to template_info.psf_path
+        science_psf = self.run_get_imsim_psf(self.science_info, self.science_psf_path)  # saved to science_info.psf_path
+        template_psf = self.run_get_imsim_psf(self.template_info, self.template_psf_path)  # saved to template_info.psf_path
 
         # sky subtraction
         science_skyrms = sky_subtract(
@@ -194,6 +196,8 @@ class Pipeline:
         # get data
         science_hdr, science_data = load_fits_to_cp(self.science_skysub_path, dtype=cp.float64)
         template_hdr, template_data = load_fits_to_cp(self.template_skysub_path, dtype=cp.float64)
+        _, science_psf = load_fits_to_cp(self.science_psf_path, return_hdr=False)
+        _, template_psf = load_fits_to_cp(self.template_psf_path, return_hdr=False)
         _, science_detmask = load_fits_to_cp(self.science_detmask_path, return_hdr=False)
         _, template_detmask = load_fits_to_cp(self.template_detmask_path, return_hdr=False)
 
