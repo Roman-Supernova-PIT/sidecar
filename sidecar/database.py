@@ -16,6 +16,7 @@ def save_one_dia_object(
         major=major,
         minor=minor,
         params=params,
+        omitkeys=None,
         keepkeys=["photometry.sidecar"],
         upstreams=[imageprov],
     )
@@ -23,7 +24,7 @@ def save_one_dia_object(
     #   once the provenance is in the database, you never need to save it again.
     prov.save_to_db(tag=diaobject_provenance_tag)  # See note below
 
-    SNLogger.info("Creating DiaObject: ")
+    SNLogger.info(f"Creating DiaObject: {name} at {ra}, {dec} discovered on {mjd}")
     diaobj = DiaObject(name=name, provenance_id=prov.id, ra=ra, dec=dec, mjd_discovery=mjd)
     SNLogger.info("Saving diaobj: ")
     SNLogger.info(diaobj)
@@ -36,9 +37,7 @@ def save_dia_objects_from_subtraction(
     science_sca,
     science_band,
     image_collection,
-    image_provenance_tag,
-    image_process,
-    diaobject_provenance_tag="nov2025_test2",
+    diaobject_provenance_tag="nov2025_test3",
     diaobject_process="sidecar",
 ):
     """
@@ -50,7 +49,9 @@ def save_dia_objects_from_subtraction(
     major, minor = 0, 1
     params = Config.get()
 
-    for name, ra, dec in dia_sources[["name", "ra", "dec"]].rows():
+    for name, ra, dec in dia_sources[["id", "ra", "dec"]].iterrows():
+        name = f"{science.provenance_id}_{name}"
+
         save_one_dia_object(
             name=name,
             ra=ra,

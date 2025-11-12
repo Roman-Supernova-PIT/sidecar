@@ -1,19 +1,22 @@
 import pytest
 
+from pathlib import Path
+
 from snappl.config import Config
 from snappl.diaobject import DiaObject
 from snappl.imagecollection import ImageCollection
-from sidecar.database import save_one_dia_object
+from sidecar.database import save_one_dia_object, save_dia_objects_from_subtraction
 
 
 # @pytest.mark.skip(reason="Need to make matching provenance tag first.")
 @pytest.mark.parametrize("ra,dec,name", [(7.55110, -44.80718, "foo2")])
 def test_get_dia_object(ra, dec, name):
     collection = "snpitdb"
-    diaobject_provenance_tag = "nov2025_test3"
+    diaobject_provenance_tag = "nov2025_test4"
     diaobject_process = "sidecar"
     dia_object = DiaObject.find_objects(collection=collection, provenance_tag=diaobject_provenance_tag, process=diaobject_process,
                                         ra=ra, dec=dec)
+
     assert dia_object[0].name == name
 
 
@@ -34,7 +37,7 @@ def test_save_dia_object():
     collection = "snpitdb"
     image_provenance_tag = "ou2024"
     image_process = "load_ou2024_image"
-    diaobject_provenance_tag = "nov2025_test3"
+    diaobject_provenance_tag = "nov2025_test4"
     diaobject_process = "sidecar"
 
     image_collection = ImageCollection.get_collection(
@@ -55,6 +58,32 @@ def test_save_dia_object():
                         diaobject_process=diaobject_process)
 
 
+def test_save_dia_objects_from_subtraction():
+    test_dir = Path(__file__).parent.name
+    dia_source_catalog_path = test_dir / Path("cleaned_score_detection_to_transients_H158_35303_8_-_H158_39140_3.ecsv")
+    science_pointing = 35303
+    science_sca = 8
+    science_band = "H158"
+    collection = "snpitdb"
+    image_provenance_tag = "ou2024"
+    image_process = "load_ou2024_image"
+    diaobject_provenance_tag = "nov2025_test4"
+    diaobject_process = "sidecar"
+
+    image_collection = ImageCollection.get_collection(collection=collection, provenance_tag=image_provenance_tag, process=image_process)
+
+    save_dia_objects_from_subtraction(
+        dia_source_catalog_path=dia_source_catalog_path,
+        science_pointing=science_pointing,
+        science_sca=science_sca,
+        science_band=science_band,
+        image_collection=image_collection,
+        diaobject_provenance_tag=diaobject_provenance_tag,
+        diaobject_process=diaobject_process,
+    )
+
+
 if __name__ == "__main__":
     test_save_dia_object()
     test_get_dia_object()
+    test_save_dia_objects_from_subtraction()
