@@ -28,6 +28,7 @@ dependencies = [
   "snpit_utils",
   "sfft-romansnpit>=1.6.4.dev6",
   "sep",
+  "tqdm",
 ]
 
 license-files = ["LICENSE"]
