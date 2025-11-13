@@ -29,6 +29,7 @@ dependencies = [
   "sfft-romansnpit>=1.6.4.dev6",
   "sep",
   "tqdm",
+  "torch",
 ]
 
 license-files = ["LICENSE"]
