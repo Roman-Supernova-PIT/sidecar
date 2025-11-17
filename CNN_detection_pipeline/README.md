@@ -56,8 +56,8 @@ This script processes the previously extracted cutouts through a DenseNet model:
 This repository uses **Git Large File Storage (Git LFS)** to store large model files `.pth` files) efficiently.
 ## Model Files
 The following DenseNet model files are stored using Git LFS:
-- `cnn_detection_pipeline/DenseNet121_best.pth` (84 MB)
-- `cnn_detection_pipeline/DenseNet169_best.pth` (151 MB)
+- `CNN_detection_pipeline/DenseNet121_best.pth` (84 MB)
+- `CNN_detection_pipeline/DenseNet169_best.pth` (151 MB)
 ## Storage Location
 The actual model files are stored on **GitHub's LFS servers**, not in the regular Git repository. When you clone or pull the repository, Git LFS automatically downloads these files from GitHub's LFS storage.
 ## How to Access the Files
@@ -79,7 +79,7 @@ git lfs install
 When you clone the repository, Git LFS will automatically download the model files:
 ```bash
 git clone https://github.com/Roman-Supernova-PIT/sidecar.git
-cd cnn_detection_pipeline
+cd CNN_detection_pipeline
 ```
 The `.pth` files will be automatically downloaded to the correct locations.
 ### 4. Verify Files Were Downloaded
@@ -88,7 +88,7 @@ git lfs ls-files
 ```
 You should see the model files listed. You can also check the file sizes:
 ```bash
-ls -lh cnn_detection_pipeline/*.pth
+ls -lh CNN_detection_pipeline/*.pth
 ```
 ## Authentication
 **No special authentication is needed** beyond normal GitHub access:
