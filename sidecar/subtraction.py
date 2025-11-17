@@ -66,8 +66,8 @@ def sky_subtract(inpath, skysubpath, detmaskpath, temp_dir=Path("/tmp"), force=F
     """
 
     if (not force) and (skysubpath.is_file()) and (detmaskpath.is_file()):
-        with fits.open(skysubpath) as hdul:
-            skyrms = hdul[0].header["SKYRMS"]
+        header = fits.getheader(skysubpath)
+        skyrms = header["SKYRMS"]
         return skyrms
 
     if inpath.name[-3:] == ".gz":
@@ -224,10 +224,8 @@ class Pipeline:
         os.makedirs(self.out_dir, exist_ok=True)
 
         # get psf
-        science_psf = self.run_get_imsim_psf(self.science_info, self.science_psf_path)  # saved to science_info.psf_path
-        template_psf = self.run_get_imsim_psf(
-            self.template_info, self.template_psf_path
-        )  # saved to template_info.psf_path
+        science_psf = self.run_get_imsim_psf(self.science_info, self.science_psf_path)
+        template_psf = self.run_get_imsim_psf(self.template_info, self.template_psf_path)
 
         # sky subtraction
         science_skyrms = sky_subtract(
