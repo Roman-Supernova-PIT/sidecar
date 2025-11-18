@@ -34,7 +34,6 @@ import numpy as np
 import os
 from astropy.io import fits
 from astropy.visualization import ZScaleInterval
-from tqdm.auto import tqdm
 from skimage.transform import resize
 from pathlib import Path
 import warnings
