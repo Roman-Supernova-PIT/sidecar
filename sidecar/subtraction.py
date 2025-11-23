@@ -246,8 +246,8 @@ class Pipeline:
         # get data
         science_hdr, science_data = load_fits_to_cp(self.science_skysub_path, dtype=cp.float64)
         template_hdr, template_data = load_fits_to_cp(self.template_skysub_path, dtype=cp.float64)
-        _, science_psf = load_fits_to_cp(self.science_psf_path, return_hdr=False)
-        _, template_psf = load_fits_to_cp(self.template_psf_path, return_hdr=False)
+        _, science_psf = load_fits_to_cp(self.science_psf_path, return_hdr=False, dtype=cp.float64)
+        _, template_psf = load_fits_to_cp(self.template_psf_path, return_hdr=False, dtype=cp.float64)
         _, science_detmask = load_fits_to_cp(self.science_detmask_path, return_hdr=False)
         _, template_detmask = load_fits_to_cp(self.template_detmask_path, return_hdr=False)
 
