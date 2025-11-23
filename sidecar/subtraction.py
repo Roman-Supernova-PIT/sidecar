@@ -168,57 +168,6 @@ class Pipeline:
         fitsio.write(save_path, stamp, clobber=True)
         return stamp
 
-    @staticmethod
-    def dump_convolve_psf(sfftifier, temp_dir):
-        fits.writeto(
-            Path(temp_dir) / Path("psf_target.fits"),
-            cp.asnumpy(sfftifier.PSF_target_GPU),
-            header=sfftifier.hdr_target,
-            overwrite=True,
-        )
-        fits.writeto(
-            Path(temp_dir) / Path("psf_object.fits"),
-            cp.asnumpy(sfftifier.PSF_object_GPU),
-            header=sfftifier.hdr_object,
-            overwrite=True,
-        )
-        fits.writeto(
-            Path(temp_dir) / Path("psf_resamp_object.fits"),
-            cp.asnumpy(sfftifier.PSF_resamp_object_GPU),
-            header=sfftifier.hdr_target,  # Resampled onto target WCS
-            overwrite=True,
-        )
-        fits.writeto(
-            Path(temp_dir) / Path("target.fits"),
-            cp.asnumpy(sfftifier.PixA_target_GPU).T,
-            header=sfftifier.hdr_target,
-            overwrite=True,
-        )
-        fits.writeto(
-            Path(temp_dir) / Path("Ctarget.fits"),
-            cp.asnumpy(sfftifier.PixA_Ctarget_GPU).T,
-            header=sfftifier.hdr_target,
-            overwrite=True,
-        )
-        fits.writeto(
-            Path(temp_dir) / Path("object.fits"),
-            cp.asnumpy(sfftifier.PixA_object_GPU).T,
-            header=sfftifier.hdr_object,
-            overwrite=True,
-        )
-        fits.writeto(
-            Path(temp_dir) / Path("resamp_object.fits"),
-            cp.asnumpy(sfftifier.PixA_resamp_object_GPU).T,
-            header=sfftifier.hdr_target,  # Resampled onto target WCS
-            overwrite=True,
-        )
-        fits.writeto(
-            Path(temp_dir) / Path("Cresamp_object.fits"),
-            cp.asnumpy(sfftifier.PixA_Cresamp_object_GPU).T,
-            header=sfftifier.hdr_target,  # Reampled onto target WCS
-            overwrite=True,
-        )
-
     def run(self):
 
         os.makedirs(self.out_dir, exist_ok=True)
@@ -278,9 +227,6 @@ class Pipeline:
 
         sfftifier.resampling_image_mask_psf()
         sfftifier.cross_convolution()
-        DEBUG = True
-        if DEBUG:
-            self.dump_convolve_psf(sfftifier, temp_dir="/snpit_temp/test")
         sfftifier.sfft_subtraction()
         sfftifier.find_decorrelation()
 
