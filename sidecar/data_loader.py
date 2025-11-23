@@ -2,15 +2,6 @@ from astropy.io import fits
 from astropy.table import Table
 from astropy.wcs import WCS
 
-INPUT_IMAGE_PATTERN = (
-    "/global/cfs/cdirs/lsst/shared/external/roman-desc-sims/Roman_data"
-    "/RomanTDS/images/simple_model/{band}/{pointing}/Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits.gz"
-)
-INPUT_TRUTH_PATTERN = (
-    "/global/cfs/cdirs/lsst/shared/external/roman-desc-sims/Roman_data"
-    "/RomanTDS/truth/{band}/{pointing}/Roman_TDS_index_{band}_{pointing}_{sca}.txt"
-)
-
 
 def load_image(image_path, hdu_id=0):
     with fits.open(image_path) as hdul:

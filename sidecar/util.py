@@ -11,11 +11,6 @@ from snappl.imagecollection import ImageCollection
 INPUT_IMAGE_PATTERN = (
     "RomanTDS/images/simple_model/{band}/{pointing}/Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits.gz"
 )
-INPUT_TRUTH_PATTERN = "RomanTDS/truth/{band}/{pointing}/Roman_TDS_index_{band}_{pointing}_{sca}.txt"
-# SIMS_DIR = Path(os.getenv("SIMS_DIR"))
-# TEMP_DIR = Path("/phrosty_temp")
-#
-# GALSIM_CONFIG = Path(os.getenv("SN_INFO_DIR")) / "tds.yaml"
 
 IMAGE_WIDTH = 4088
 IMAGE_HEIGHT = 4088
