@@ -166,7 +166,7 @@ def test_read_data_records_from_file_with_just_science_images():
 
 
 def test_get_templates_for_science_images_from_csv():
-    data_records_path = Path(__file__).parent / "test_ten_data_records_only_science.csv"
+    data_records_path = Path(__file__).parent / "test_six_nov2025_only_science.csv"
     data_records = read_data_records(data_records_path=data_records_path)
     collection = "snpitdb"
     provenance_tag = "ou2024"
@@ -177,19 +177,19 @@ def test_get_templates_for_science_images_from_csv():
     data_records_with_template = find_templates_for_pointings(
         image_collection,
         data_records["science_pointing"],
-        data_records["science_pointing"],
-        data_records["science_pointing"],
+        data_records["science_sca"],
+        data_records["science_band"],
     )
 
     assert len(data_records_with_template) == len(data_records)
     assert "science_pointing" in data_records_with_template.columns
     assert "template_pointing" in data_records_with_template.columns
-    assert data_records["science_pointing"][0] == 50470
-    assert data_records["science_sca"][0] == 17
-    assert data_records["science_band"][0] == "R062"
-    assert data_records["template_pointing"][0] == 8
-    assert data_records["template_sca"][0] == 8
-    assert data_records["template_band"][0] == "R062"
+    assert data_records["science_pointing"].iloc[0] == 1157
+    assert data_records["science_sca"].iloc[0] == 14
+    assert data_records["science_band"].iloc[0] == "R062"
+    assert data_records_with_template["template_pointing"].iloc[0] == 1
+    assert data_records_with_template["template_sca"].iloc[0] == 2
+    assert data_records_with_template["template_band"].iloc[0] == "R062"
 
 
 def test_read_data_records_from_file_with_not_enough_columns():

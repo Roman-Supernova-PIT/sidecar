@@ -177,13 +177,8 @@ def find_templates_for_pointings(
     """
     rows = []
     for pointing, sca, band in zip(science_pointing, science_sca, science_band):
-        row = make_data_records_from_pointing(
-            image_collection,
-            science_pointing,
-            science_sca,
-            science_band,
-        )
-        rows.append[row]
+        row = make_data_records_from_pointing(image_collection, pointing, sca, band)
+        rows.append(row)
 
     return pd.concat(rows)
 
