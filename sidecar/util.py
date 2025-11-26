@@ -328,7 +328,10 @@ def get_pointing_sca_band_from_image_path(image_path):
 def read_data_records(data_records_path):
     """Read a set of {science, template}_{pointing, sca, band} from a file.
 
-    Checks to ensure that there are at least 3 columns: science_{pointing, sca, band}
+    Checks to ensure that there are at least 3 columns:
+       science_pointing, science_sca, science_band
+         or just
+       pointing, sca, band
 
     Parameters
     ----------
@@ -337,9 +340,15 @@ def read_data_records(data_records_path):
     """
     df = pd.read_csv(data_records_path)
 
-    required_columns = ("science_pointing", "science_sca", "science_band")
+    science_columns = ("science_pointing", "science_sca", "science_band")
+    alternate_science_columns = ("pointing", "sca", "band")
 
-    if len(set(required_columns).intersection(df.columns)) < len(required_columns):
-        raise ValueError(f"CSV file must have {required_columns}")
+    if len(set(science_columns).intersection(df.columns)) < len(science_columns)and len(set(alternate_science_columns).intersection(df.columns)) < len(alternate_science_columns):
+        raise ValueError(f"CSV file must have either {science_columns} or {alternate_science_columns}")
+
+    # Standardize to have science_ prefix for pointing, sca, band
+    for colname in alternate_science_columns:
+        if f"science_{colname}" not in df.columns:
+            df[f"science_{colname}"] = df[colname]
 
     return df
