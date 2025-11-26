@@ -10,6 +10,7 @@ from sidecar.util import (
     get_image_info_for_ra_dec,
     get_pointing_sca_band_from_image_path,
     get_templates_for_points,
+    find_templates_for_pointings,
     make_data_records_from_pointing,
     make_data_records_from_image_path,
     read_data_records,
@@ -162,6 +163,33 @@ def test_read_data_records_from_file_with_just_science_images():
     assert data_records["science_pointing"][0] == 50470
     assert data_records["science_sca"][0] == 17
     assert data_records["science_band"][0] == "R062"
+
+
+def test_get_templates_for_science_images_from_csv():
+    data_records_path = Path(__file__).parent / "test_ten_data_records_only_science.csv"
+    data_records = read_data_records(data_records_path=data_records_path)
+    collection = "snpitdb"
+    provenance_tag = "ou2024"
+    process = "load_ou2024_image"
+    image_collection = ImageCollection.get_collection(
+        collection=collection, provenance_tag=provenance_tag, process=process
+    )
+    data_records_with_template = find_templates_for_pointings(
+        image_collection,
+        data_records["science_pointing"],
+        data_records["science_pointing"],
+        data_records["science_pointing"],
+    )
+
+    assert len(data_records_with_template) == len(data_records)
+    assert "science_pointing" in data_records_with_template.columns
+    assert "template_pointing" in data_records_with_template.columns
+    assert data_records["science_pointing"][0] == 50470
+    assert data_records["science_sca"][0] == 17
+    assert data_records["science_band"][0] == "R062"
+    assert data_records["template_pointing"][0] == 8
+    assert data_records["template_sca"][0] == 8
+    assert data_records["template_band"][0] == "R062"
 
 
 def test_read_data_records_from_file_with_not_enough_columns():

@@ -149,11 +149,50 @@ def get_center_and_corners(image):
     return df
 
 
+def find_templates_for_pointings(
+    image_collection,
+    science_pointing,
+    science_sca,
+    science_band,
+    template_pointing=None,
+    template_sca=None,
+    template_band=None,
+):
+    """Finds templates for set of science_{pointing, sca, band}
+
+    Parameters
+    ----------
+    image_collection: snapp.ImageCollection
+        Source of information about and pointers to images
+    science_pointing: int
+        Pointing of science image
+    science_sca: int
+        Sensor Chip Assembly (SCA) of science image
+    science_band: str
+        Filter of science image
+
+    Returns
+    -------
+    pandas.DataFrame with rows of science_{pointing, sca, band} and template_{pointing, sca, band}
+    """
+    rows = []
+    for pointing, sca, band in zip(science_pointing, science_sca, science_band):
+        row = make_data_records_from_pointing(
+            image_collection,
+            science_pointing,
+            science_sca,
+            science_band,
+        )
+        rows.append[row]
+
+    return pd.concat(rows)
+
+
 def make_data_records_from_pointing(
     image_collection,
-    science_pointing=None,
-    science_sca=None,
-    science_band=None,
+    science_pointing,
+    science_sca,
+    science_band,
     template_pointing=None,
     template_sca=None,
     template_band=None,
@@ -169,11 +208,11 @@ def make_data_records_from_pointing(
     ----------
     image_collection: snapp.ImageCollection
         Source of information about and pointers to images
-    science_pointing: int, None
+    science_pointing: int
         Pointing of science image
-    science_sca: int, None
+    science_sca: int
         Sensor Chip Assembly (SCA) of science image
-    science_band: str, None
+    science_band: str
         Filter of science image
     template_pointing: int, None
         Pointing of template image
@@ -181,8 +220,6 @@ def make_data_records_from_pointing(
         Sensor Chip Assembly (SCA) of template image
     template_band: str, None
         Filter of template image
-
-    Either data_records_path or science_{pointing, sca, band} must be defined.
 
     Returns
     -------
@@ -201,7 +238,6 @@ def make_data_records_from_pointing(
         }
     else:
         science_image = image_collection.get_image(**science_id)
-        science_image_points = get_center_and_corners(science_image)
 
         template_image_info = get_earliest_template_for_image(image_collection, science_image)
         template_id = {

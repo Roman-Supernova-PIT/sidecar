@@ -15,6 +15,7 @@ from sidecar import source_detection
 from sidecar import truth_matching
 from sidecar import truth_retrieval
 from sidecar.util import (
+    find_templates_for_pointings,
     make_data_records_from_pointing,
     make_data_records_from_image_path,
     read_data_records,
@@ -594,7 +595,17 @@ def main():
     )
 
     if args.data_records_path is not None:
+        # A data_records_path can store a list of images to subtract
         data_records = read_data_records(args.data_records_path)
+        # Check to see if we the data_records_path provided templates
+        # If not, we will search for them
+        if "template_pointing" not in data_records.columns:
+            data_records = find_templates_for_pointings(
+                image_collection=image_collection,
+                science_pointing=data_records["science_pointing"],
+                science_sca=data_records["science_sca"],
+                science_band=data_records["science_band"],
+            )
     elif args.science_image_path is not None:
         # If the template_image path is not specified, then a template will be searched for.
         data_records = make_data_records_from_image_path(
@@ -605,7 +616,7 @@ def main():
     elif (args.science_pointing is not None) and (args.science_sca is not None):
         # In principle the band is already specified by the pointing,
         #   so we won't explicitly require it here.
-        # As for image_path, if template values aren't specified, a template will be searched for.
+        # If template values aren't specified, a template will be searched for.
         data_records = make_data_records_from_pointing(
             image_collection=image_collection,
             science_pointing=args.science_pointing,
