@@ -297,18 +297,18 @@ def get_pointing_sca_band_from_image_path(image_path):
 def read_data_records(data_records_path):
     """Read a set of {science, template}_{pointing, sca, band} from a file.
 
+    Checks to ensure that there are at least 3 columns: science_{pointing, sca, band}
+
     Parameters
     ----------
     data_records_path: str, pathlib.Path
         Path to file with science and template pointings.  Overrides any command-line specification of pointings.
     """
-    INPUT_COLUMNS = [
-        "science_band",
-        "science_pointing",
-        "science_sca",
-        "template_band",
-        "template_pointing",
-        "template_sca",
-    ]
+    df = pd.read_csv(data_records_path)
 
-    return pd.read_csv(data_records_path, usecols=INPUT_COLUMNS)
+    required_columns = ("science_pointing", "science_sca", "science_band")
+
+    if len(set(required_columns).intersection(df.columns)) < len(required_columns):
+        raise ValueError(f"CSV file must have {required_columns}")
+
+    return df

@@ -1,4 +1,5 @@
 from pathlib import Path
+import pytest
 
 from snappl.config import Config
 from snappl.imagecollection import ImageCollection
@@ -141,6 +142,32 @@ def test_read_data_records_from_file():
     data_records = read_data_records(data_records_path=data_records_path)
 
     assert len(data_records) == 10
+    assert "science_pointing" in data_records.columns
+    assert "template_pointing" in data_records.columns
+    assert data_records["science_pointing"][0] == 50470
+    assert data_records["science_sca"][0] == 17
+    assert data_records["science_band"][0] == "R062"
+    assert data_records["template_pointing"][0] == 8
+    assert data_records["template_sca"][0] == 8
+    assert data_records["template_band"][0] == "R062"
+
+
+def test_read_data_records_from_file_with_just_science_images():
+    data_records_path = Path(__file__).parent / "test_ten_data_records_only_science.csv"
+    data_records = read_data_records(data_records_path=data_records_path)
+
+    assert len(data_records) == 10
+    assert "science_pointing" in data_records.columns
+    assert "template_pointing" not in data_records.columns
+    assert data_records["science_pointing"][0] == 50470
+    assert data_records["science_sca"][0] == 17
+    assert data_records["science_band"][0] == "R062"
+
+
+def test_read_data_records_from_file_with_not_enough_columns():
+    data_records_path = Path(__file__).parent / "test_ten_data_records_not_enough_columns.csv"
+    with pytest.raises(ValueError):
+        read_data_records(data_records_path=data_records_path)
 
 
 def test_make_data_records_from_science_id_and_template_id():
