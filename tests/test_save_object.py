@@ -14,8 +14,9 @@ def test_get_dia_object(ra, dec, name):
     collection = "snpitdb"
     diaobject_provenance_tag = "nov2025_test4"
     diaobject_process = "sidecar"
-    dia_object = DiaObject.find_objects(collection=collection, provenance_tag=diaobject_provenance_tag, process=diaobject_process,
-                                        ra=ra, dec=dec)
+    dia_object = DiaObject.find_objects(
+        collection=collection, provenance_tag=diaobject_provenance_tag, process=diaobject_process, ra=ra, dec=dec
+    )
 
     assert len(dia_object) > 0, f"Found no dia_objects near {ra, dec} in {diaobject_provenance_tag, diaobject_process}"
     assert dia_object[0].name == name
@@ -52,11 +53,18 @@ def test_save_dia_object():
     config = Config.get()
     params = config.value("photometry.sidecar")
 
-    save_one_dia_object(name=name, ra=ra, dec=dec, mjd=mjd,
-                        provenance_id=science.provenance_id,
-                        major=major, minor=minor, params=params,
-                        diaobject_provenance_tag=diaobject_provenance_tag,
-                        diaobject_process=diaobject_process)
+    save_one_dia_object(
+        name=name,
+        ra=ra,
+        dec=dec,
+        mjd=mjd,
+        provenance_id=science.provenance_id,
+        major=major,
+        minor=minor,
+        params=params,
+        diaobject_provenance_tag=diaobject_provenance_tag,
+        diaobject_process=diaobject_process,
+    )
 
 
 def test_save_dia_objects_from_subtraction():
@@ -72,7 +80,9 @@ def test_save_dia_objects_from_subtraction():
     diaobject_provenance_tag = "nov2025_test4"
     diaobject_process = "sidecar"
 
-    image_collection = ImageCollection.get_collection(collection=collection, provenance_tag=image_provenance_tag, process=image_process)
+    image_collection = ImageCollection.get_collection(
+        collection=collection, provenance_tag=image_provenance_tag, process=image_process
+    )
 
     save_dia_objects_from_subtraction(
         dia_source_catalog_path=dia_source_catalog_path,
