@@ -17,6 +17,7 @@ def test_get_dia_object(ra, dec, name):
     dia_object = DiaObject.find_objects(collection=collection, provenance_tag=diaobject_provenance_tag, process=diaobject_process,
                                         ra=ra, dec=dec)
 
+    assert len(dia_object) > 0, f"Found no dia_objects near {ra, dec} in {diaobject_provenance_tag, diaobject_process}"
     assert dia_object[0].name == name
 
 
@@ -60,7 +61,8 @@ def test_save_dia_object():
 
 def test_save_dia_objects_from_subtraction():
     test_dir = Path(__file__).parent.name
-    dia_source_catalog_path = test_dir / Path("cleaned_score_detection_to_transients_H158_35303_8_-_H158_39140_3.ecsv")
+    dia_source_catalog_path = test_dir / Path("cleaned_score_detection_R062_2319_8_-_R062_4264_7.ecsv")
+
     science_pointing = 35303
     science_sca = 8
     science_band = "H158"
