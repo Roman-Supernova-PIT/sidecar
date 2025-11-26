@@ -180,7 +180,7 @@ def find_templates_for_pointings(
         row = make_data_records_from_pointing(image_collection, pointing, sca, band)
         rows.append(row)
 
-    return pd.concat(rows)
+    return pd.concat(rows, ignore_index=True)
 
 
 def make_data_records_from_pointing(

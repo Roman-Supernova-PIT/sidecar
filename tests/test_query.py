@@ -184,12 +184,12 @@ def test_get_templates_for_science_images_from_csv():
     assert len(data_records_with_template) == len(data_records)
     assert "science_pointing" in data_records_with_template.columns
     assert "template_pointing" in data_records_with_template.columns
-    assert data_records["science_pointing"].iloc[0] == 1157
-    assert data_records["science_sca"].iloc[0] == 14
-    assert data_records["science_band"].iloc[0] == "R062"
-    assert data_records_with_template["template_pointing"].iloc[0] == 1
-    assert data_records_with_template["template_sca"].iloc[0] == 2
-    assert data_records_with_template["template_band"].iloc[0] == "R062"
+    assert data_records["science_pointing"][0] == 1157
+    assert data_records["science_sca"][0] == 14
+    assert data_records["science_band"][0] == "R062"
+    assert data_records_with_template["template_pointing"][0] == 1
+    assert data_records_with_template["template_sca"][0] == 2
+    assert data_records_with_template["template_band"][0] == "R062"
 
 
 def test_read_data_records_from_file_with_not_enough_columns():
