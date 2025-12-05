@@ -1,3 +1,5 @@
+import numpy as np
+
 from astropy.table import Table
 
 from snappl.config import Config
@@ -53,7 +55,7 @@ def save_dia_objects_from_subtraction(
     science = image_collection.get_image(pointing=science_pointing, sca=science_sca, band=science_band)
 
     if threshold is not None:
-        dia_sources = dia_sources[abs(dia_sources[threshold_column]) > threshold]
+        dia_sources = dia_sources[np.abs(dia_sources[threshold_column]) > threshold]
 
     major, minor = 0, 1
     params = Config.get()

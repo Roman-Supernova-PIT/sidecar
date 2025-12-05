@@ -63,6 +63,18 @@ def main():
         type=str,
         help="Full filepath of subtraction catalog file."
     )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="Significance threshold",
+    )
+    parser.add_argument(
+        "--threshold-column",
+        type=str,
+        default="peak_value",
+        help="Column name of significance threshold in catalog file.",
+    )
 
     cfg.augment_argparse(parser)
     args = parser.parse_args(leftovers)
@@ -80,6 +92,8 @@ def main():
         image_collection=image_collection,
         diaobject_provenance_tag=args.diaobject_provenance_tag,
         diaobject_process=args.diaobject_process,
+        threshold=args.threshold,
+        threshold_column=args.threshold_column,
     )
 
 
