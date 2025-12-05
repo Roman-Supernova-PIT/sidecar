@@ -458,7 +458,7 @@ class Detection:
             temp_dir = Path(self.temp_dir)
             os.makedirs(temp_dir, exist_ok=True)
 
-        for i, row in self.data_records.iterrows():
+        for _, row in self.data_records.iterrows():
             self.run_one_subtraction(
                 self.image_collection,
                 row["science_band"],
