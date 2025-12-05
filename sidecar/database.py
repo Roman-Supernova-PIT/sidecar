@@ -37,14 +37,23 @@ def save_dia_objects_from_subtraction(
     science_sca,
     science_band,
     image_collection,
-    diaobject_provenance_tag="nov2025_test3",
-    diaobject_process="sidecar",
+    diaobject_provenance_tag,
+    diaobject_process,
+    threshold=None,
+    threshold_column="peak_value",
 ):
     """
     dia_source_catalog_path:  str, Path of ecsv file to load
+
+    threshold: float
+        Significance of detection.  Cut will be abs(threshold_column) > threshold
+    threshold_column: str, name of column to filter
     """
     dia_sources = Table.read(dia_source_catalog_path, format="ascii.ecsv")
     science = image_collection.get_image(pointing=science_pointing, sca=science_sca, band=science_band)
+
+    if threshold is not None:
+        dia_sources = dia_sources[abs(dia_sources[threshold_column]) > threshold]
 
     major, minor = 0, 1
     params = Config.get()

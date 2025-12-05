@@ -1,5 +1,4 @@
 import argparse
-from pathlib import Path
 
 from snappl.config import Config
 from snappl.imagecollection import ImageCollection
@@ -36,7 +35,7 @@ def main():
         default=None,
         help="Location of the .yaml config file.  Defaults to env var SNPIT_CONFIG.",
     )
-    parser.add_argument("--image-collection", "--ic", help="Collection of the images we're using", default="ou2024")
+    parser.add_argument("--image-collection", help="Collection of the images we're using", default="ou2024")
     parser.add_argument("--image-provenance-tag", type=str)
     parser.add_argument("--image-process", type=str)
     parser.add_argument("--diaobject-provenance-tag", type=str)
@@ -45,22 +44,24 @@ def main():
         "--science-pointing",
         "--pointing",
         type=int,
-        default=None,
         help="Specify an image by pointing.  Must also specify sca, band.",
     )
     parser.add_argument(
         "--science-sca",
         "--sca",
         type=int,
-        default=None,
         help="Specify an image by sca.  Must also specify pointing, band.",
     )
     parser.add_argument(
         "--science-band",
         "--band",
         type=str,
-        default=None,
         help="Specify an image by band.  Must also specify pointing, sca.",
+    )
+    parser.add_argument(
+        "--dia-source-catalog-path",
+        type=str,
+        help="Full filepath of subtraction catalog file."
     )
 
     cfg.augment_argparse(parser)
