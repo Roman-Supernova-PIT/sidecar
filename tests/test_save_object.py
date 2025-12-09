@@ -67,6 +67,7 @@ def test_save_dia_object():
     )
 
 
+@pytest.mark.skip(reason="Don't have a test DB, so we don't want to add an object each time.")
 def test_save_dia_objects_from_subtraction():
     test_dir = Path(__file__).parent.name
     dia_source_catalog_path = test_dir / Path("cleaned_score_detection_R062_2319_8_-_R062_4264_7.ecsv")
