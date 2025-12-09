@@ -70,9 +70,15 @@ def merge_science_and_template_truth(
     science_truth["image_type"] = ["science"] * len(science_truth)
     science_truth[matched_id[matched_status]]["image_type"] = ["both"] * matched_status.sum()
 
-    template_truth_unmatched["image_type"] = ["template"] * len(template_truth_unmatched)
+    # If there are objects from the truth table unmatched to detection table, then fill that image type with "template"
+    # and append (vertically stack) to table.
+    # If there are no such objects, then skip this step
+    if len(template_truth_unmatched) > 0:
+        template_truth_unmatched["image_type"] = ["template"] * len(template_truth_unmatched)
+        merged_truth = vstack([science_truth, template_truth_unmatched])
+    else:
+        merged_truth = science_truth
 
-    merged_truth = vstack([science_truth, template_truth_unmatched])
     merged_truth.remove_columns(["x", "y"])
 
     # Standardize colum names for clarity and
