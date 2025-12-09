@@ -631,6 +631,11 @@ def main():
         SNLogger.warning("Stopping.")
         return
 
+    if len(data_records) < 1:
+        SNLogger.warning("No matching sets of science and template images found.")
+        SNLogger.warning("Stopping.")
+        return
+
     detection = Detection(
         image_collection=image_collection, data_records=data_records, temp_dir=args.temp_dir, output_dir=args.output_dir
     )

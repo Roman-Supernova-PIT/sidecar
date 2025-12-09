@@ -99,9 +99,14 @@ def get_earliest_template_for_image(image_collection, image, **kwargs):
     Parameters
     ----------
     image : DataFrame of image info from Roman-DESC-simdex
+
+    If no matches found then returns None
     """
     templates = get_templates_for_image(image_collection, image, **kwargs)
     # Get earliest MJD
+    if len(templates) == 0:
+        return None
+
     earliest_template = templates.iloc[templates.mjd.argsort()].iloc[0]
 
     return earliest_template
@@ -235,11 +240,15 @@ def make_data_records_from_pointing(
         science_image = image_collection.get_image(**science_id)
 
         template_image_info = get_earliest_template_for_image(image_collection, science_image)
+        if template_image_info is None:
+            return None
+
         template_id = {
             "pointing": template_image_info.pointing,
             "sca": template_image_info.sca,
             "band": template_image_info.band,
         }
+
 
     # Create a DataFrame that looks just like what we were loading in from the file.
     INPUT_COLUMNS = [
