@@ -1,9 +1,12 @@
 import argparse
 
+import pandas as pd
+
 from snappl.config import Config
 from snappl.imagecollection import ImageCollection
 from sidecar.database import save_dia_objects_from_subtraction
-
+from sidecar.pipeline import Detection
+from sidecar.util import find_templates_for_pointings, read_data_records
 
 def main():
     # Run one arg pass just to get the config file, so we can augment
@@ -64,6 +67,15 @@ def main():
         help="Full filepath of subtraction catalog file."
     )
     parser.add_argument(
+        "-d",
+        "--data-records",
+        dest="data_records_path",
+        default=None,
+        type=str,
+        help="Input file with data records.  It is an error to specify --data-records and --dia-source-catalog-path.",
+    )
+    parser.add_argument("-o", "--output-dir", type=str, default=None, help="Output path.  Used to specify where to look for catalog files when reading a list of data records.")
+    parser.add_argument(
         "--threshold",
         type=float,
         default=None,
@@ -80,21 +92,52 @@ def main():
     args = parser.parse_args(leftovers)
     cfg.parse_args(args)
 
+    if args.data_records_path is not None and args.dia_source_catalog_path is not None:
+        SNLogger.warning(
+            "It is an error to specify 'data-records-path' and 'dia-source-catalog-path'"
+        )
+        return
+
     image_collection = ImageCollection.get_collection(
         collection=args.image_collection, provenance_tag=args.image_provenance_tag, process=args.image_process
     )
 
-    save_dia_objects_from_subtraction(
-        dia_source_catalog_path=args.dia_source_catalog_path,
-        science_pointing=args.science_pointing,
-        science_sca=args.science_sca,
-        science_band=args.science_band,
-        image_collection=image_collection,
-        diaobject_provenance_tag=args.diaobject_provenance_tag,
-        diaobject_process=args.diaobject_process,
-        threshold=args.threshold,
-        threshold_column=args.threshold_column,
-    )
+    if args.data_records_path is not None:
+        data_records = read_data_records(args.data_records_path)
+
+        if "template_pointing" not in data_records.columns:
+            data_records = find_templates_for_pointings(
+                image_collection=image_collection,
+                science_pointing=data_records["science_pointing"],
+                science_sca=data_records["science_sca"],
+                science_band=data_records["science_band"],
+            )
+
+        detection = Detection(image_collection=image_collection, data_records=data_records, output_dir=args.output_dir)
+        for _, row in data_records.iterrows():
+            science_id = {"pointing": row["science_pointing"], "sca": row["science_sca"], "band": row["science_band"]}
+            template_id = {"pointing": row["template_pointing"], "sca": row["template_sca"], "band": row["template_band"]}
+            file_path = detection.path_helper(science_id, template_id)
+
+            data_records["dia_source_catalog_path"] = file_path["cleaned_score_detection_path"]
+
+    else:
+        rows = [(args.science_pointing, args.science_sca, args.science_band, args.dia_source_catalog_path)]
+        names = ("science_pointing", "science_sca", "science_band", "dia_source_catalog_path")
+        data_records = pd.DataFrame.from_records(rows, columns=names)
+
+    for _, row in data_records.iterrows():
+        save_dia_objects_from_subtraction(
+            dia_source_catalog_path=row["dia_source_catalog_path"],
+            science_pointing=row["science_pointing"],
+            science_sca=row["science_sca"],
+            science_band=row["science_band"],
+            image_collection=image_collection,
+            diaobject_provenance_tag=args.diaobject_provenance_tag,
+            diaobject_process=args.diaobject_process,
+            threshold=args.threshold,
+            threshold_column=args.threshold_column,
+        )
 
 
 if __name__ == "__main__":
