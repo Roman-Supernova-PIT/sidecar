@@ -51,7 +51,8 @@ def get_templates_for_points(image_collection, points, band, min_points=3):
         matching_images = image_collection.find_images(ra=ra, dec=dec, band=band)
         entries = [(im.pointing, im.band, im.sca, im.exptime, im.mjd) for im in matching_images]
         this_df = pd.DataFrame.from_records(entries, columns=("pointing", "band", "sca", "exptime", "mjd"))
-        matches.append(this_df)
+        if len(this_df) > 0:
+            matches.append(this_df)
 
     matches = pd.concat(matches)
     # From
