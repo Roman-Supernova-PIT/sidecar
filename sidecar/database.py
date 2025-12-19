@@ -30,7 +30,10 @@ def save_one_dia_object(
     diaobj = DiaObject(name=name, provenance_id=prov.id, ra=ra, dec=dec, mjd_discovery=mjd)
     SNLogger.info("Saving diaobj: ")
     SNLogger.info(diaobj)
-    diaobj.save_object()
+    try:
+        diaobj.save_object()
+    except RuntimeError as e:
+        SNLogger.info(e)
 
 
 def save_dia_objects_from_subtraction(
