@@ -26,7 +26,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from astropy.io import ascii, fits
-from astropy.visualization import ZScaleInterval
 from pathlib import Path
 from tqdm import tqdm
 import warnings
@@ -231,7 +230,7 @@ def extract_cutout_with_padding(image_data, center_x, center_y, cutout_size=64, 
 
 def detect_catalog_type(data):
     """Detect which type of catalog this is based on column names.
-    
+
     For cleaned_score_detection files with columns like:
     id, x_peak, y_peak, peak_value, x_centroid, y_centroid, ra, dec
     """
@@ -253,7 +252,7 @@ def detect_catalog_type(data):
 
 def determine_fits_basename(folder_name):
     """Determine the corresponding FITS filename from folder name.
-    
+
     Example: folder_name = 'R062_56618_18_-_R062_2344_8'
              returns 'decorr_diff_R062_56618_18_-_R062_2344_8'
     """
@@ -269,7 +268,7 @@ def predict_cutout(model, cutout_normalized, device, threshold=0.5):
     # Convert to tensor and replicate to 3 channels
     image_tensor = torch.from_numpy(cutout_normalized).float()
     image_tensor = image_tensor.unsqueeze(0).repeat(3, 1, 1)
-    
+
     model.eval()
     with torch.no_grad():
         image_tensor = image_tensor.unsqueeze(0).to(device)  # Add batch dimension
@@ -285,12 +284,12 @@ def process_ecsv_with_predictions(dia_out_dir='../dia_out_dir',
                                    threshold=0.5,
                                    allow_edge_cutouts=True):
     """Process ECSV files, make predictions on-the-fly, and save updated catalogs."""
-    
-    # Device configuration
+
+    # Device configuration - force CPU only
     device = torch.device('cpu')
     print(f"Using device: {device}")
     print(f"Decision threshold: {threshold}")
-    
+
     # Load model
     print(f"Loading model from {model_path}")
     model = densenet169(num_classes=1)
@@ -299,7 +298,7 @@ def process_ecsv_with_predictions(dia_out_dir='../dia_out_dir',
     model.to(device)
     model.eval()
     print("Model loaded successfully\n")
-    
+
     dia_out_path = Path(dia_out_dir)
 
     if not dia_out_path.exists():
@@ -384,7 +383,7 @@ def process_ecsv_with_predictions(dia_out_dir='../dia_out_dir',
         print(f"Processing {len(data):,} objects...")
         for idx in tqdm(range(len(data)), desc="Making predictions", ncols=100):
             row = data[idx]
-            
+
             try:
                 # Extract coordinates
                 x_image = float(row[x_col])
@@ -423,9 +422,9 @@ def process_ecsv_with_predictions(dia_out_dir='../dia_out_dir',
                 cutout_normalized = normalize_cutout_0_1(cutout_raw)
 
                 # Make prediction
-                prediction, probability = predict_cutout(model, cutout_normalized, 
+                prediction, probability = predict_cutout(model, cutout_normalized,
                                                         device, threshold)
-                
+
                 predictions.append(prediction)
                 probabilities.append(probability)
                 successful += 1
