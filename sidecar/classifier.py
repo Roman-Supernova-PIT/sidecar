@@ -276,12 +276,13 @@ def predict_cutout(model, cutout_normalized, device, threshold=0.5):
         probability = output.cpu().numpy().item()
         prediction = 1 if probability >= threshold else 0
         return prediction, probability
-    
-def process_single_catalog(catalog_path, fits_path, output_path, 
-                          model_path='DenseNet169_best.pth',
-                          cutout_size=64, threshold=0.5):
+
+
+def process_single_catalog(catalog_path, fits_path, output_path,
+                            model_path='DenseNet169_best.pth',
+                            cutout_size=64, threshold=0.5):
     """Process a single ECSV catalog file with CNN predictions.
-    
+
     Parameters
     ----------
     catalog_path : str or Path
@@ -298,76 +299,77 @@ def process_single_catalog(catalog_path, fits_path, output_path,
         Decision threshold for classification
     """
     device = torch.device('cpu')
-    
+
     # Load model
     model = densenet169(num_classes=1)
     checkpoint = torch.load(model_path, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
     model.to(device)
     model.eval()
-    
+
     # Load catalog
     data = ascii.read(str(catalog_path), format='ecsv')
     catalog_type, x_col, y_col, id_col = detect_catalog_type(data)
-    
+
     # Load FITS image
     with fits.open(fits_path) as hdul:
         image_data = hdul[0].data
         if image_data.ndim > 2:
             image_data = image_data[0] if image_data.ndim == 3 else image_data.squeeze()
-    
+
     # Process each object
     predictions = []
     probabilities = []
     half_size = cutout_size // 2
-    
+
     for idx in range(len(data)):
         row = data[idx]
         try:
             x_image = float(row[x_col])
             y_image = float(row[y_col])
-            
+
             if x_col in ['X_IMAGE', 'Y_IMAGE']:
                 x_center = int(x_image - 1)
                 y_center = int(y_image - 1)
             else:
                 x_center = int(x_image)
                 y_center = int(y_image)
-            
+
             if (x_center < -half_size or x_center >= image_data.shape[1] + half_size or
                     y_center < -half_size or y_center >= image_data.shape[0] + half_size):
                 predictions.append(-1)
                 probabilities.append(np.nan)
                 continue
-            
+
             cutout_raw = extract_cutout_with_padding(
                 image_data, x_center, y_center, cutout_size, pad_value=0
             )
-            
+
             if np.all(cutout_raw == 0):
                 predictions.append(-1)
                 probabilities.append(np.nan)
                 continue
-            
+
             cutout_normalized = normalize_cutout_0_1(cutout_raw)
             prediction, probability = predict_cutout(model, cutout_normalized,
-                                                    device, threshold)
+                                                     device, threshold)
             predictions.append(prediction)
             probabilities.append(probability)
-            
+
         except Exception:
             predictions.append(-1)
             probabilities.append(np.nan)
-    
+
     # Add predictions to catalog
     data['cnn_prediction'] = predictions
     data['cnn_probability'] = probabilities
     data.meta['cnn_threshold'] = threshold
     data.meta['cnn_model'] = model_path
     data.meta['cnn_cutout_size'] = cutout_size
-    
+
     # Save
     ascii.write(data, output_path, format='ecsv', overwrite=True)
+
 
 def process_ecsv_with_predictions(dia_out_dir='../dia_out_dir',
                                    model_path='DenseNet169_best.pth',
@@ -440,8 +442,8 @@ def process_ecsv_with_predictions(dia_out_dir='../dia_out_dir',
                 obj_id = data[i][id_col] if id_col in data.colnames else i
                 print(f"    Object {obj_id}: {x_col}={data[i][x_col]:.2f}, {y_col}={data[i][y_col]:.2f}")
 
-        except Exception as e:
-            print(f"Error reading ECSV: {e}")
+        except Exception:
+            print(f"Error reading ECSV")
             continue
 
         # Determine FITS filename from folder name
@@ -459,8 +461,8 @@ def process_ecsv_with_predictions(dia_out_dir='../dia_out_dir',
                 if image_data.ndim > 2:
                     image_data = image_data[0] if image_data.ndim == 3 else image_data.squeeze()
                 print(f"Loaded FITS: {fits_file.name} (shape: {image_data.shape})")
-        except Exception as e:
-            print(f"Error reading FITS: {e}")
+        except Exception:
+            print(f"Error reading FITS")
             continue
 
         # Initialize prediction columns
@@ -514,13 +516,13 @@ def process_ecsv_with_predictions(dia_out_dir='../dia_out_dir',
 
                 # Make prediction
                 prediction, probability = predict_cutout(model, cutout_normalized,
-                                                        device, threshold)
+                                                         device, threshold)
 
                 predictions.append(prediction)
                 probabilities.append(probability)
                 successful += 1
 
-            except Exception as e:
+            except Exception:
                 predictions.append(-1)
                 probabilities.append(np.nan)
                 skipped += 1
