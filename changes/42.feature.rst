@@ -1,1 +1,3 @@
 Added CNN detection pipeline with ECSV cutout generator and DenseNet inference for transient detection, including comprehensive test suite. In this commit, everything is linter proof.
+
+Everything is now added as one code to sidecar/classifier.py. It will be executed as one package under pipeline.py.
