@@ -416,7 +416,7 @@ class Detection:
             catalog_path=file_path["cleaned_score_detection_path"],
             fits_path=file_path["difference_image_path"],
             output_path=file_path["cleaned_score_detection_path"].parent / f"{file_path['cleaned_score_detection_path'].stem}_with_predictions.ecsv",
-            model_path="DenseNet169_best.pth",
+            model_path="../CNN_detection_pipeline/DenseNet169_best.pth",
             cutout_size=64,
             threshold=0.5,
         )
