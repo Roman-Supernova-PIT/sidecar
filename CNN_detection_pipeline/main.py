@@ -334,41 +334,42 @@ def process_single_catalog(catalog_path, fits_path, output_path,
             else:
                 x_center = int(x_image)
                 y_center = int(y_image)
-            
+
             if (x_center < -half_size or x_center >= image_data.shape[1] + half_size or
                     y_center < -half_size or y_center >= image_data.shape[0] + half_size):
                 predictions.append(-1)
                 probabilities.append(np.nan)
                 continue
-            
+
             cutout_raw = extract_cutout_with_padding(
                 image_data, x_center, y_center, cutout_size, pad_value=0
             )
-            
+
             if np.all(cutout_raw == 0):
                 predictions.append(-1)
                 probabilities.append(np.nan)
                 continue
-            
+
             cutout_normalized = normalize_cutout_0_1(cutout_raw)
             prediction, probability = predict_cutout(model, cutout_normalized,
                                                     device, threshold)
             predictions.append(prediction)
             probabilities.append(probability)
-            
+
         except Exception:
             predictions.append(-1)
             probabilities.append(np.nan)
-    
+
     # Add predictions to catalog
     data['cnn_prediction'] = predictions
     data['cnn_probability'] = probabilities
     data.meta['cnn_threshold'] = threshold
     data.meta['cnn_model'] = model_path
     data.meta['cnn_cutout_size'] = cutout_size
-    
+
     # Save
     ascii.write(data, output_path, format='ecsv', overwrite=True)
+
 
 def process_ecsv_with_predictions(dia_out_dir='../dia_out_dir',
                                    model_path='DenseNet169_best.pth',
