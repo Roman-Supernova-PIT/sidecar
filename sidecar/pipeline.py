@@ -410,12 +410,13 @@ class Detection:
             x_col="x_peak",
             y_col="y_peak",
         )
-        
-        print("[INFO] Adding CNN predictions to cleaned score detection catalog")
+
+        print("[INFO] Adding ML classifier predictions to cleaned score detection catalog")
         classifier.process_single_catalog(
             catalog_path=file_path["cleaned_score_detection_path"],
             fits_path=file_path["difference_image_path"],
-            output_path=file_path["cleaned_score_detection_path"].parent / f"{file_path['cleaned_score_detection_path'].stem}_with_predictions.ecsv",
+            output_path=file_path["cleaned_score_detection_path"].parent / 
+                        f"{file_path['cleaned_score_detection_path'].stem}_with_predictions.ecsv",
             model_path="../CNN_detection_pipeline/DenseNet169_best.pth",
             cutout_size=64,
             threshold=0.5,
