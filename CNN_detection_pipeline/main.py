@@ -276,12 +276,13 @@ def predict_cutout(model, cutout_normalized, device, threshold=0.5):
         probability = output.cpu().numpy().item()
         prediction = 1 if probability >= threshold else 0
         return prediction, probability
-    
-def process_single_catalog(catalog_path, fits_path, output_path, 
+
+
+def process_single_catalog(catalog_path, fits_path, output_path,
                           model_path='DenseNet169_best.pth',
                           cutout_size=64, threshold=0.5):
     """Process a single ECSV catalog file with CNN predictions.
-    
+
     Parameters
     ----------
     catalog_path : str or Path
@@ -298,35 +299,35 @@ def process_single_catalog(catalog_path, fits_path, output_path,
         Decision threshold for classification
     """
     device = torch.device('cpu')
-    
+
     # Load model
     model = densenet169(num_classes=1)
     checkpoint = torch.load(model_path, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
     model.to(device)
     model.eval()
-    
+
     # Load catalog
     data = ascii.read(str(catalog_path), format='ecsv')
     catalog_type, x_col, y_col, id_col = detect_catalog_type(data)
-    
+
     # Load FITS image
     with fits.open(fits_path) as hdul:
         image_data = hdul[0].data
         if image_data.ndim > 2:
             image_data = image_data[0] if image_data.ndim == 3 else image_data.squeeze()
-    
+
     # Process each object
     predictions = []
     probabilities = []
     half_size = cutout_size // 2
-    
+
     for idx in range(len(data)):
         row = data[idx]
         try:
             x_image = float(row[x_col])
             y_image = float(row[y_col])
-            
+
             if x_col in ['X_IMAGE', 'Y_IMAGE']:
                 x_center = int(x_image - 1)
                 y_center = int(y_image - 1)
