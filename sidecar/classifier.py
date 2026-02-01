@@ -443,7 +443,7 @@ def process_ecsv_with_predictions(dia_out_dir='../dia_out_dir',
                 print(f"    Object {obj_id}: {x_col}={data[i][x_col]:.2f}, {y_col}={data[i][y_col]:.2f}")
 
         except Exception:
-            print(f"Error reading ECSV")
+            print("Error reading ECSV")
             continue
 
         # Determine FITS filename from folder name
@@ -462,7 +462,7 @@ def process_ecsv_with_predictions(dia_out_dir='../dia_out_dir',
                     image_data = image_data[0] if image_data.ndim == 3 else image_data.squeeze()
                 print(f"Loaded FITS: {fits_file.name} (shape: {image_data.shape})")
         except Exception:
-            print(f"Error reading FITS")
+            print("Error reading FITS")
             continue
 
         # Initialize prediction columns
