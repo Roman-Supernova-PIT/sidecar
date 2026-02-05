@@ -55,7 +55,6 @@ def test_get_templates_for_points():
 
 
 def test_get_center_and_corners():
-    cfg = Config.get()
     collection = "snpitdb"
     provenance_tag = "ou2024"
     process = "load_ou2024_image"

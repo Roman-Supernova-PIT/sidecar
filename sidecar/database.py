@@ -47,7 +47,8 @@ def save_dia_objects_from_subtraction(
     threshold=None,
     threshold_column="peak_value",
 ):
-    """
+    """Save DIA Objects to the database
+
     dia_source_catalog_path:  str, Path of ecsv file to load
 
     threshold: float

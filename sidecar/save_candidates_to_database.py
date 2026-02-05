@@ -4,9 +4,11 @@ import pandas as pd
 
 from snappl.config import Config
 from snappl.imagecollection import ImageCollection
+from snappl.logger import SNLogger
 from sidecar.database import save_dia_objects_from_subtraction
 from sidecar.pipeline import Detection
 from sidecar.util import find_templates_for_pointings, read_data_records
+
 
 def main():
     # Run one arg pass just to get the config file, so we can augment
@@ -74,7 +76,13 @@ def main():
         type=str,
         help="Input file with data records.  It is an error to specify --data-records and --dia-source-catalog-path.",
     )
-    parser.add_argument("-o", "--output-dir", type=str, default=None, help="Output path.  Used to specify where to look for catalog files when reading a list of data records.")
+    parser.add_argument(
+        "-o",
+        "--output-dir",
+        type=str,
+        default=None,
+       help="Specify directory for output products."
+    )
     parser.add_argument(
         "--threshold",
         type=float,

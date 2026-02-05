@@ -72,7 +72,9 @@ def get_templates_for_image(image_collection, im, min_points=3):
     Parameters
     ----------
     images: Object with data attributes
-    ("ra", "dec", "ra_corner_00", "dec_corner_00", "ra_corner_01", "dec_corner_01", "ra_corner_10", "dec_corner_10", "ra_corner_11", "dec_corner_11")
+    ("ra", "dec",
+     "ra_corner_00", "dec_corner_00", "ra_corner_01", "dec_corner_01",
+     "ra_corner_10", "dec_corner_10", "ra_corner_11", "dec_corner_11")
     and get method for "band"
     min_points: int
 
@@ -353,7 +355,8 @@ def read_data_records(data_records_path):
     science_columns = ("science_pointing", "science_sca", "science_band")
     alternate_science_columns = ("pointing", "sca", "band")
 
-    if len(set(science_columns).intersection(df.columns)) < len(science_columns)and len(set(alternate_science_columns).intersection(df.columns)) < len(alternate_science_columns):
+    if len(set(science_columns).intersection(df.columns)) < len(science_columns)
+        and len(set(alternate_science_columns).intersection(df.columns)) < len(alternate_science_columns):
         raise ValueError(f"CSV file must have either {science_columns} or {alternate_science_columns}")
 
     # Standardize to have science_ prefix for pointing, sca, band
