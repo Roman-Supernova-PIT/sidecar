@@ -258,7 +258,7 @@ class Pipeline:
         # run decorrelation
         decorr_diff = sfftifier.apply_decorrelation(sfftifier.PixA_DIFF_GPU)
         decorr_zptimg = sfftifier.apply_decorrelation(sfftifier.PixA_Ctarget_GPU)
-        decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_target_GPU)
+        decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_Ctarget_GPU)
 
         # save data products
         fits.writeto(
