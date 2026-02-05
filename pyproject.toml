@@ -24,7 +24,9 @@ dependencies = [
   "numpy",
   "astropy>=3.2",
   "photutils",
-  "roman_snpit_snappl",
+# MWV: This snappl pin is to support "pointing" instead of "observation_id"
+# There's a minimum version too, but I'm not sure exactly what it is.
+  "roman_snpit_snappl<=0.37.0",
   "sfft-romansnpit>=1.6.4.dev6",
   "sep",
 ]
