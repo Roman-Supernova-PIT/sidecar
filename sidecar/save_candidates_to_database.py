@@ -63,11 +63,7 @@ def main():
         type=str,
         help="Specify an image by band.  Must also specify pointing, sca.",
     )
-    parser.add_argument(
-        "--dia-source-catalog-path",
-        type=str,
-        help="Full filepath of subtraction catalog file."
-    )
+    parser.add_argument("--dia-source-catalog-path", type=str, help="Full filepath of subtraction catalog file.")
     parser.add_argument(
         "-d",
         "--data-records",
@@ -78,10 +74,10 @@ def main():
     )
     parser.add_argument(
         "-o",
-        "--output-dir",
+        "--dia-out-dir",
         type=str,
         default=None,
-       help="Specify directory for output products."
+        help="Base path of the DIA output files.  Used to specify where to look for catalog files when reading a list of data records.",
     )
     parser.add_argument(
         "--threshold",
@@ -101,9 +97,7 @@ def main():
     cfg.parse_args(args)
 
     if args.data_records_path is not None and args.dia_source_catalog_path is not None:
-        SNLogger.warning(
-            "It is an error to specify 'data-records-path' and 'dia-source-catalog-path'"
-        )
+        SNLogger.warning("It is an error to specify 'data-records' and 'dia-source-catalog-path'")
         return
 
     image_collection = ImageCollection.get_collection(
@@ -121,10 +115,16 @@ def main():
                 science_band=data_records["science_band"],
             )
 
-        detection = Detection(image_collection=image_collection, data_records=data_records, output_dir=args.output_dir)
+        detection = Detection(
+            image_collection=image_collection, data_records=data_records, dia_out_dir=args.dia_out_dir
+        )
         for _, row in data_records.iterrows():
             science_id = {"pointing": row["science_pointing"], "sca": row["science_sca"], "band": row["science_band"]}
-            template_id = {"pointing": row["template_pointing"], "sca": row["template_sca"], "band": row["template_band"]}
+            template_id = {
+                "pointing": row["template_pointing"],
+                "sca": row["template_sca"],
+                "band": row["template_band"],
+            }
             file_path = detection.path_helper(science_id, template_id)
 
             data_records["dia_source_catalog_path"] = file_path["cleaned_score_detection_path"]

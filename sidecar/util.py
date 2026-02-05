@@ -252,7 +252,6 @@ def make_data_records_from_pointing(
             "band": template_image_info.band,
         }
 
-
     # Create a DataFrame that looks just like what we were loading in from the file.
     INPUT_COLUMNS = [
         "science_pointing",
@@ -355,8 +354,9 @@ def read_data_records(data_records_path):
     science_columns = ("science_pointing", "science_sca", "science_band")
     alternate_science_columns = ("pointing", "sca", "band")
 
-    if len(set(science_columns).intersection(df.columns)) < len(science_columns)
-        and len(set(alternate_science_columns).intersection(df.columns)) < len(alternate_science_columns):
+    if len(set(science_columns).intersection(df.columns)) < len(science_columns) and len(
+        set(alternate_science_columns).intersection(df.columns)
+    ) < len(alternate_science_columns):
         raise ValueError(f"CSV file must have either {science_columns} or {alternate_science_columns}")
 
     # Standardize to have science_ prefix for pointing, sca, band

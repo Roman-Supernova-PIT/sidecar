@@ -82,7 +82,7 @@ class Detection:
         if output_dir is not None:
             self.output_dir = output_dir
         else:
-            self.output_dir = self.config.value("photometry.sidecar.paths.output_dir")
+            self.output_dir = self.config.value("system.paths.temp_dir") + "dia_out_dir"
 
     @staticmethod
     def retrieve_truth(
