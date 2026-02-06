@@ -529,8 +529,8 @@ def process_ecsv_with_predictions(dia_out_dir='../dia_out_dir',
                 continue
 
         # Add prediction columns to catalog
-        data['cnn_prediction'] = predictions
-        data['cnn_probability'] = probabilities
+        data['real'] = predictions
+        data['real_probability'] = probabilities
 
         # Add metadata about the threshold used
         data.meta['cnn_threshold'] = threshold
