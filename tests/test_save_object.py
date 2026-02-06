@@ -24,7 +24,7 @@ def test_get_dia_object(ra, dec, name):
 
 @pytest.mark.skip(reason="Don't have a test DB, so we don't want to add an object each time.")
 def test_save_dia_object():
-    science_pointing = 36846
+    science_observation_id = 36846
     science_sca = 15
     science_band = "H158"
     ## Favorite test SN
@@ -33,7 +33,7 @@ def test_save_dia_object():
     # Dec: -44.80718106491529
     # Phase: -0.175
     # Band: H158
-    # Pointing: 36846
+    # observation_id: 36846
     # SCA: 15
     # MJD: 62476.333
     collection = "snpitdb"
@@ -45,7 +45,7 @@ def test_save_dia_object():
     image_collection = ImageCollection.get_collection(
         collection=collection, provenance_tag=image_provenance_tag, process=image_process
     )
-    science = image_collection.get_image(pointing=science_pointing, sca=science_sca, band=science_band)
+    science = image_collection.get_image(observation_id=science_observation_id, sca=science_sca, band=science_band)
 
     (name, ra, dec, _ , mjd) = ("foo2", 7.55110, -44.80718, science, science.mjd)
 
@@ -72,7 +72,7 @@ def test_save_dia_objects_from_subtraction():
     test_dir = Path(__file__).parent.name
     dia_source_catalog_path = test_dir / Path("cleaned_score_detection_R062_2319_8_-_R062_4264_7.ecsv")
 
-    science_pointing = 35303
+    science_observation_id = 35303
     science_sca = 8
     science_band = "H158"
     collection = "snpitdb"
@@ -87,7 +87,7 @@ def test_save_dia_objects_from_subtraction():
 
     save_dia_objects_from_subtraction(
         dia_source_catalog_path=dia_source_catalog_path,
-        science_pointing=science_pointing,
+        science_observation_id=science_observation_id,
         science_sca=science_sca,
         science_band=science_band,
         image_collection=image_collection,

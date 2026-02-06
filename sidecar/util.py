@@ -9,7 +9,7 @@ from snappl.imagecollection import ImageCollection
 
 
 INPUT_IMAGE_PATTERN = (
-    "RomanTDS/images/simple_model/{band}/{pointing}/Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits.gz"
+    "RomanTDS/images/simple_model/{band}/{observation_id}/Roman_TDS_simple_model_{band}_{observation_id}_{sca}.fits.gz"
 )
 
 IMAGE_WIDTH = 4088
@@ -26,8 +26,8 @@ def get_image_info_for_ra_dec(ra, dec, collection, provenance_tag, process, band
     )
 
     image_list = image_collection.find_images(ra=ra, dec=dec, dbclient=dbclient)
-    entries = [(im.pointing, im.band, im.sca, im.exptime, im.mjd) for im in image_list]
-    image_df = pd.DataFrame.from_records(entries, columns=("pointing", "band", "sca", "exptime", "mjd"))
+    entries = [(im.observation_id, im.band, im.sca, im.exptime, im.mjd) for im in image_list]
+    image_df = pd.DataFrame.from_records(entries, columns=("observation_id", "band", "sca", "exptime", "mjd"))
 
     return image_df
 
@@ -44,13 +44,13 @@ def get_templates_for_points(image_collection, points, band, min_points=3):
 
     Returns
     -------
-    images : pandas DataFrame of image pointing, sca, band, exptime, mjd
+    images : pandas DataFrame of image observation_id, sca, band, exptime, mjd
     """
     matches = []
     for i, (ra, dec) in enumerate(points):
         matching_images = image_collection.find_images(ra=ra, dec=dec, band=band)
-        entries = [(im.pointing, im.band, im.sca, im.exptime, im.mjd) for im in matching_images]
-        this_df = pd.DataFrame.from_records(entries, columns=("pointing", "band", "sca", "exptime", "mjd"))
+        entries = [(im.observation_id, im.band, im.sca, im.exptime, im.mjd) for im in matching_images]
+        this_df = pd.DataFrame.from_records(entries, columns=("observation_id", "band", "sca", "exptime", "mjd"))
         if len(this_df) > 0:
             matches.append(this_df)
 
@@ -80,7 +80,7 @@ def get_templates_for_image(image_collection, im, min_points=3):
 
     Returns
     -------
-    images : list of (pointing, sca, band) tuples of overlapping images
+    images : list of (observation_id, sca, band) tuples of overlapping images
     """
     corners = [
         (im.ra_corner_00, im.dec_corner_00),
@@ -157,23 +157,23 @@ def get_center_and_corners(image):
     return df
 
 
-def find_templates_for_pointings(
+def find_templates_for_observation_ids(
     image_collection,
-    science_pointing,
+    science_observation_id,
     science_sca,
     science_band,
-    template_pointing=None,
+    template_observation_id=None,
     template_sca=None,
     template_band=None,
 ):
-    """Finds templates for set of science_{pointing, sca, band}
+    """Finds templates for set of science_{observation_id, sca, band}
 
     Parameters
     ----------
     image_collection: snapp.ImageCollection
         Source of information about and pointers to images
-    science_pointing: int
-        Pointing of science image
+    science_observation_id: int
+        observation_id of science image
     science_sca: int
         Sensor Chip Assembly (SCA) of science image
     science_band: str
@@ -181,44 +181,44 @@ def find_templates_for_pointings(
 
     Returns
     -------
-    pandas.DataFrame with rows of science_{pointing, sca, band} and template_{pointing, sca, band}
+    pandas.DataFrame with rows of science_{observation_id, sca, band} and template_{observation_id, sca, band}
     """
     rows = []
-    for pointing, sca, band in zip(science_pointing, science_sca, science_band):
-        row = make_data_records_from_pointing(image_collection, pointing, sca, band)
+    for observation_id, sca, band in zip(science_observation_id, science_sca, science_band):
+        row = make_data_records_from_observation_id(image_collection, observation_id, sca, band)
         rows.append(row)
 
     return pd.concat(rows, ignore_index=True)
 
 
-def make_data_records_from_pointing(
+def make_data_records_from_observation_id(
     image_collection,
-    science_pointing,
+    science_observation_id,
     science_sca,
     science_band,
-    template_pointing=None,
+    template_observation_id=None,
     template_sca=None,
     template_band=None,
 ):
-    """Returns data records from a specified science pointing and template pointing
+    """Returns data records from a specified science observation_id and template observation_id
 
-    If passed a set of science_{pointing, sca, band}; template_{pointing, sca, band}
+    If passed a set of science_{observation_id, sca, band}; template_{observation_id, sca, band}
         will return that as a DataFrame in the same style as the data_record.
-    If passed a set of science_{pointing, sca, band} but no template info
+    If passed a set of science_{observation_id, sca, band} but no template info
         will find the earliest template image that has signifiant overlap
 
     Parameters
     ----------
     image_collection: snapp.ImageCollection
         Source of information about and pointers to images
-    science_pointing: int
-        Pointing of science image
+    science_observation_id: int
+        observation_id of science image
     science_sca: int
         Sensor Chip Assembly (SCA) of science image
     science_band: str
         Filter of science image
-    template_pointing: int, None
-        Pointing of template image
+    template_observation_id: int, None
+        observation_id of template image
     template_sca: int, None
         Sensor Chip Assembly (SCA) of template image
     template_band: str, None
@@ -226,16 +226,16 @@ def make_data_records_from_pointing(
 
     Returns
     -------
-    pandas.DataFrame with rows of science_{pointing, sca, band} and template_{pointing, sca, band}
+    pandas.DataFrame with rows of science_{observation_id, sca, band} and template_{observation_id, sca, band}
     """
     science_id = {
-        "pointing": science_pointing,
+        "observation_id": science_observation_id,
         "sca": science_sca,
         "band": science_band,
     }
-    if template_pointing is not None:
+    if template_observation_id is not None:
         template_id = {
-            "pointing": template_pointing,
+            "observation_id": template_observation_id,
             "sca": template_sca,
             "band": template_band,
         }
@@ -247,27 +247,27 @@ def make_data_records_from_pointing(
             return None
 
         template_id = {
-            "pointing": template_image_info.pointing,
+            "observation_id": template_image_info.observation_id,
             "sca": template_image_info.sca,
             "band": template_image_info.band,
         }
 
     # Create a DataFrame that looks just like what we were loading in from the file.
     INPUT_COLUMNS = [
-        "science_pointing",
+        "science_observation_id",
         "science_sca",
         "science_band",
-        "template_pointing",
+        "template_observation_id",
         "template_sca",
         "template_band",
     ]
     data_records = pd.DataFrame.from_records(
         [
             (
-                science_id["pointing"],
+                science_id["observation_id"],
                 science_id["sca"],
                 science_id["band"],
-                template_id["pointing"],
+                template_id["observation_id"],
                 template_id["sca"],
                 template_id["band"],
             )
@@ -279,7 +279,7 @@ def make_data_records_from_pointing(
 
 
 def make_data_records_from_image_path(image_collection, science_image_path, template_image_path=None):
-    """Create the pointing, sca, band records for an image path.
+    """Create the observation_id, sca, band records for an image path.
 
     If a template path is not given, then automatically finds one.
 
@@ -292,17 +292,17 @@ def make_data_records_from_image_path(image_collection, science_image_path, temp
     -------
     data_record
     """
-    science_pointing, science_sca, science_band = get_pointing_sca_band_from_image_path(science_image_path)
+    science_observation_id, science_sca, science_band = get_observation_id_sca_band_from_image_path(science_image_path)
 
-    data_records = make_data_records_from_pointing(image_collection, science_pointing, science_sca, science_band)
+    data_records = make_data_records_from_observation_id(image_collection, science_observation_id, science_sca, science_band)
 
     return data_records
 
 
-def get_pointing_sca_band_from_image_path(image_path):
-    """Gives the pointing, sca, band from an image
+def get_observation_id_sca_band_from_image_path(image_path):
+    """Gives the observation_id, sca, band from an image
 
-    Unfortunately, the pointing is not stored in the metadata
+    Unfortunately, the observation_id is not stored in the metadata
     for the OpenUniverse2024 FITS data, so we will parse from the filename.
 
     Parameters
@@ -311,55 +311,55 @@ def get_pointing_sca_band_from_image_path(image_path):
 
     Returns
     -------
-    (pointing, sca, band): (int, int, str)
+    (observation_id, sca, band): (int, int, str)
     """
     # We would do it this way if all of the information were available in the header
-    POINTING_WERE_IN_HEADER = False
-    if POINTING_WERE_IN_HEADER:
+    observation_id_WERE_IN_HEADER = False
+    if observation_id_WERE_IN_HEADER:
         image = OpenUniverse2024FITSImage(image_path, None, None)
-        return (image.pointing, image.sca, image.band)
+        return (image.observation_id, image.sca, image.band)
 
     # We're going to take a string like
-    # "../Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits.gz"
+    # "../Roman_TDS_simple_model_{band}_{observation_id}_{sca}.fits.gz"
     # And use that to construct our regex to parse.
     # We should get something like
-    # regex = "Roman_TDS_simple_model_(?P<band>[^_]+)_(?P<pointing>[^_]+)_(?P<sca>[^_]+).fits.gz"
+    # regex = "Roman_TDS_simple_model_(?P<band>[^_]+)_(?P<observation_id>[^_]+)_(?P<sca>[^_]+).fits.gz"
 
     regex = Path(INPUT_IMAGE_PATTERN).name
-    regex = re.sub("{pointing}", "(?P<pointing>[^_]+)", regex)
+    regex = re.sub("{observation_id}", "(?P<observation_id>[^_]+)", regex)
     regex = re.sub("{band}", "(?P<band>[^_]+)", regex)
     regex = re.sub("{sca}", "(?P<sca>[^_]+)", regex)
 
     # The 'str' call means we can accept either strings or Path objects.
     r = re.search(regex, str(image_path))
 
-    return (r["pointing"], r["sca"], r["band"])
+    return (r["observation_id"], r["sca"], r["band"])
 
 
 def read_data_records(data_records_path):
-    """Read a set of {science, template}_{pointing, sca, band} from a file.
+    """Read a set of {science, template}_{observation_id, sca, band} from a file.
 
     Checks to ensure that there are at least 3 columns:
-       science_pointing, science_sca, science_band
+       science_observation_id, science_sca, science_band
          or just
-       pointing, sca, band
+       observation_id, sca, band
 
     Parameters
     ----------
     data_records_path: str, pathlib.Path
-        Path to file with science and template pointings.  Overrides any command-line specification of pointings.
+        Path to file with science and template observation_ids.  Overrides any command-line specification of observation_ids.
     """
     df = pd.read_csv(data_records_path)
 
-    science_columns = ("science_pointing", "science_sca", "science_band")
-    alternate_science_columns = ("pointing", "sca", "band")
+    science_columns = ("science_observation_id", "science_sca", "science_band")
+    alternate_science_columns = ("observation_id", "sca", "band")
 
     if len(set(science_columns).intersection(df.columns)) < len(science_columns) and len(
         set(alternate_science_columns).intersection(df.columns)
     ) < len(alternate_science_columns):
         raise ValueError(f"CSV file must have either {science_columns} or {alternate_science_columns}")
 
-    # Standardize to have science_ prefix for pointing, sca, band
+    # Standardize to have science_ prefix for observation_id, sca, band
     for colname in alternate_science_columns:
         if f"science_{colname}" not in df.columns:
             df[f"science_{colname}"] = df[colname]

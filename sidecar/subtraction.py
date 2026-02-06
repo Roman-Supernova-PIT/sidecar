@@ -95,9 +95,9 @@ def sky_subtract(inpath, skysubpath, detmaskpath, temp_dir=Path("/tmp"), force=F
     return np.median(PixA_skyrms)
 
 
-def get_imsim_psf(x, y, pointing, sca, band, psf_type="ou24PSF", **kwargs):
+def get_imsim_psf(x, y, observation_id, sca, band, psf_type="ou24PSF", **kwargs):
     """Return PSF for image as a 2D numpy array.  Will be of size of PSF model."""
-    psf_obj = PSF.get_psf_object(psf_type, x=x, y=y, pointing=pointing, sca=sca, band=band)
+    psf_obj = PSF.get_psf_object(psf_type, x=x, y=y, observation_id=observation_id, sca=sca, band=band)
     stamp = psf_obj.get_stamp(x, y)
     return stamp
 
@@ -115,10 +115,10 @@ class Pipeline:
         self,
         image_collection,
         science_band,
-        science_pointing,
+        science_observation_id,
         science_sca,
         template_band,
-        template_pointing,
+        template_observation_id,
         template_sca,
         temp_dir=None,
         out_dir="./output",
@@ -130,10 +130,10 @@ class Pipeline:
         # science_info and template_info contains the data_ids of images and paths of temporary files:
         #   (sky subtracted images, detection masks, psfs)
         self.science_info = image_collection.get_image(
-            **{"band": science_band, "pointing": science_pointing, "sca": science_sca},
+            **{"band": science_band, "observation_id": science_observation_id, "sca": science_sca},
         )
         self.template_info = image_collection.get_image(
-            **{"band": template_band, "pointing": template_pointing, "sca": template_sca},
+            **{"band": template_band, "observation_id": template_observation_id, "sca": template_sca},
         )
 
         # Intermediate artifact paths
@@ -149,8 +149,8 @@ class Pipeline:
 
         # data products paths
         self.diff_pattern = (
-            f"{self.science_info.band}_{self.science_info.pointing}_{self.science_info.sca}"
-            f"_-_{self.template_info.band}_{self.template_info.pointing}_{self.template_info.sca}"
+            f"{self.science_info.band}_{self.science_info.observation_id}_{self.science_info.sca}"
+            f"_-_{self.template_info.band}_{self.template_info.observation_id}_{self.template_info.sca}"
         )
         self.score_image_path = self.out_dir / f"score_{self.diff_pattern}.fits"
         self.decorr_diff_path = self.out_dir / f"decorr_diff_{self.diff_pattern}.fits"
@@ -161,7 +161,7 @@ class Pipeline:
         stamp = get_imsim_psf(
             x=image.width // 2,
             y=image.height // 2,
-            pointing=image.pointing,
+            observation_id=image.observation_id,
             sca=image.sca,
             band=image.band,
         )
@@ -266,10 +266,10 @@ class Pipeline:
 def main():
     parser = argparse.ArgumentParser("subtraction pipeline")
     parser.add_argument("--science-band", type=str, required=True, help="Science band")
-    parser.add_argument("--science-pointing", type=int, required=True, help="Science pointing")
+    parser.add_argument("--science-observation_id", type=int, required=True, help="Science observation_id")
     parser.add_argument("--science-sca", type=int, required=True, help="Science sca")
     parser.add_argument("--template-band", type=str, required=True, help="Template band")
-    parser.add_argument("--template-pointing", type=int, required=True, help="Template pointing")
+    parser.add_argument("--template-observation_id", type=int, required=True, help="Template observation_id")
     parser.add_argument("--template-sca", type=int, required=True, help="Template sca")
     parser.add_argument("--temp-dir", default=None, help="Temporary directory, default None")
     parser.add_argument("--out-dir", default="/out_dir", help="Output dir, default /out_dir")
@@ -278,10 +278,10 @@ def main():
 
     pipeline = Pipeline(
         args.science_band,
-        args.science_pointing,
+        args.science_observation_id,
         args.science_sca,
         args.template_band,
-        args.template_pointing,
+        args.template_observation_id,
         args.template_sca,
         temp_dir=args.temp_dir,
         out_dir=args.out_dir,

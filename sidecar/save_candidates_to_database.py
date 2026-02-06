@@ -7,7 +7,7 @@ from snappl.imagecollection import ImageCollection
 from snappl.logger import SNLogger
 from sidecar.database import save_dia_objects_from_subtraction
 from sidecar.pipeline import Detection
-from sidecar.util import find_templates_for_pointings, read_data_records
+from sidecar.util import find_templates_for_observation_ids, read_data_records
 
 
 def main():
@@ -46,22 +46,22 @@ def main():
     parser.add_argument("--diaobject-provenance-tag", type=str)
     parser.add_argument("--diaobject-process", type=str)
     parser.add_argument(
-        "--science-pointing",
-        "--pointing",
+        "--science-observation_id",
+        "--observation_id",
         type=int,
-        help="Specify an image by pointing.  Must also specify sca, band.",
+        help="Specify an image by observation_id.  Must also specify sca, band.",
     )
     parser.add_argument(
         "--science-sca",
         "--sca",
         type=int,
-        help="Specify an image by sca.  Must also specify pointing, band.",
+        help="Specify an image by sca.  Must also specify observation_id, band.",
     )
     parser.add_argument(
         "--science-band",
         "--band",
         type=str,
-        help="Specify an image by band.  Must also specify pointing, sca.",
+        help="Specify an image by band.  Must also specify observation_id, sca.",
     )
     parser.add_argument("--dia-source-catalog-path", type=str, help="Full filepath of subtraction catalog file.")
     parser.add_argument(
@@ -107,10 +107,10 @@ def main():
     if args.data_records_path is not None:
         data_records = read_data_records(args.data_records_path)
 
-        if "template_pointing" not in data_records.columns:
-            data_records = find_templates_for_pointings(
+        if "template_observation_id" not in data_records.columns:
+            data_records = find_templates_for_observation_ids(
                 image_collection=image_collection,
-                science_pointing=data_records["science_pointing"],
+                science_observation_id=data_records["science_observation_id"],
                 science_sca=data_records["science_sca"],
                 science_band=data_records["science_band"],
             )
@@ -119,9 +119,9 @@ def main():
             image_collection=image_collection, data_records=data_records, dia_out_dir=args.dia_out_dir
         )
         for _, row in data_records.iterrows():
-            science_id = {"pointing": row["science_pointing"], "sca": row["science_sca"], "band": row["science_band"]}
+            science_id = {"observation_id": row["science_observation_id"], "sca": row["science_sca"], "band": row["science_band"]}
             template_id = {
-                "pointing": row["template_pointing"],
+                "observation_id": row["template_observation_id"],
                 "sca": row["template_sca"],
                 "band": row["template_band"],
             }
@@ -130,14 +130,14 @@ def main():
             data_records["dia_source_catalog_path"] = file_path["cleaned_score_detection_path"]
 
     else:
-        rows = [(args.science_pointing, args.science_sca, args.science_band, args.dia_source_catalog_path)]
-        names = ("science_pointing", "science_sca", "science_band", "dia_source_catalog_path")
+        rows = [(args.science_observation_id, args.science_sca, args.science_band, args.dia_source_catalog_path)]
+        names = ("science_observation_id", "science_sca", "science_band", "dia_source_catalog_path")
         data_records = pd.DataFrame.from_records(rows, columns=names)
 
     for _, row in data_records.iterrows():
         save_dia_objects_from_subtraction(
             dia_source_catalog_path=row["dia_source_catalog_path"],
-            science_pointing=row["science_pointing"],
+            science_observation_id=row["science_observation_id"],
             science_sca=row["science_sca"],
             science_band=row["science_band"],
             image_collection=image_collection,

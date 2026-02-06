@@ -38,7 +38,7 @@ def save_one_dia_object(
 
 def save_dia_objects_from_subtraction(
     dia_source_catalog_path,
-    science_pointing,
+    science_observation_id,
     science_sca,
     science_band,
     image_collection,
@@ -56,7 +56,7 @@ def save_dia_objects_from_subtraction(
     threshold_column: str, name of column to filter
     """
     dia_sources = Table.read(dia_source_catalog_path, format="ascii.ecsv")
-    science = image_collection.get_image(pointing=science_pointing, sca=science_sca, band=science_band)
+    science = image_collection.get_image(observation_id=science_observation_id, sca=science_sca, band=science_band)
 
     if threshold is not None:
         dia_sources = dia_sources[np.abs(dia_sources[threshold_column]) > threshold]

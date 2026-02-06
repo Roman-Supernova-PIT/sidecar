@@ -118,11 +118,11 @@ class Exposure:
 class RomanExposure(Exposure):
     IMAGE_PATH_PATTERN = (
         "/global/cfs/cdirs/lsst/shared/external/roman-desc-sims/Roman_data"
-        "/RomanTDS/images/simple_model/{band}/{pointing}/Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits.gz"
+        "/RomanTDS/images/simple_model/{band}/{observation_id}/Roman_TDS_simple_model_{band}_{observation_id}_{sca}.fits.gz"
     )
     SOURCE_PATH_PATTERN = (
         "/global/cfs/cdirs/lsst/shared/external/roman-desc-sims/Roman_data"
-        "/RomanTDS/truth/{band}/{pointing}/Roman_TDS_index_{band}_{pointing}_{sca}.txt"
+        "/RomanTDS/truth/{band}/{observation_id}/Roman_TDS_index_{band}_{observation_id}_{sca}.txt"
     )
 
     def __init__(
@@ -147,11 +147,11 @@ class RomanExposure(Exposure):
 class DiffExposure(Exposure):
     IMAGE_PATH_PATTERN = (
         "/pscratch/sd/s/shl159/projects/running_phrosty_on_nersc"
-        "/dia_out_dir/decorr_diff_{science_band}_{science_pointing}_{science_sca}_-_{template_band}_{template_pointing}_{template_sca}.fits"
+        "/dia_out_dir/decorr_diff_{science_band}_{science_observation_id}_{science_sca}_-_{template_band}_{template_observation_id}_{template_sca}.fits"
     )
     SOURCE_PATH_PATTERN = (
         "/pscratch/sd/s/shl159/projects/running_phrosty_on_nersc"
-        "/test_detection/detection_{science_band}_{science_pointing}_{science_sca}_-_{template_band}_{template_pointing}_{template_sca}.cat"
+        "/test_detection/detection_{science_band}_{science_observation_id}_{science_sca}_-_{template_band}_{template_observation_id}_{template_sca}.cat"
     )
 
     def __init__(
@@ -170,18 +170,18 @@ class DiffExposure(Exposure):
         self.source_path_pattern = source_path_pattern or self.__class__.SOURCE_PATH_PATTERN
         self.image_path = self.image_path_pattern.format(
             template_band=template_id["band"],
-            template_pointing=template_id["pointing"],
+            template_observation_id=template_id["observation_id"],
             template_sca=template_id["sca"],
             science_band=science_id["band"],
-            science_pointing=science_id["pointing"],
+            science_observation_id=science_id["observation_id"],
             science_sca=science_id["sca"],
         )
         self.source_path = self.source_path_pattern.format(
             template_band=template_id["band"],
-            template_pointing=template_id["pointing"],
+            template_observation_id=template_id["observation_id"],
             template_sca=template_id["sca"],
             science_band=science_id["band"],
-            science_pointing=science_id["pointing"],
+            science_observation_id=science_id["observation_id"],
             science_sca=science_id["sca"],
         )
 
