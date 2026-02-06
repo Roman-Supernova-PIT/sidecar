@@ -33,11 +33,6 @@ class Detection:
     Most of the rest of the code is defining the file paths.
     """
 
-    SIMS_DIR = os.getenv("SIMS_DIR", None)
-
-    BASE_PATH = "/global/cfs/cdirs/lsst/shared/external/roman-desc-sims/Roman_data/" "RomanTDS/images/simple_model/"
-    INPUT_TRUTH_PATTERN = SIMS_DIR + "/RomanTDS/truth/{band}/{pointing}/Roman_TDS_index_{band}_{pointing}_{sca}.txt"
-
     DIFF_PATTERN = (
         "{science_band}_{science_pointing}_{science_sca}_-_{template_band}_{template_pointing}_{template_sca}"
     )
@@ -72,6 +67,18 @@ class Detection:
     def __init__(self, image_collection, data_records, temp_dir=None, output_dir=None, verbose=False):
         SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
         self.config = Config.get()
+
+        # The truth files are stored relative to the TDS base
+        # The try/except is to not require this config value defined
+        # because we should still be able to run subtractions even if it's not OU24 and
+        # if truth catalogs aren't available.
+        # Things will crash at the truth retrieval (and thus at the star rejection stage)
+        try:
+            tds_base = self.config.value("system.ou24.tds_base")
+        except ValueError as e:
+            tds_base = ""
+
+        self.INPUT_TRUTH_PATTERN = tds_base + "/truth/{band}/{pointing}/Roman_TDS_index_{band}_{pointing}_{sca}.txt"
 
         self.image_collection = image_collection
         self.data_records = data_records
