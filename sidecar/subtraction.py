@@ -1,9 +1,6 @@
 import argparse
-import gzip
-import io
 import os
 from pathlib import Path
-import shutil
 import tempfile
 
 import numpy as np
@@ -14,24 +11,10 @@ import fitsio
 
 from sfft.SpaceSFFTCupyFlow import SpaceSFFT_CupyFlow
 from sfft.utils.SExSkySubtract import SEx_SkySubtract
+from snappl.config import Config
+from snappl.image import FITSImage, FITSImageOnDisk
+from snappl.logger import SNLogger
 from snappl.psf import PSF
-
-
-def gz_and_ext(in_path, out_path):
-    # Modified from https://github.com/Roman-Supernova-PIT/phrosty/blob/main/phrosty/imagesubtraction.py#L77
-
-    """Utility function that unzips the original file and turns it into a single-extension FITS file."""
-
-    bio = io.BytesIO()
-    with gzip.open(in_path, "rb") as f_in:
-        shutil.copyfileobj(f_in, bio)
-    bio.seek(0)
-
-    with fits.open(bio) as hdu:
-        newhdu = fits.HDUList([fits.PrimaryHDU(data=hdu[1].data, header=hdu[0].header)])
-        newhdu.writeto(out_path, overwrite=True)
-
-    return out_path
 
 
 def sky_subtract(img, temp_dir=None, force=False):
@@ -65,25 +48,25 @@ def sky_subtract(img, temp_dir=None, force=False):
         Median of the skyrms image calculated by source-extractor
     """
 
-    temp_dir = pathlib.Path(temp_dir if temp_dir is not None else Config.get().value('photometry.snappl.temp_dir'))
+    temp_dir = Path(temp_dir if temp_dir is not None else Config.get().value("photometry.snappl.temp_dir"))
     # tmpimpath is to handle compressed vs uncompressed data consistently
     tmp_im_path = tempfile.TemporaryFile(suffix="_im.fits", dir=temp_dir)
     tmp_skysub_path = tempfile.TemporaryFile(suffix="_skysub.fits", dir=temp_dir)
-    tmp_detmas_path = tempfile.TemporaryFile(suffix="_detmask.fits", dir=temp_dir)
+    tmp_detmask_path = tempfile.TemporaryFile(suffix="_detmask.fits", dir=temp_dir)
 
     origimg = img
-    try:
-        if isinstance(origimg, snappl.image.FITSImageOnDisk):
-            img = origimg.uncompressed_version(include=['data'])
-        else:
-            img = snappl.image.FITSImage(path=tmpim_path, header=fits.header.Header())
-            img.data = origimg.data
-            img.save(which="data")
+    if isinstance(origimg, FITSImageOnDisk):
+        img = origimg.uncompressed_version(include=["data"])
+    else:
+        img = FITSImage(path=tmp_im_path, header=fits.header.Header())
+        img.data = origimg.data
+        img.save(which="data")
 
-    SNLogger.debug( "Calling SEx_SkySubtract.SSS..." )
+    SNLogger.debug("Calling SEx_SkySubtract.SSS...")
     # Get our SFFT skysubtract configuration from the config
     # This is a case where we'll have default values that we still want
     # to be able to modify, so the config is a good place for it.
+    esatur_key = Config.get().value("photometry.sidecar.sfft.esatur_key")
     back_size = Config.get().value("photometry.sidecar.sfft.back_size")
     back_filtersize = Config.get().value("photometry.sidecar.sfft.back_filtersize")
     detect_thresh = Config.get().value("photometry.sidecar.sfft.detect_thresh")
@@ -108,10 +91,10 @@ def sky_subtract(img, temp_dir=None, force=False):
         VERBOSE_LEVEL=verbose_level,
         MDIR=None,
     )
-    SNLogger.debug( "...back from SEx_SkySubtract.SSS" )
+    SNLogger.debug("...back from SEx_SkySubtract.SSS")
 
-    subim = snappl.image.FITSImage(path=skysubpath)
-    detmaskim = snappl.image.FITSImage(path=detmaskpath)
+    subim = FITSImage(path=tmp_skysub_path)
+    detmaskim = FITSImage(path=tmp_detmask_path)
     skyrms = np.median(PixA_skyrms)
 
     return subim, detmaskim, skyrms
@@ -129,6 +112,29 @@ def load_fits_to_cp(path, return_hdr=True, return_data=True, hdu_index=0, dtype=
         hdr = hdul[hdu_index].header if return_hdr else None
         data = cp.array(np.ascontiguousarray(hdul[hdu_index].data.T), dtype=dtype) if return_data else None
     return hdr, data
+
+
+def make_minimal_wcs_header(image):
+    """Create a header from an image with just the WCS + NAXIS
+
+    Parameters
+    ----------
+    image: snappl.image.Image
+
+    Returns
+    -------
+    FITS Header with the WCS and NAXIS, NAXIS1, NAXIS2 specified
+
+    Notes
+    -----
+    The use of this assumes the WCS can be represented as information in a FITS header.
+    """
+    hdr = image.image.get_wcs().get_astropy_wcs().to_header(relax=True)
+    hdr.insert(0, ("NAXIS", 2))
+    hdr.insert("NAXIS", ("NAXIS1", image.image.data.shape[1]), after=True)
+    hdr.insert("NAXIS1", ("NAXIS2", image.image.data.shape[0]), after=True)
+
+    return hdr
 
 
 class Pipeline:
@@ -186,17 +192,6 @@ class Pipeline:
         fitsio.write(save_path, stamp, clobber=True)
         return stamp
 
-
-    @classmethod
-    def make_minimal_wcs_header(image):
-        hdr = image.image.get_wcs().get_astropy_wcs().to_header(relax=True)
-        hdr.insert(0, ('NAXIS', 2) )
-        hdr.insert('NAXIS', ('NAXIS1', image.image.data.shape[1]), after=True)
-        hdr.insert('NAXIS1', ('NAXIS2', image.image.data.shape[0]), after=True)
-
-        return hdr
-
-
     def run(self):
         os.makedirs(self.out_dir, exist_ok=True)
 
@@ -210,7 +205,7 @@ class Pipeline:
             temp_dir=self.temp_dir,
             force=False,
         )
-        template_skysubim, template_detmaskim, template_skyrms = sky_subtract(
+        template_skysubim, template_detmask, template_skyrms = sky_subtract(
             self.template_image,
             temp_dir=self.temp_dir,
             force=False,
@@ -218,16 +213,17 @@ class Pipeline:
 
         # SFFT needs FITS headers with a WCS and with NAXIS[12]
         # and wants the transpose of the data array.
-        science_hdr = make_minimal_wcs_header(science_image)
+        science_hdr = make_minimal_wcs_header(self.science_image)
         science_data = cp.array(np.ascontiguousarray(science_skysubim.data.T), dtype=cp.float64)
         science_noise = cp.array(np.ascontiguousarray(science_skysubim.noise.T), dtype=cp.float64)
         science_detmask = cp.array(np.ascontiguousarray(science_detmask.data.T))
 
-        template_hdr = make_minimal_wcs_header(template_image)
+        template_hdr = make_minimal_wcs_header(self.template_image)
         template_data = cp.array(np.ascontiguousarray(template_skysubim.data.T), dtype=cp.float64)
         template_noise = cp.array(np.ascontiguousarray(template_skysubim.noise.T), dtype=cp.float64)
         template_detmask = cp.array(np.ascontiguousarray(template_detmask.data.T))
 
+        # The PSF was saved as a FITS file above so we load it here into cupy array for SFFT
         _, science_psf = load_fits_to_cp(self.science_psf_path, return_hdr=False, dtype=cp.float64)
         _, template_psf = load_fits_to_cp(self.template_psf_path, return_hdr=False, dtype=cp.float64)
 
@@ -264,24 +260,9 @@ class Pipeline:
         decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_Ctarget_GPU)
 
         # save data products
-        fits.writeto(
-            self.score_image_path,
-            cp.asnumpy(score_image).T,
-            header=sfftifier.hdr_target,
-            overwrite=True,
-        )
-        fits.writeto(
-            self.decorr_diff_path,
-            cp.asnumpy(decorr_diff).T,
-            header=sfftifier.hdr_target,
-            overwrite=True,
-        )
-        fits.writeto(
-            self.decorr_zptimg_path,
-            cp.asnumpy(decorr_zptimg).T,
-            header=sfftifier.hdr_target,
-            overwrite=True,
-        )
+        fits.writeto(self.score_image_path, cp.asnumpy(score_image).T, header=sfftifier.hdr_target, overwrite=True)
+        fits.writeto(self.decorr_diff_path, cp.asnumpy(decorr_diff).T, header=sfftifier.hdr_target, overwrite=True)
+        fits.writeto(self.decorr_zptimg_path, cp.asnumpy(decorr_zptimg).T, header=sfftifier.hdr_target, overwrite=True)
         fits.writeto(self.decorr_psf_path, cp.asnumpy(decorr_psf).T, header=None, overwrite=True)
 
 
@@ -310,9 +291,6 @@ def main():
     )
 
     pipeline.run()
-
-
-# ======================================================================
 
 
 if __name__ == "__main__":
