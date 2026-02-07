@@ -4,6 +4,7 @@ import io
 import os
 from pathlib import Path
 import shutil
+import tempfile
 
 import numpy as np
 
@@ -33,21 +34,15 @@ def gz_and_ext(in_path, out_path):
     return out_path
 
 
-def sky_subtract(inpath, skysubpath, detmaskpath, temp_dir=Path("/tmp"), force=False):
+def sky_subtract(img, temp_dir=None, force=False):
     # Modified from https://github.com/Roman-Supernova-PIT/phrosty/blob/main/phrosty/imagesubtraction.py#L100
 
     """Subtracts background, found with Source Extractor.
 
     Parameters
     ----------
-      inpath: Path
-        Original FITS image
-
-      skysubpath: Path
-        Sky-subtracted FITS image
-
-      detmaskpath: Path
-        Detection Mask FITS Image.  (Will be uint8, I think.)
+      img: snappl.image.Image
+        Original image.
 
       temp_dir: Path
         Already-existing directory where we can write a temporary file.
@@ -60,39 +55,66 @@ def sky_subtract(inpath, skysubpath, detmaskpath, temp_dir=Path("/tmp"), force=F
 
     Returns
     -------
+      skysubim: snappl.image
+        sky-subtracted
+
+      detmask: snappl.image
+        detection mask
+
       skyrms: float
         Median of the skyrms image calculated by source-extractor
-
     """
 
-    if (not force) and (skysubpath.is_file()) and (detmaskpath.is_file()):
-        header = fits.getheader(skysubpath)
-        skyrms = header["SKYRMS"]
-        return skyrms
+    temp_dir = pathlib.Path(temp_dir if temp_dir is not None else Config.get().value('photometry.snappl.temp_dir'))
+    # tmpimpath is to handle compressed vs uncompressed data consistently
+    tmp_im_path = tempfile.TemporaryFile(suffix="_im.fits", dir=temp_dir)
+    tmp_skysub_path = tempfile.TemporaryFile(suffix="_skysub.fits", dir=temp_dir)
+    tmp_detmas_path = tempfile.TemporaryFile(suffix="_detmask.fits", dir=temp_dir)
 
-    if inpath.name[-3:] == ".gz":
-        decompressed_path = temp_dir / inpath.name[:-3]
-        gz_and_ext(inpath, decompressed_path)
-    else:
-        decompressed_path = inpath
+    origimg = img
+    try:
+        if isinstance(origimg, snappl.image.FITSImageOnDisk):
+            img = origimg.uncompressed_version(include=['data'])
+        else:
+            img = snappl.image.FITSImage(path=tmpim_path, header=fits.header.Header())
+            img.data = origimg.data
+            img.save(which="data")
+
+    SNLogger.debug( "Calling SEx_SkySubtract.SSS..." )
+    # Get our SFFT skysubtract configuration from the config
+    # This is a case where we'll have default values that we still want
+    # to be able to modify, so the config is a good place for it.
+    back_size = Config.get().value("photometry.sidecar.sfft.back_size")
+    back_filtersize = Config.get().value("photometry.sidecar.sfft.back_filtersize")
+    detect_thresh = Config.get().value("photometry.sidecar.sfft.detect_thresh")
+    detect_minarea = Config.get().value("photometry.sidecar.sfft.detect_minarea")
+    detect_maxarea = Config.get().value("photometry.sidecar.sfft.detect_maxarea")
+    radius_cut_detmask = Config.get().value("photometry.sidecar.sfft.radius_cut_detmask")
+    verbose_level = Config.get().value("photometry.sidecar.sfft.verbose_level")
 
     _, _, _, _, PixA_skyrms = SEx_SkySubtract.SSS(
-        FITS_obj=decompressed_path,
-        FITS_skysub=skysubpath,
-        FITS_detmask=detmaskpath,
+        FITS_obj=img.path,
+        FITS_skysub=tmp_skysub_path,
+        FITS_detmask=tmp_detmask_path,
         FITS_sky=None,
         FITS_skyrms=None,
-        ESATUR_KEY="ESATUR",
-        BACK_SIZE=64,
-        BACK_FILTERSIZE=3,
-        DETECT_THRESH=1.5,
-        DETECT_MINAREA=5,
-        DETECT_MAXAREA=0,
-        VERBOSE_LEVEL=2,
+        ESATUR_KEY=esatur_key,
+        BACK_SIZE=back_size,
+        BACK_FILTERSIZE=back_filtersize,
+        DETECT_THRESH=detect_thresh,
+        DETECT_MINAREA=detect_minarea,
+        DETECT_MAXAREA=detect_maxarea,
+        RADIUS_CUT_DETMASK=radius_cut_detmask,
+        VERBOSE_LEVEL=verbose_level,
         MDIR=None,
     )
+    SNLogger.debug( "...back from SEx_SkySubtract.SSS" )
 
-    return np.median(PixA_skyrms)
+    subim = snappl.image.FITSImage(path=skysubpath)
+    detmaskim = snappl.image.FITSImage(path=detmaskpath)
+    skyrms = np.median(PixA_skyrms)
+
+    return subim, detmaskim, skyrms
 
 
 def get_imsim_psf(x, y, observation_id, sca, band, psf_type="ou24PSF", **kwargs):
@@ -127,30 +149,26 @@ class Pipeline:
         self.temp_dir = temp_dir
         self.out_dir = Path(out_dir)
 
-        # science_info and template_info contains the data_ids of images and paths of temporary files:
+        # science_image and template_image contains the data_ids of images and paths of temporary files:
         #   (sky subtracted images, detection masks, psfs)
-        self.science_info = image_collection.get_image(
+        self.science_image = image_collection.get_image(
             **{"band": science_band, "observation_id": science_observation_id, "sca": science_sca},
         )
-        self.template_info = image_collection.get_image(
+        self.template_image = image_collection.get_image(
             **{"band": template_band, "observation_id": template_observation_id, "sca": template_sca},
         )
 
         # Intermediate artifact paths
-        self.science_name = Path(self.science_info.path).name
-        self.science_skysub_path = self.temp_dir / f"skysub_{self.science_name}"
-        self.science_detmask_path = self.temp_dir / f"detmask_{self.science_name}"
+        self.science_name = Path(self.science_image.path).name
         self.science_psf_path = self.temp_dir / f"psf_{self.science_name}"
 
-        self.template_name = Path(self.template_info.path).name
-        self.template_skysub_path = self.temp_dir / f"skysub_{self.template_name}"
-        self.template_detmask_path = self.temp_dir / f"detmask_{self.template_name}"
+        self.template_name = Path(self.template_image.path).name
         self.template_psf_path = self.temp_dir / f"psf_{self.template_name}"
 
         # data products paths
         self.diff_pattern = (
-            f"{self.science_info.band}_{self.science_info.observation_id}_{self.science_info.sca}"
-            f"_-_{self.template_info.band}_{self.template_info.observation_id}_{self.template_info.sca}"
+            f"{self.science_image.band}_{self.science_image.observation_id}_{self.science_image.sca}"
+            f"_-_{self.template_image.band}_{self.template_image.observation_id}_{self.template_image.sca}"
         )
         self.score_image_path = self.out_dir / f"score_{self.diff_pattern}.fits"
         self.decorr_diff_path = self.out_dir / f"decorr_diff_{self.diff_pattern}.fits"
@@ -168,46 +186,50 @@ class Pipeline:
         fitsio.write(save_path, stamp, clobber=True)
         return stamp
 
-    def run(self):
 
+    @classmethod
+    def make_minimal_wcs_header(image):
+        hdr = image.image.get_wcs().get_astropy_wcs().to_header(relax=True)
+        hdr.insert(0, ('NAXIS', 2) )
+        hdr.insert('NAXIS', ('NAXIS1', image.image.data.shape[1]), after=True)
+        hdr.insert('NAXIS1', ('NAXIS2', image.image.data.shape[0]), after=True)
+
+        return hdr
+
+
+    def run(self):
         os.makedirs(self.out_dir, exist_ok=True)
 
         # get psf
-        science_psf = self.run_get_imsim_psf(self.science_info, self.science_psf_path)
-        template_psf = self.run_get_imsim_psf(self.template_info, self.template_psf_path)
+        science_psf = self.run_get_imsim_psf(self.science_image, self.science_psf_path)
+        template_psf = self.run_get_imsim_psf(self.template_image, self.template_psf_path)
 
         # sky subtraction
-        science_skyrms = sky_subtract(
-            self.science_info.path,
-            self.science_skysub_path,
-            self.science_detmask_path,
+        science_skysubim, science_detmask, science_skyrms = sky_subtract(
+            self.science_image,
             temp_dir=self.temp_dir,
             force=False,
         )
-        template_skyrms = sky_subtract(
-            self.template_info.path,
-            self.template_skysub_path,
-            self.template_detmask_path,
+        template_skysubim, template_detmaskim, template_skyrms = sky_subtract(
+            self.template_image,
             temp_dir=self.temp_dir,
             force=False,
         )
 
-        # get data
-        science_hdr, science_data = load_fits_to_cp(self.science_skysub_path, dtype=cp.float64)
-        template_hdr, template_data = load_fits_to_cp(self.template_skysub_path, dtype=cp.float64)
+        # SFFT needs FITS headers with a WCS and with NAXIS[12]
+        # and wants the transpose of the data array.
+        science_hdr = make_minimal_wcs_header(science_image)
+        science_data = cp.array(np.ascontiguousarray(science_skysubim.data.T), dtype=cp.float64)
+        science_noise = cp.array(np.ascontiguousarray(science_skysubim.noise.T), dtype=cp.float64)
+        science_detmask = cp.array(np.ascontiguousarray(science_detmask.data.T))
+
+        template_hdr = make_minimal_wcs_header(template_image)
+        template_data = cp.array(np.ascontiguousarray(template_skysubim.data.T), dtype=cp.float64)
+        template_noise = cp.array(np.ascontiguousarray(template_skysubim.noise.T), dtype=cp.float64)
+        template_detmask = cp.array(np.ascontiguousarray(template_detmask.data.T))
+
         _, science_psf = load_fits_to_cp(self.science_psf_path, return_hdr=False, dtype=cp.float64)
         _, template_psf = load_fits_to_cp(self.template_psf_path, return_hdr=False, dtype=cp.float64)
-        _, science_detmask = load_fits_to_cp(self.science_detmask_path, return_hdr=False)
-        _, template_detmask = load_fits_to_cp(self.template_detmask_path, return_hdr=False)
-
-        # 2025-06-06 MWV:
-        # In principle need to get the actual variance
-        # But SFFT renormalize the score image to the sky background variance
-        # So at this point this is fine.
-        # Eventually you could imagine wanting to do the variance correctly
-        # for sources.
-        science_var = np.zeros_like(science_data)
-        template_var = np.zeros_like(template_data)
 
         # cupy flow
         sfftifier = SpaceSFFT_CupyFlow(
@@ -217,8 +239,8 @@ class Pipeline:
             template_skyrms,
             science_data,
             template_data,
-            science_var,
-            template_var,
+            science_noise,
+            template_noise,
             science_detmask,
             template_detmask,
             science_psf,
