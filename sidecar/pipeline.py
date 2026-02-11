@@ -542,8 +542,8 @@ def main():
         help="Pass a template image by file path.  Optional.  Only used with --science-path.",
     )
     parser.add_argument(
-        "--science-observation_id",
-        "--observation_id",
+        "--science-observation-id",
+        "--observation-id",
         type=int,
         default=None,
         help="Specify an image by observation_id.  Must also specify sca, band.",
@@ -553,17 +553,17 @@ def main():
         "--sca",
         type=int,
         default=None,
-        help="Specify an image by sca.  Must also specify observation_id, band.",
+        help="Specify an image by sca.  Must also specify observation-id, band.",
     )
     parser.add_argument(
         "--science-band",
         "--band",
         type=str,
         default=None,
-        help="Specify an image by band.  Must also specify observation_id, sca.",
+        help="Specify an image by band.  Must also specify observation-id, sca.",
     )
     parser.add_argument(
-        "--template-observation_id",
+        "--template-observation-id",
         type=int,
         default=None,
         help="Specify a template observation_id.",
