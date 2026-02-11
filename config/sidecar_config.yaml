@@ -1,3 +1,6 @@
+preloads:
+  - /snpit_env/configs/${SNPIT_DEFAULT_CONFIG}
+
 replaceable_preloads:
   - /home/environment/nov2025_container_config.yaml
 
