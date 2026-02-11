@@ -89,7 +89,7 @@ class Detection:
         if temp_dir is not None:
             self.temp_dir = temp_dir
         else:
-            self.temp_dir = self.config.value("photometry.sidecar.paths.temp_dir")
+            self.temp_dir = self.config.value("system.paths.temp_dir")
         if output_dir is not None:
             self.output_dir = output_dir
         else:
