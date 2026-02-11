@@ -8,6 +8,7 @@ import numpy as np
 from astropy.io import fits
 import cupy as cp
 import fitsio
+import photutils
 
 from sfft.SpaceSFFTCupyFlow import SpaceSFFT_CupyFlow
 from sfft.utils.SExSkySubtract import SEx_SkySubtract
@@ -15,6 +16,25 @@ from snappl.config import Config
 from snappl.image import FITSImage, FITSImageOnDisk
 from snappl.logger import SNLogger
 from snappl.psf import PSF
+
+
+def photutils_sky_subtract(image, **kwargs):
+    bkg = photutils.background.Background2D(image.data, box_size=64)
+    sky_subtracted_image = image
+    sky_subtracted_image.data = image.data - bkg.background
+    rms = bkg.background_rms_median
+
+    # Based on the photutils.background documentation
+    from astropy.stats import SigmaClip
+    from photutils.segmentation import detect_threshold, detect_sources
+    from photutils.utils import circular_footprint
+    sigma_clip = SigmaClip(sigma=2.0, maxiters=10)
+    threshold = detect_threshold(sky_subtracted_image.data, nsigma=20.0, sigma_clip=sigma_clip)
+    segment_img = detect_sources(sky_subtracted_image.data, threshold, npixels=10)
+    footprint = circular_footprint(radius=10)
+    det_mask = segment_img.make_source_mask(footprint=footprint)
+
+    return sky_subtracted_image, det_mask, rms
 
 
 def sky_subtract(img, temp_dir=None, force=False):
@@ -129,10 +149,10 @@ def make_minimal_wcs_header(image):
     -----
     The use of this assumes the WCS can be represented as information in a FITS header.
     """
-    hdr = image.image.get_wcs().get_astropy_wcs().to_header(relax=True)
+    hdr = image.get_wcs().get_astropy_wcs().to_header(relax=True)
     hdr.insert(0, ("NAXIS", 2))
-    hdr.insert("NAXIS", ("NAXIS1", image.image.data.shape[1]), after=True)
-    hdr.insert("NAXIS1", ("NAXIS2", image.image.data.shape[0]), after=True)
+    hdr.insert("NAXIS", ("NAXIS1", image.data.shape[1]), after=True)
+    hdr.insert("NAXIS1", ("NAXIS2", image.data.shape[0]), after=True)
 
     return hdr
 
@@ -200,16 +220,8 @@ class Pipeline:
         template_psf = self.run_get_imsim_psf(self.template_image, self.template_psf_path)
 
         # sky subtraction
-        science_skysubim, science_detmask, science_skyrms = sky_subtract(
-            self.science_image,
-            temp_dir=self.temp_dir,
-            force=False,
-        )
-        template_skysubim, template_detmask, template_skyrms = sky_subtract(
-            self.template_image,
-            temp_dir=self.temp_dir,
-            force=False,
-        )
+        science_skysubim, science_detmask, science_skyrms = photutils_sky_subtract(self.science_image)
+        template_skysubim, template_detmask, template_skyrms = photutils_sky_subtract(self.template_image)
 
         # SFFT needs FITS headers with a WCS and with NAXIS[12]
         # and wants the transpose of the data array.
