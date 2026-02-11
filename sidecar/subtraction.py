@@ -1,123 +1,46 @@
 import argparse
 import os
 from pathlib import Path
+import random
 import tempfile
 
+import cupy as cp
 import numpy as np
 
 from astropy.io import fits
-import cupy as cp
+from astropy.stats import SigmaClip
 import fitsio
-import photutils
+from photutils.background import Background2D
+from photutils.segmentation import detect_threshold, detect_sources
+from photutils.utils import circular_footprint
 
 from sfft.SpaceSFFTCupyFlow import SpaceSFFT_CupyFlow
-from sfft.utils.SExSkySubtract import SEx_SkySubtract
 from snappl.config import Config
 from snappl.image import FITSImage, FITSImageOnDisk
 from snappl.logger import SNLogger
 from snappl.psf import PSF
 
 
-def photutils_sky_subtract(image, **kwargs):
-    bkg = photutils.background.Background2D(image.data, box_size=64)
+def sky_subtract(image, **kwargs):
+    bkg = Background2D(image.data, box_size=64)
+
+    # Make copies of image object to fill with subtracted and detmask data.
     sky_subtracted_image = image
+    detmask = image
+
     sky_subtracted_image.data = image.data - bkg.background
     rms = bkg.background_rms_median
 
     # Based on the photutils.background documentation
-    from astropy.stats import SigmaClip
-    from photutils.segmentation import detect_threshold, detect_sources
-    from photutils.utils import circular_footprint
     sigma_clip = SigmaClip(sigma=2.0, maxiters=10)
     threshold = detect_threshold(sky_subtracted_image.data, nsigma=20.0, sigma_clip=sigma_clip)
     segment_img = detect_sources(sky_subtracted_image.data, threshold, npixels=10)
     footprint = circular_footprint(radius=10)
-    det_mask = segment_img.make_source_mask(footprint=footprint)
 
-    return sky_subtracted_image, det_mask, rms
+    # convert boolean into float 1, and 0 because data must be float (not bool or int).
+    detmask.data = np.asarray(segment_img.make_source_mask(footprint=footprint), dtype="float")
 
-
-def sky_subtract(img, temp_dir=None, force=False):
-    # Modified from https://github.com/Roman-Supernova-PIT/phrosty/blob/main/phrosty/imagesubtraction.py#L100
-
-    """Subtracts background, found with Source Extractor.
-
-    Parameters
-    ----------
-      img: snappl.image.Image
-        Original image.
-
-      temp_dir: Path
-        Already-existing directory where we can write a temporary file.
-        (If the image is .gz compressed, source-extractor can't handle
-        that, so we have to write a decompressed version.)
-
-      force: bool, default False
-        If False, and outpath already exists, do nothing.  If True,
-        clobber the existing file and recalculate it.
-
-    Returns
-    -------
-      skysubim: snappl.image
-        sky-subtracted
-
-      detmask: snappl.image
-        detection mask
-
-      skyrms: float
-        Median of the skyrms image calculated by source-extractor
-    """
-
-    temp_dir = Path(temp_dir if temp_dir is not None else Config.get().value("photometry.snappl.temp_dir"))
-    # tmpimpath is to handle compressed vs uncompressed data consistently
-    tmp_im_path = tempfile.TemporaryFile(suffix="_im.fits", dir=temp_dir)
-    tmp_skysub_path = tempfile.TemporaryFile(suffix="_skysub.fits", dir=temp_dir)
-    tmp_detmask_path = tempfile.TemporaryFile(suffix="_detmask.fits", dir=temp_dir)
-
-    origimg = img
-    if isinstance(origimg, FITSImageOnDisk):
-        img = origimg.uncompressed_version(include=["data"])
-    else:
-        img = FITSImage(path=tmp_im_path, header=fits.header.Header())
-        img.data = origimg.data
-        img.save(which="data")
-
-    SNLogger.debug("Calling SEx_SkySubtract.SSS...")
-    # Get our SFFT skysubtract configuration from the config
-    # This is a case where we'll have default values that we still want
-    # to be able to modify, so the config is a good place for it.
-    esatur_key = Config.get().value("photometry.sidecar.sfft.esatur_key")
-    back_size = Config.get().value("photometry.sidecar.sfft.back_size")
-    back_filtersize = Config.get().value("photometry.sidecar.sfft.back_filtersize")
-    detect_thresh = Config.get().value("photometry.sidecar.sfft.detect_thresh")
-    detect_minarea = Config.get().value("photometry.sidecar.sfft.detect_minarea")
-    detect_maxarea = Config.get().value("photometry.sidecar.sfft.detect_maxarea")
-    radius_cut_detmask = Config.get().value("photometry.sidecar.sfft.radius_cut_detmask")
-    verbose_level = Config.get().value("photometry.sidecar.sfft.verbose_level")
-
-    _, _, _, _, PixA_skyrms = SEx_SkySubtract.SSS(
-        FITS_obj=img.path,
-        FITS_skysub=tmp_skysub_path,
-        FITS_detmask=tmp_detmask_path,
-        FITS_sky=None,
-        FITS_skyrms=None,
-        ESATUR_KEY=esatur_key,
-        BACK_SIZE=back_size,
-        BACK_FILTERSIZE=back_filtersize,
-        DETECT_THRESH=detect_thresh,
-        DETECT_MINAREA=detect_minarea,
-        DETECT_MAXAREA=detect_maxarea,
-        RADIUS_CUT_DETMASK=radius_cut_detmask,
-        VERBOSE_LEVEL=verbose_level,
-        MDIR=None,
-    )
-    SNLogger.debug("...back from SEx_SkySubtract.SSS")
-
-    subim = FITSImage(path=tmp_skysub_path)
-    detmaskim = FITSImage(path=tmp_detmask_path)
-    skyrms = np.median(PixA_skyrms)
-
-    return subim, detmaskim, skyrms
+    return sky_subtracted_image, detmask, rms
 
 
 def get_imsim_psf(x, y, observation_id, sca, band, psf_type="ou24PSF", **kwargs):
@@ -220,8 +143,8 @@ class Pipeline:
         template_psf = self.run_get_imsim_psf(self.template_image, self.template_psf_path)
 
         # sky subtraction
-        science_skysubim, science_detmask, science_skyrms = photutils_sky_subtract(self.science_image)
-        template_skysubim, template_detmask, template_skyrms = photutils_sky_subtract(self.template_image)
+        science_skysubim, science_detmask, science_skyrms = sky_subtract(self.science_image)
+        template_skysubim, template_detmask, template_skyrms = sky_subtract(self.template_image)
 
         # SFFT needs FITS headers with a WCS and with NAXIS[12]
         # and wants the transpose of the data array.
