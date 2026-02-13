@@ -97,16 +97,14 @@ class Detection:
 
     @staticmethod
     def retrieve_truth(
-        science_image_path,
-        template_image_path,
+        science_image,
+        template_image,
         science_truth_path,
         template_truth_path,
         difference_truth_path,
     ):
-        science_wcs = data_loader.load_wcs(science_image_path, hdu_id=1)
-        template_wcs = data_loader.load_wcs(template_image_path, hdu_id=1)
-
-        science_truth = data_loader.load_table(science_truth_path)
+        science_wcs = science_image.get_wcs()
+        template_wcs = template_image.get_wcs()
         template_truth = data_loader.load_table(template_truth_path)
 
         truth = truth_retrieval.merge_science_and_template_truth(
@@ -374,8 +372,8 @@ class Detection:
 
         SNLogger.info("Processing truth retrieval")
         truth = self.__class__.retrieve_truth(
-            file_path["science_image_path"],
-            file_path["template_image_path"],
+            subtract.science_image,
+            subtract.template_image,
             file_path["science_truth_path"],
             file_path["template_truth_path"],
             file_path["difference_truth_path"],
