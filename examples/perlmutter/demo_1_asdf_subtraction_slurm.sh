@@ -51,7 +51,7 @@ podman-hpc run --gpu \
 	--image-collection snpitdb --image-provenance-tag asdf_functional_test --image-process load_rdm_image \
         --science-observation-id 99999010010010010010030 \
         --science-band F062 \
-        --science-sca 2 \
+        --science-sca 2
     "
 
 # Once `sidecar` is part of container image, the 'pip install -e sidecar' will be removed.
