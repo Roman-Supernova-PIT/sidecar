@@ -131,6 +131,7 @@ class Pipeline:
             observation_id=image.observation_id,
             sca=image.sca,
             band=image.band,
+            psf_type="gaussian",
         )
         fitsio.write(save_path, stamp, clobber=True)
         return stamp
