@@ -24,23 +24,19 @@ from snappl.psf import PSF
 def sky_subtract(image, **kwargs):
     bkg = Background2D(image.data, box_size=64)
 
-    # Make copies of image object to fill with subtracted and detmask data.
-    sky_subtracted_image = image
-    detmask = image
-
-    sky_subtracted_image.data = image.data - bkg.background
+    sky_subtracted_data = image.data - bkg.background
     rms = bkg.background_rms_median
 
     # Based on the photutils.background documentation
     sigma_clip = SigmaClip(sigma=2.0, maxiters=10)
-    threshold = detect_threshold(sky_subtracted_image.data, nsigma=20.0, sigma_clip=sigma_clip)
-    segment_img = detect_sources(sky_subtracted_image.data, threshold, npixels=10)
+    threshold = detect_threshold(sky_subtracted_data, nsigma=20.0, sigma_clip=sigma_clip)
+    segment_img = detect_sources(sky_subtracted_data, threshold, npixels=10)
     footprint = circular_footprint(radius=10)
 
     # convert boolean into float 1, and 0 because data must be float (not bool or int).
-    detmask.data = np.asarray(segment_img.make_source_mask(footprint=footprint), dtype="float")
+    detmask_data = np.asarray(segment_img.make_source_mask(footprint=footprint), dtype="float")
 
-    return sky_subtracted_image, detmask, rms
+    return sky_subtracted_data, detmask_data, rms
 
 
 def get_imsim_psf(x, y, observation_id, sca, band, psf_type="ou24PSF", **kwargs):
@@ -144,24 +140,21 @@ class Pipeline:
         template_psf = self.run_get_imsim_psf(self.template_image, self.template_psf_path)
 
         # sky subtraction
-        science_skysubim, science_detmask, science_skyrms = sky_subtract(self.science_image)
-        template_skysubim, template_detmask, template_skyrms = sky_subtract(self.template_image)
+        science_skysubim_data, science_detmask_data, science_skyrms = sky_subtract(self.science_image)
+        template_skysubim_data, template_detmask_data, template_skyrms = sky_subtract(self.template_image)
 
         # SFFT needs FITS headers with a WCS and with NAXIS[12]
         # and wants the transpose of the data array.
         science_hdr = make_minimal_wcs_header(self.science_image)
-        science_data = cp.array(np.ascontiguousarray(science_skysubim.data.T), dtype=cp.float64)
-        science_noise = cp.array(np.ascontiguousarray(science_skysubim.noise.T), dtype=cp.float64)
-        science_detmask = cp.array(np.ascontiguousarray(science_detmask.data.T))
+        science_data = cp.array(np.ascontiguousarray(science_skysubim_data.T), dtype=cp.float64)
+        # The noise array is unchanged by the sky subtraction
+        science_noise = cp.array(np.ascontiguousarray(self.science_image.noise.T), dtype=cp.float64)
+        science_detmask = cp.array(np.ascontiguousarray(science_detmask_data.T))
 
         template_hdr = make_minimal_wcs_header(self.template_image)
-        template_data = cp.array(np.ascontiguousarray(template_skysubim.data.T), dtype=cp.float64)
-        template_noise = cp.array(np.ascontiguousarray(template_skysubim.noise.T), dtype=cp.float64)
-        template_detmask = cp.array(np.ascontiguousarray(template_detmask.data.T))
-
-        # The PSF was saved as a FITS file above so we load it here into cupy array for SFFT
-        _, science_psf = load_fits_to_cp(self.science_psf_path, return_hdr=False, dtype=cp.float64)
-        _, template_psf = load_fits_to_cp(self.template_psf_path, return_hdr=False, dtype=cp.float64)
+        template_data = cp.array(np.ascontiguousarray(template_skysubim_data.T), dtype=cp.float64)
+        template_noise = cp.array(np.ascontiguousarray(self.template_image.noise.T), dtype=cp.float64)
+        template_detmask = cp.array(np.ascontiguousarray(template_detmask_data.T))
 
         # cupy flow
         sfftifier = SpaceSFFT_CupyFlow(
