@@ -150,8 +150,8 @@ class Pipeline:
         template_detmask = cp.array(np.ascontiguousarray(template_detmask_data.T))
 
         # Transpose PSF to match the transpose of the data array.
-        science_psf = cp.array(np.ascontiguousarray(science_psf.T), dtype=dtype)
-        template_psf = cp.array(np.ascontiguousarray(template_psf.T), dtype=dtype)
+        science_psf = cp.array(np.ascontiguousarray(science_psf.T), dtype=cp.float64)
+        template_psf = cp.array(np.ascontiguousarray(template_psf.T), dtype=cp.float64)
 
         # cupy flow
         sfftifier = SpaceSFFT_CupyFlow(
