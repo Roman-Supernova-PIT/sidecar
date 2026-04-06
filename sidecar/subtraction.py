@@ -127,7 +127,7 @@ class Pipeline:
             observation_id=image.observation_id,
             sca=image.sca,
             band=image.band,
-            psf_type="gaussian",
+            psf_type="STPSF",
         )
         fitsio.write(save_path, stamp, clobber=True)
         return stamp
@@ -170,6 +170,7 @@ class Pipeline:
             template_detmask,
             science_psf,
             template_psf,
+            CUDA_COMPILER="nvrtc",
         )
 
         sfftifier.resampling_image_mask_psf()
