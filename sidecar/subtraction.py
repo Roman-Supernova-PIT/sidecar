@@ -1,22 +1,18 @@
 import argparse
 import os
 from pathlib import Path
-import random
-import tempfile
 
 import cupy as cp
 import numpy as np
 
 from astropy.io import fits
 from astropy.stats import SigmaClip
-import fitsio
 from photutils.background import Background2D
 from photutils.segmentation import detect_threshold, detect_sources
 from photutils.utils import circular_footprint
 
 from sfft.SpaceSFFTCupyFlow import SpaceSFFT_CupyFlow
 from snappl.config import Config
-from snappl.image import FITSImage, FITSImageOnDisk
 from snappl.logger import SNLogger
 from snappl.psf import PSF
 
@@ -39,10 +35,26 @@ def sky_subtract(image, **kwargs):
     return sky_subtracted_data, detmask_data, rms
 
 
-def get_imsim_psf(x, y, observation_id, sca, band, psf_type="ou24PSF", **kwargs):
-    """Return PSF for image as a 2D numpy array.  Will be of size of PSF model."""
-    psf_obj = PSF.get_psf_object(psf_type, x=x, y=y, observation_id=observation_id, sca=sca, band=band)
-    stamp = psf_obj.get_stamp(x, y)
+def get_psf_kernel(image, psf_type="ou24PSF", **kwargs):
+    """Return PSF at center of image as a 2D numpy array.  Will be of size of PSF model.
+
+    Parameters
+    ----------
+    get_psf : snappl.image.Image
+    psf_type : str
+        Type of PSF
+
+    Returns
+    -------
+    2D numpy array : PSF
+    """
+    x = image.width // 2
+    y = image.height // 2
+
+    psf_obj = PSF.get_psf_object(
+        psf_type, x=x, y=y, observation_id=image.observation_id, sca=image.sca, band=image.band
+    )
+    stamp = psf_obj.get_stamp()
     return stamp
 
 
@@ -113,24 +125,12 @@ class Pipeline:
         self.decorr_zptimg_path = self.out_dir / f"decorr_zptimg_{self.diff_pattern}.fits"
         self.decorr_psf_path = self.out_dir / f"decorr_psf_{self.diff_pattern}.fits"
 
-    def run_get_imsim_psf(self, image, save_path):
-        stamp = get_imsim_psf(
-            x=image.width // 2,
-            y=image.height // 2,
-            observation_id=image.observation_id,
-            sca=image.sca,
-            band=image.band,
-            psf_type="STPSF",
-        )
-        fitsio.write(save_path, stamp, clobber=True)
-        return stamp
-
     def run(self):
         os.makedirs(self.out_dir, exist_ok=True)
 
         # get psf
-        science_psf = self.run_get_imsim_psf(self.science_image, self.science_psf_path)
-        template_psf = self.run_get_imsim_psf(self.template_image, self.template_psf_path)
+        science_psf = get_psf_kernel(self.science_image)
+        template_psf = get_psf_kernel(self.template_image)
 
         # sky subtraction
         science_skysubim_data, science_detmask_data, science_skyrms = sky_subtract(self.science_image)
