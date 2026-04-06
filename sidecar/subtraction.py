@@ -46,13 +46,6 @@ def get_imsim_psf(x, y, observation_id, sca, band, psf_type="ou24PSF", **kwargs)
     return stamp
 
 
-def load_fits_to_cp(path, return_hdr=True, return_data=True, hdu_index=0, dtype=None):
-    with fits.open(path) as hdul:
-        hdr = hdul[hdu_index].header if return_hdr else None
-        data = cp.array(np.ascontiguousarray(hdul[hdu_index].data.T), dtype=dtype) if return_data else None
-    return hdr, data
-
-
 def make_minimal_wcs_header(image):
     """Create a header from an image with just the WCS + NAXIS
 
@@ -157,8 +150,8 @@ class Pipeline:
         template_detmask = cp.array(np.ascontiguousarray(template_detmask_data.T))
 
         # Transpose PSF to match the transpose of the data array.
-        science_psf = cp.array(np.ascontiguousarray(science_psf.data.T), dtype=dtype)
-        template_psf = cp.array(np.ascontiguousarray(template_psf.data.T), dtype=dtype)
+        science_psf = cp.array(np.ascontiguousarray(science_psf.T), dtype=dtype)
+        template_psf = cp.array(np.ascontiguousarray(template_psf.T), dtype=dtype)
 
         # cupy flow
         sfftifier = SpaceSFFT_CupyFlow(
