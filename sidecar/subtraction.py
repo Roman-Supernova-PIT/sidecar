@@ -35,7 +35,7 @@ def sky_subtract(image, **kwargs):
     return sky_subtracted_data, detmask_data, rms
 
 
-def get_psf_kernel(image, psf_type="ou24PSF", **kwargs):
+def get_psf_kernel(image, psf_type="STPSF", **kwargs):
     """Return PSF at center of image as a 2D numpy array.  Will be of size of PSF model.
 
     Parameters
