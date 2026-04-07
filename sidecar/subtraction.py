@@ -4,6 +4,7 @@ from pathlib import Path
 
 import cupy as cp
 import numpy as np
+from scipy.signal import convolve2d
 
 from astropy.io import fits
 from astropy.stats import SigmaClip
@@ -17,7 +18,7 @@ from snappl.logger import SNLogger
 from snappl.psf import PSF
 
 
-def sky_subtract(image, **kwargs):
+def sky_subtract(image, nonlinear_threshold=100, footprint_radius=10, mask_radius=5, **kwargs):
     bkg = Background2D(image.data, box_size=64)
 
     sky_subtracted_data = image.data - bkg.background
@@ -26,11 +27,18 @@ def sky_subtract(image, **kwargs):
     # Based on the photutils.background documentation
     sigma_clip = SigmaClip(sigma=2.0, maxiters=10)
     threshold = detect_threshold(sky_subtracted_data, nsigma=20.0, sigma_clip=sigma_clip)
-    segment_img = detect_sources(sky_subtracted_data, threshold, npixels=10)
-    footprint = circular_footprint(radius=10)
+
+    # Build a mask of pixels that are in the non-linear retime
+    mask = np.abs(sky_subtracted_data) > nonlinear_threshold
+    # Grow individual pixels by mask_radius
+    mask_footprint = circular_footprint(radius=mask_radius)
+    mask = convolve2d(mask, mask_footprint, fillvalue=0, mode="same")
+
+    segment_img = detect_sources(sky_subtracted_data, threshold, npixels=10, mask=mask)
+    detection_footprint = circular_footprint(radius=10)
 
     # convert boolean into float 1, and 0 because data must be float (not bool or int).
-    detmask_data = np.asarray(segment_img.make_source_mask(footprint=footprint), dtype="float")
+    detmask_data = np.asarray(segment_img.make_source_mask(footprint=detection_footprint), dtype="float")
 
     return sky_subtracted_data, detmask_data, rms
 
