@@ -639,8 +639,8 @@ def main():
         default=None,
         help="Specify an image by template band.  This is optional and will default to --science-band",
     )
-    parser.add_argument("--reject_known_stars", default=True, help="Reject known stars.")
-    parser.add_argument("--match_truth", default=False, help="Match to truth catalog.")
+    parser.add_argument("--reject-known-stars", default=True, help="Reject known stars.")
+    parser.add_argument("--match-truth", default=False, help="Match to truth catalog.")
     parser.add_argument("-t", "--temp-dir", type=str, default=None, help="Temporary directory.")
     parser.add_argument("-o", "--output-dir", type=str, default=None, help="Output path")
 
