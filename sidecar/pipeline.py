@@ -66,7 +66,7 @@ class Detection:
     TRANSIENTS_TO_CLEANED_SCORE_DETECTION_PREFIX = "transients_to_cleaned_score_detection_"
     CLEANED_SCORE_DETECTION_TO_TRANSIENTS_PREFIX = "cleaned_score_detection_to_transients_"
 
-    def __init__(self, image_collection, data_records, temp_dir=None, output_dir=None, verbose=False):
+    def __init__(self, image_collection, data_records, reject_known_stars=True, temp_dir=None, output_dir=None, verbose=False):
         SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
         self.config = Config.get()
 
@@ -86,6 +86,7 @@ class Detection:
 
         self.image_collection = image_collection
         self.data_records = data_records
+        self.reject_known_stars = reject_known_stars
         if temp_dir is not None:
             self.temp_dir = temp_dir
         else:
@@ -323,6 +324,7 @@ class Detection:
         template_observation_id,
         template_sca,
         temp_dir,
+        reject_known_stars=True,
     ):
         science_id = {
             "band": science_band,
@@ -370,25 +372,79 @@ class Detection:
             file_path["score_detection_path"],
         )
 
-        SNLogger.info("Processing truth retrieval")
-        truth = self.__class__.retrieve_truth(
-            subtract.science_image,
-            subtract.template_image,
-            file_path["science_truth_path"],
-            file_path["template_truth_path"],
-            file_path["difference_truth_path"],
+        if reject_known_stars:
+            truth = self.__class__.retrieve_truth(
+                subtract.science_image,
+                subtract.template_image,
+                file_path["science_truth_path"],
+                file_path["template_truth_path"],
+                file_path["difference_truth_path"],
+            )
+
+            SNLogger.info("Removing known stars from diffim image detection")
+            _ = self.__class__.reject_stars(
+                truth,
+                file_path["difference_image_path"],
+                file_path["difference_detection_path"],
+                self.REJECT_MATCH_RADIUS,
+                file_path["cleaned_difference_detection_path"],
+                x_col="X_IMAGE",
+                y_col="Y_IMAGE",
+            )
+
+            SNLogger.info("Removing known stars from score image detection")
+            _ = self.__class__.reject_stars(
+                truth,
+                file_path["difference_image_path"],
+                file_path["score_detection_path"],
+                self.REJECT_MATCH_RADIUS,
+                file_path["cleaned_score_detection_path"],
+                x_col="x_peak",
+                y_col="y_peak",
+            )
+
+        SNLogger.info("Processing subtraction finished.")
+
+    def run_one_match_truth(
+        self,
+        image_collection,
+        science_band,
+        science_observation_id,
+        science_sca,
+        template_band,
+        template_observation_id,
+        template_sca,
+        temp_dir,
+        reject_known_stars=True,
+    ):
+        science_id = {
+            "band": science_band,
+            "observation_id": science_observation_id,
+            "sca": science_sca,
+        }
+        template_id = {
+            "band": template_band,
+            "observation_id": template_observation_id,
+            "sca": template_sca,
+        }
+        file_path = self.path_helper(science_id, template_id)
+
+        SNLogger.info(
+            "Processing match truth started for data records " f"| Science ID {science_id} " f"| Template ID {template_id} "
         )
 
-        SNLogger.info("Removing known stars from diffim image detection")
-        _ = self.__class__.reject_stars(
-            truth,
-            file_path["difference_image_path"],
-            file_path["difference_detection_path"],
-            self.REJECT_MATCH_RADIUS,
-            file_path["cleaned_difference_detection_path"],
-            x_col="X_IMAGE",
-            y_col="Y_IMAGE",
-        )
+        SNLogger.info("Processing truth retrieval")
+        try:
+            truth = self.__class__.retrieve_truth(
+                subtract.science_image,
+                subtract.template_image,
+                file_path["science_truth_path"],
+                file_path["template_truth_path"],
+                file_path["difference_truth_path"],
+            )
+        except:
+            SNLogger.info("Unable to retrieve truth catalog.  No star rejection or matching performed.")
+            return
 
         SNLogger.info("Processing diffim detection truth matching")
         _, _ = self.__class__.match_transients(
@@ -401,30 +457,6 @@ class Detection:
             x_col="X_IMAGE",
             y_col="Y_IMAGE",
             id_col="NUMBER",
-        )
-
-        SNLogger.info("Processing cleaned diffim detection truth matching")
-        _, _ = self.__class__.match_transients(
-            truth,
-            file_path["difference_image_path"],
-            file_path["cleaned_difference_detection_path"],
-            self.MATCH_RADIUS,
-            file_path["transients_to_cleaned_detection_path"],
-            file_path["cleaned_detection_to_transients_path"],
-            x_col="X_IMAGE",
-            y_col="Y_IMAGE",
-            id_col="NUMBER",
-        )
-
-        SNLogger.info("Removing known stars from score image detection")
-        _ = self.__class__.reject_stars(
-            truth,
-            file_path["difference_image_path"],
-            file_path["score_detection_path"],
-            self.REJECT_MATCH_RADIUS,
-            file_path["cleaned_score_detection_path"],
-            x_col="x_peak",
-            y_col="y_peak",
         )
 
         SNLogger.info("Processing score image detection truth matching")
@@ -440,22 +472,36 @@ class Detection:
             id_col="id",
         )
 
-        SNLogger.info("Processing cleaned score image detection truth matching")
-        _, _ = self.__class__.match_transients(
-            truth,
-            file_path["difference_image_path"],
-            file_path["cleaned_score_detection_path"],
-            self.MATCH_RADIUS,
-            file_path["transients_to_cleaned_score_detection_path"],
-            file_path["cleaned_score_detection_to_transients_path"],
-            x_col="x_centroid",
-            y_col="y_centroid",
-            id_col="id",
-        )
+        if reject_known_stars:
+            SNLogger.info("Processing cleaned diffim detection truth matching")
+            _, _ = self.__class__.match_transients(
+                truth,
+                file_path["difference_image_path"],
+                file_path["cleaned_difference_detection_path"],
+                self.MATCH_RADIUS,
+                file_path["transients_to_cleaned_detection_path"],
+                file_path["cleaned_detection_to_transients_path"],
+                x_col="X_IMAGE",
+                y_col="Y_IMAGE",
+                id_col="NUMBER",
+            )
 
-        SNLogger.info("Processing finished.")
+            SNLogger.info("Processing cleaned score image detection truth matching")
+            _, _ = self.__class__.match_transients(
+                truth,
+                file_path["difference_image_path"],
+                file_path["cleaned_score_detection_path"],
+                self.MATCH_RADIUS,
+                file_path["transients_to_cleaned_score_detection_path"],
+                file_path["cleaned_score_detection_to_transients_path"],
+                x_col="x_centroid",
+                y_col="y_centroid",
+                id_col="id",
+            )
 
-    def run(self):
+        SNLogger.info("Processing match_truth finished.")
+
+    def run_subtractions(self):
         os.makedirs(self.output_dir, exist_ok=True)
 
         # create temporary directory
@@ -477,6 +523,21 @@ class Detection:
                 row["template_observation_id"],
                 row["template_sca"],
                 temp_dir=temp_dir,
+                reject_known_stars=self.reject_known_stars
+            )
+
+    def run_match_truth(self):
+        os.makedirs(self.output_dir, exist_ok=True)
+
+        for _, row in self.data_records.iterrows():
+            self.run_one_match_truth(
+                self.image_collection,
+                row["science_band"],
+                row["science_observation_id"],
+                row["science_sca"],
+                row["template_band"],
+                row["template_observation_id"],
+                row["template_sca"],
             )
 
 
@@ -578,6 +639,8 @@ def main():
         default=None,
         help="Specify an image by template band.  This is optional and will default to --science-band",
     )
+    parser.add_argument("--reject_known_stars", default=True, help="Reject known stars.")
+    parser.add_argument("--match_truth", default=False, help="Match to truth catalog.")
     parser.add_argument("-t", "--temp-dir", type=str, default=None, help="Temporary directory.")
     parser.add_argument("-o", "--output-dir", type=str, default=None, help="Output path")
 
@@ -646,9 +709,11 @@ def main():
         return
 
     detection = Detection(
-        image_collection=image_collection, data_records=data_records, temp_dir=args.temp_dir, output_dir=args.output_dir
+        image_collection=image_collection, data_records=data_records, reject_known_stars=args.reject_known_stars, temp_dir=args.temp_dir, output_dir=args.output_dir
     )
-    detection.run()
+    detection.run_subtractions()
+    if args.match_truth:
+        detection.run_match_truth()
 
 
 if __name__ == "__main__":
