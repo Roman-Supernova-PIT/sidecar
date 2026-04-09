@@ -66,7 +66,9 @@ class Detection:
     TRANSIENTS_TO_CLEANED_SCORE_DETECTION_PREFIX = "transients_to_cleaned_score_detection_"
     CLEANED_SCORE_DETECTION_TO_TRANSIENTS_PREFIX = "cleaned_score_detection_to_transients_"
 
-    def __init__(self, image_collection, data_records, reject_known_stars=True, temp_dir=None, output_dir=None, verbose=False):
+    def __init__(
+        self, image_collection, data_records, reject_known_stars=True, temp_dir=None, output_dir=None, verbose=False
+    ):
         SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
         self.config = Config.get()
 
@@ -430,7 +432,9 @@ class Detection:
         file_path = self.path_helper(science_id, template_id)
 
         SNLogger.info(
-            "Processing match truth started for data records " f"| Science ID {science_id} " f"| Template ID {template_id} "
+            "Processing match truth started for data records "
+            f"| Science ID {science_id} "
+            f"| Template ID {template_id} "
         )
 
         SNLogger.info("Processing truth retrieval")
@@ -523,7 +527,7 @@ class Detection:
                 row["template_observation_id"],
                 row["template_sca"],
                 temp_dir=temp_dir,
-                reject_known_stars=self.reject_known_stars
+                reject_known_stars=self.reject_known_stars,
             )
 
     def run_match_truth(self):
@@ -709,7 +713,11 @@ def main():
         return
 
     detection = Detection(
-        image_collection=image_collection, data_records=data_records, reject_known_stars=args.reject_known_stars, temp_dir=args.temp_dir, output_dir=args.output_dir
+        image_collection=image_collection,
+        data_records=data_records,
+        reject_known_stars=args.reject_known_stars,
+        temp_dir=args.temp_dir,
+        output_dir=args.output_dir,
     )
     detection.run_subtractions()
     if args.match_truth:
