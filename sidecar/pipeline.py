@@ -108,6 +108,7 @@ class Detection:
     ):
         science_wcs = science_image.get_wcs()
         template_wcs = template_image.get_wcs()
+        science_truth = data_loader.load_table(science_truth_path)
         template_truth = data_loader.load_table(template_truth_path)
 
         truth = truth_retrieval.merge_science_and_template_truth(
@@ -437,11 +438,18 @@ class Detection:
             f"| Template ID {template_id} "
         )
 
+        science_image = image_collection.get_image(
+            **{"band": science_band, "observation_id": science_observation_id, "sca": science_sca},
+        )
+        template_image = image_collection.get_image(
+            **{"band": template_band, "observation_id": template_observation_id, "sca": template_sca},
+        )
+
         SNLogger.info("Processing truth retrieval")
         try:
             truth = self.__class__.retrieve_truth(
-                subtract.science_image,
-                subtract.template_image,
+                science_image,
+                template_image,
                 file_path["science_truth_path"],
                 file_path["template_truth_path"],
                 file_path["difference_truth_path"],
