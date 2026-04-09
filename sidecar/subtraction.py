@@ -13,8 +13,6 @@ from photutils.segmentation import detect_threshold, detect_sources
 from photutils.utils import circular_footprint
 
 from sfft.SpaceSFFTCupyFlow import SpaceSFFT_CupyFlow
-from snappl.config import Config
-from snappl.logger import SNLogger
 from snappl.psf import PSF
 
 

@@ -446,8 +446,9 @@ class Detection:
                 file_path["template_truth_path"],
                 file_path["difference_truth_path"],
             )
-        except:
+        except FileNotFoundError as e:
             SNLogger.info("Unable to retrieve truth catalog.  No star rejection or matching performed.")
+            print(e)
             return
 
         SNLogger.info("Processing diffim detection truth matching")
