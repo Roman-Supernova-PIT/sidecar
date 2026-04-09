@@ -34,7 +34,9 @@ class Detection:
     """
 
     DIFF_PATTERN = (
-        "{science_band}_{science_observation_id}_{science_sca}_-_{template_band}_{template_observation_id}_{template_sca}"
+        "{science_band}_{science_observation_id}_{science_sca}"
+        "_-_"
+        "{template_band}_{template_observation_id}_{template_sca}"
     )
 
     # Source detection config.
@@ -75,10 +77,12 @@ class Detection:
         # Things will crash at the truth retrieval (and thus at the star rejection stage)
         try:
             tds_base = self.config.value("system.ou24.tds_base")
-        except ValueError as e:
+        except ValueError:
             tds_base = ""
 
-        self.INPUT_TRUTH_PATTERN = tds_base + "/truth/{band}/{observation_id}/Roman_TDS_index_{band}_{observation_id}_{sca}.txt"
+        self.INPUT_TRUTH_PATTERN = (
+            tds_base + "/truth/{band}/{observation_id}/Roman_TDS_index_{band}_{observation_id}_{sca}.txt"
+        )
 
         self.image_collection = image_collection
         self.data_records = data_records

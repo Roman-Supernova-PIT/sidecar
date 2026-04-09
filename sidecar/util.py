@@ -294,7 +294,9 @@ def make_data_records_from_image_path(image_collection, science_image_path, temp
     """
     science_observation_id, science_sca, science_band = get_observation_id_sca_band_from_image_path(science_image_path)
 
-    data_records = make_data_records_from_observation_id(image_collection, science_observation_id, science_sca, science_band)
+    data_records = make_data_records_from_observation_id(
+        image_collection, science_observation_id, science_sca, science_band
+    )
 
     return data_records
 
@@ -347,7 +349,8 @@ def read_data_records(data_records_path):
     Parameters
     ----------
     data_records_path: str, pathlib.Path
-        Path to file with science and template observation_ids.  Overrides any command-line specification of observation_ids.
+        Path to file with science and template observation_ids.
+        Overrides any command-line specification of observation_ids.
     """
     df = pd.read_csv(data_records_path)
 

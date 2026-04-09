@@ -77,7 +77,10 @@ def main():
         "--dia-out-dir",
         type=str,
         default=None,
-        help="Base path of the DIA output files.  Used to specify where to look for catalog files when reading a list of data records.",
+        help=(
+            "Base path of the DIA output files.  ",
+            "Used to specify where to look for catalog files when reading a list of data records."
+        )
     )
     parser.add_argument(
         "--threshold",
@@ -119,7 +122,11 @@ def main():
             image_collection=image_collection, data_records=data_records, dia_out_dir=args.dia_out_dir
         )
         for _, row in data_records.iterrows():
-            science_id = {"observation_id": row["science_observation_id"], "sca": row["science_sca"], "band": row["science_band"]}
+            science_id = {
+                "observation_id": row["science_observation_id"],
+                "sca": row["science_sca"],
+                "band": row["science_band"],
+            }
             template_id = {
                 "observation_id": row["template_observation_id"],
                 "sca": row["template_sca"],
