@@ -72,6 +72,29 @@ python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2
 python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2024 --image-process load_ou2024_image --science-observation-id 35303 --science-sca 8 --science-band H158 --template-observation-id 39140 --template-sca 3 --template-band H158 --output-dir /dia_out_dir
 ```
 
+ASDF The 49 example
+
+See `sidecar/examples/perlmutter/asdf49_wfi01_run_one.sh`
+
+```
+obsid=99999010010010010010002
+band=F106
+python \
+    sidecar/sidecar/pipeline.py  \
+    --image-collection snpitdb \
+    --image-provenance-tag asdf_functional_test \
+    --image-process load_rdm_image \
+    --science-observation-id ${obsid} \
+    --science-band ${band} \
+    --science-sca 1 \
+    --template-observation-id 99999010010010010010001 \
+    --template-band ${band} \
+    --template-sca 1 \
+    --reject-known-stars False \
+    --output-dir /snpit_temp/dia_out_dir/test_snappl/20260406_the49 \
+    --temp-dir /snpit_temp
+```
+
 ## sidecar Workflow
 <img src="workflow.png" alt="Workflow of the detection pipeline." style="width:800px; height:auto;">
 
