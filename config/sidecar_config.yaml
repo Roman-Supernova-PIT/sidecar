@@ -1,0 +1,11 @@
+replaceable_preloads:
+  - /home/environment/nov2025_container_config.yaml
+
+photometry:
+  sidecar:
+    diaobject:
+      diaobject_provenance_tag: "nov2025_test3"
+      diaobject_process: "sidecar"
+
+    psf:
+      type: ou24PSF

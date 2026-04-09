@@ -1,5 +1,6 @@
 import argparse
 import atexit
+import logging
 import os
 from pathlib import Path
 import tempfile
@@ -14,10 +15,15 @@ from sidecar import source_detection
 from sidecar import truth_matching
 from sidecar import truth_retrieval
 from sidecar.util import (
+    find_templates_for_pointings,
     make_data_records_from_pointing,
     make_data_records_from_image_path,
     read_data_records,
 )
+
+from snappl.config import Config
+from snappl.imagecollection import ImageCollection
+from snappl.logger import SNLogger
 
 
 class Detection:
@@ -25,23 +31,7 @@ class Detection:
 
     Uses SFFT and Source Extractor for the main work.
     Most of the rest of the code is defining the file paths.
-
-    Notes
-    -----
-    On NERSC the sim images and truth are in:
-    INPUT_IMAGE_PATTERN = ("/global/cfs/cdirs/lsst/shared/external/roman-desc-sims/Roman_data"
-                                "/RomanTDS/images/simple_model/{band}/{pointing}/Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits.gz")
-    INPUT_TRUTH_PATTERN = ("/global/cfs/cdirs/lsst/shared/external/roman-desc-sims/Roman_data"
-                                 "/RomanTDS/truth/{band}/{pointing}/Roman_TDS_index_{band}_{pointing}_{sca}.txt")
     """
-
-    SIMS_DIR = os.getenv("SIMS_DIR", None)
-
-    INPUT_IMAGE_PATTERN = (
-        SIMS_DIR
-        + "/RomanTDS/images/simple_model/{band}/{pointing}/Roman_TDS_simple_model_{band}_{pointing}_{sca}.fits.gz"
-    )
-    INPUT_TRUTH_PATTERN = SIMS_DIR + "/RomanTDS/truth/{band}/{pointing}/Roman_TDS_index_{band}_{pointing}_{sca}.txt"
 
     DIFF_PATTERN = (
         "{science_band}_{science_pointing}_{science_sca}_-_{template_band}_{template_pointing}_{template_sca}"
@@ -74,10 +64,32 @@ class Detection:
     TRANSIENTS_TO_CLEANED_SCORE_DETECTION_PREFIX = "transients_to_cleaned_score_detection_"
     CLEANED_SCORE_DETECTION_TO_TRANSIENTS_PREFIX = "cleaned_score_detection_to_transients_"
 
-    def __init__(self, data_records, temp_dir=None, output_dir="./output"):
+    def __init__(self, image_collection, data_records, temp_dir=None, output_dir=None, verbose=False):
+        SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
+        self.config = Config.get()
+
+        # The truth files are stored relative to the TDS base
+        # The try/except is to not require this config value defined
+        # because we should still be able to run subtractions even if it's not OU24 and
+        # if truth catalogs aren't available.
+        # Things will crash at the truth retrieval (and thus at the star rejection stage)
+        try:
+            tds_base = self.config.value("system.ou24.tds_base")
+        except ValueError as e:
+            tds_base = ""
+
+        self.INPUT_TRUTH_PATTERN = tds_base + "/truth/{band}/{pointing}/Roman_TDS_index_{band}_{pointing}_{sca}.txt"
+
+        self.image_collection = image_collection
         self.data_records = data_records
-        self.temp_dir = temp_dir
-        self.output_dir = output_dir
+        if temp_dir is not None:
+            self.temp_dir = temp_dir
+        else:
+            self.temp_dir = self.config.value("photometry.sidecar.paths.temp_dir")
+        if output_dir is not None:
+            self.output_dir = output_dir
+        else:
+            self.output_dir = self.config.value("system.paths.temp_dir") + "dia_out_dir"
 
     @staticmethod
     def retrieve_truth(
@@ -227,9 +239,10 @@ class Detection:
         file_path["full_output_dir"] = Path(self.output_dir, diff_pattern)
         os.makedirs(file_path["full_output_dir"], exist_ok=True)
 
+        file_path["science_image_path"] = self.image_collection.get_image(**science_id).path
+        file_path["template_image_path"] = self.image_collection.get_image(**template_id).path
+
         # subtraction
-        file_path["science_image_path"] = self.INPUT_IMAGE_PATTERN.format(**science_id)
-        file_path["template_image_path"] = self.INPUT_IMAGE_PATTERN.format(**template_id)
         file_path["difference_image_path"] = Path(
             file_path["full_output_dir"],
             self.DIFF_IMAGE_PREFIX + diff_pattern + ".fits",
@@ -300,6 +313,7 @@ class Detection:
 
     def run_one_subtraction(
         self,
+        image_collection,
         science_band,
         science_pointing,
         science_sca,
@@ -320,12 +334,13 @@ class Detection:
         }
         file_path = self.path_helper(science_id, template_id)
 
-        print(
-            "[INFO] Processing started for data records " f"| Science ID {science_id} " f"| Template ID {template_id} "
+        SNLogger.info(
+            "Processing started for data records " f"| Science ID {science_id} " f"| Template ID {template_id} "
         )
 
-        print("[INFO] Processing subtraction")
+        SNLogger.info("Processing subtraction")
         subtract = subtraction.Pipeline(
+            image_collection=image_collection,
             science_band=science_band,
             science_pointing=science_pointing,
             science_sca=science_sca,
@@ -337,7 +352,7 @@ class Detection:
         )
         subtract.run()
 
-        print("[INFO] Processing detection")
+        SNLogger.info("Processing detection")
         source_detection.detect(
             file_path["difference_image_path"],
             file_path["difference_detection_path"],
@@ -347,13 +362,13 @@ class Detection:
             detection_filter=self.DETECTION_FILTER,
         )
 
-        print("[INFO] Processing score image detection")
+        SNLogger.info("Processing score image detection")
         source_detection.score_image_detect(
             file_path["score_image_path"],
             file_path["score_detection_path"],
         )
 
-        print("[INFO] Processing truth retrieval")
+        SNLogger.info("Processing truth retrieval")
         truth = self.__class__.retrieve_truth(
             file_path["science_image_path"],
             file_path["template_image_path"],
@@ -362,7 +377,7 @@ class Detection:
             file_path["difference_truth_path"],
         )
 
-        print("[INFO] Removing known stars from diffim image detection")
+        SNLogger.info("Removing known stars from diffim image detection")
         _ = self.__class__.reject_stars(
             truth,
             file_path["difference_image_path"],
@@ -373,7 +388,7 @@ class Detection:
             y_col="Y_IMAGE",
         )
 
-        print("[INFO] Processing diffim detection truth matching")
+        SNLogger.info("Processing diffim detection truth matching")
         _, _ = self.__class__.match_transients(
             truth,
             file_path["difference_image_path"],
@@ -386,7 +401,7 @@ class Detection:
             id_col="NUMBER",
         )
 
-        print("[INFO] Processing cleaned diffim detection truth matching")
+        SNLogger.info("Processing cleaned diffim detection truth matching")
         _, _ = self.__class__.match_transients(
             truth,
             file_path["difference_image_path"],
@@ -399,7 +414,7 @@ class Detection:
             id_col="NUMBER",
         )
 
-        print("[INFO] Removing known stars from score image detection")
+        SNLogger.info("Removing known stars from score image detection")
         _ = self.__class__.reject_stars(
             truth,
             file_path["difference_image_path"],
@@ -410,7 +425,7 @@ class Detection:
             y_col="y_peak",
         )
 
-        print("[INFO] Processing score image detection truth matching")
+        SNLogger.info("Processing score image detection truth matching")
         _, _ = self.__class__.match_transients(
             truth,
             file_path["difference_image_path"],
@@ -423,7 +438,7 @@ class Detection:
             id_col="id",
         )
 
-        print("[INFO] Processing cleaned score image detection truth matching")
+        SNLogger.info("Processing cleaned score image detection truth matching")
         _, _ = self.__class__.match_transients(
             truth,
             file_path["difference_image_path"],
@@ -436,7 +451,7 @@ class Detection:
             id_col="id",
         )
 
-        print("[INFO] Processing finished.")
+        SNLogger.info("Processing finished.")
 
     def run(self):
         os.makedirs(self.output_dir, exist_ok=True)
@@ -450,8 +465,9 @@ class Detection:
             temp_dir = Path(self.temp_dir)
             os.makedirs(temp_dir, exist_ok=True)
 
-        for i, row in self.data_records.iterrows():
+        for _, row in self.data_records.iterrows():
             self.run_one_subtraction(
+                self.image_collection,
                 row["science_band"],
                 row["science_pointing"],
                 row["science_sca"],
@@ -463,7 +479,35 @@ class Detection:
 
 
 def main():
-    parser = argparse.ArgumentParser("detection pipeline")
+    # Run one arg pass just to get the config file, so we can augment
+    #   the full arg parser later with config options
+    configparser = argparse.ArgumentParser(add_help=False)
+    configparser.add_argument("-c", "--config", default=None, help="Location of the .yaml config file")
+    args, leftovers = configparser.parse_known_args()
+
+    desc = "Run the detect_supernova pipeline."
+    try:
+        cfg = Config.get(args.config, setdefault=True)
+    except RuntimeError:
+        # If it failed to load the config file, just move on with life.  This
+        #   may mean that things will fail later, but it may also just mean
+        #   that somebody is doing '--help'
+        cfg = None
+        desc += (
+            " Include --config <configfile> before --help (or set SNPIT_CONFIG) for "
+            "help to show you all config options that can be passed on the command line."
+        )
+
+    parser = argparse.ArgumentParser(description=desc)
+
+    # The --config argument will have been consumed by configparser above, and
+    #   but include it so it shows up with --help.
+    parser.add_argument(
+        "-c",
+        "--config",
+        default=None,
+        help="Location of the .yaml config file.  Defaults to env var SNPIT_CONFIG.",
+    )
     parser.add_argument(
         "-d",
         "--data-records",
@@ -471,6 +515,14 @@ def main():
         type=str,
         help="Input file with data records.  It is an error to specify --data-records and --science-path.",
     )
+    parser.add_argument("--image-collection", "--ic", help="Collection of the images we're using", default="ou2024")
+    parser.add_argument("--image-subset", "--is", default=None, help="Image collection subset")
+    parser.add_argument(
+        "--base-path", type=str, default="", help='Base path for images.  Required for "manual_fits" image collection'
+    )
+    parser.add_argument("--image-id", default=None, type=str, help="Image uuid")
+    parser.add_argument("--image-provenance-tag", type=str)
+    parser.add_argument("--image-process", type=str)
     parser.add_argument(
         "--science-image-path",
         "--science-path",
@@ -524,9 +576,12 @@ def main():
         default=None,
         help="Specify an image by template band.  This is optional and will default to --science-band",
     )
-    parser.add_argument("-t", "--temp-dir", default=None, help="Temporary directory.")
-    parser.add_argument("-o", "--output-dir", type=str, default="./output", help="Output directory.")
-    args = parser.parse_args()
+    parser.add_argument("-t", "--temp-dir", type=str, default=None, help="Temporary directory.")
+    parser.add_argument("-o", "--output-dir", type=str, default=None, help="Output path")
+
+    cfg.augment_argparse(parser)
+    args = parser.parse_args(leftovers)
+    cfg.parse_args(args)
 
     # Validate consistency
     if args.data_records_path is not None and (
@@ -535,21 +590,42 @@ def main():
         or (args.science_sca is not None)
         or (args.science_band is not None)
     ):
-        print("It is an error to specify 'data_records_path' and any of 'science_(image_path,pointing,sca,band)'")
+        SNLogger.warning(
+            "It is an error to specify 'data_records_path' and any of 'science_(image_path,pointing,sca,band)'"
+        )
         return
 
+    image_collection = ImageCollection.get_collection(
+        collection=args.image_collection,
+        provenance_tag=args.image_provenance_tag,
+        process=args.image_process,
+    )
+
     if args.data_records_path is not None:
+        # A data_records_path can store a list of images to subtract
         data_records = read_data_records(args.data_records_path)
+        # Check to see if we the data_records_path provided templates
+        # If not, we will search for them
+        if "template_pointing" not in data_records.columns:
+            data_records = find_templates_for_pointings(
+                image_collection=image_collection,
+                science_pointing=data_records["science_pointing"],
+                science_sca=data_records["science_sca"],
+                science_band=data_records["science_band"],
+            )
     elif args.science_image_path is not None:
         # If the template_image path is not specified, then a template will be searched for.
         data_records = make_data_records_from_image_path(
-            science_image_path=args.science_image_path, template_image_path=args.template_image_path
+            image_collection=image_collection,
+            science_image_path=args.science_image_path,
+            template_image_path=args.template_image_path,
         )
     elif (args.science_pointing is not None) and (args.science_sca is not None):
         # In principle the band is already specified by the pointing,
         #   so we won't explicitly require it here.
-        # As for image_path, if template values aren't specified, a template will be searched for.
+        # If template values aren't specified, a template will be searched for.
         data_records = make_data_records_from_pointing(
+            image_collection=image_collection,
             science_pointing=args.science_pointing,
             science_sca=args.science_sca,
             science_band=args.science_band,
@@ -558,11 +634,18 @@ def main():
             template_band=args.template_band,
         )
     else:
-        print("No valid set of input file, image, or pointing specified.")
-        print("Stopping.")
+        SNLogger.warning("No valid set of input file, image, or pointing specified.")
+        SNLogger.warning("Stopping.")
         return
 
-    detection = Detection(data_records, args.temp_dir, args.output_dir)
+    if len(data_records) < 1:
+        SNLogger.warning("No matching sets of science and template images found.")
+        SNLogger.warning("Stopping.")
+        return
+
+    detection = Detection(
+        image_collection=image_collection, data_records=data_records, temp_dir=args.temp_dir, output_dir=args.output_dir
+    )
     detection.run()
 
 

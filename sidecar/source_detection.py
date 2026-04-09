@@ -23,9 +23,7 @@ def detect(
     detection_para=None,
     detection_filter=None,
 ):
-    source_extractor_executable = (
-        source_extractor_executable or SOURCE_EXTRACTOR_EXECUTABLE
-    )
+    source_extractor_executable = source_extractor_executable or SOURCE_EXTRACTOR_EXECUTABLE
     detection_config = detection_config or DETECTION_CONFIG
     detection_para = detection_para or DETECTION_PARA
     detection_filter = detection_filter or DETECTION_FILTER
@@ -47,7 +45,12 @@ def detect(
 
 
 def score_image_detect(
-    image_path, catalog_save_path=None, threshold=10, box_size=11, negative=True, overwrite=True,
+    image_path,
+    catalog_save_path=None,
+    threshold=10,
+    box_size=11,
+    negative=True,
+    overwrite=True,
 ):
     """Detect based on the peak pixels in the score image.
 

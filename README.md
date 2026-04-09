@@ -31,33 +31,45 @@ Once cloning is complete, navigate to the 'sidecar' directory.
 To run the detection pipeline, run the following code in `sidecar` repo of the terminal.
 
 ```
-python sidecar/pipeline.py -d [path of the input file] -o [output directory]
+python sidecar/pipeline.py --image-collection [image collection] --data-records [path of the input file] --output-dir [output directory]
 ```
 
 E.g.,
 
 ```
-python sidecar/pipeline.py -d tests/test_one_data_record.csv -o /dia_out_dir
+python sidecar/pipeline.py --image-collection ou2024 --data-records tests/test_one_data_record.csv --output-dir /dia_out_dir
 ```
+
+Image collection is a string specifying an image collection that snappl knows about.
+E.g., "ou2024", "manual_fits".  This will be used to generate paths for image info (pointing, sca, band), get the correct objects that know how to load WCS and PSF information.
 
 Note the `/dia_out_dir` only makes sense because we're running in the podman container, where we have bound /dia_out_dir to an output directory.
 
 Can run by specifying the values on the command line
 ```
-python sidecar/pipeline.py --pointing 53526 --sca 1 --band R062 --template-pointing 5044 --template-sca 8 --template-band R062 -o /dia_out_dir
+python sidecar/pipeline.py --image-collection ou2024 --pointing 53526 --sca 1 --band R062 --template-pointing 5044 --template-sca 8 --template-band R062 --output-dir /dia_out_dir
 ```
 
 Can also run by just specifying the pointing, sca, band of the science image
 
 ```
-python sidecar/pipeline.py --pointing 53526 --sca 1 --band R062 -o /dia_out_dir
+python sidecar/pipeline.py --image-collection ou2024 --pointing 53526 --sca 1 --band R062 --output-dir /dia_out_dir
 ```
 
 or just by passing the image path
 
 ```
 image_path=/dvs_ro/cfs/cdirs/lsst/shared/external/roman-desc-sims/Roman_data/RomanTDS/images/simple_model/R062/53526/Roman_TDS_simple_model_R062_53526_1.fits.gz
-python sidecar/pipeline.py --science-path ${image_path} -o /dia_out_dir
+python sidecar/pipeline.py --image-collection ou2024 --science-path ${image_path} --output-dir /dia_out_dir
+```
+
+Nov 2025 example
+```
+python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2024 --image-process load_ou2024_image --pointing 36846 --sca 15 --band H158 --output-dir /dia_out_dir
+```
+
+```
+python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2024 --image-process load_ou2024_image --science-pointing 35303 --science-sca 8 --science-band H158 --template-pointing 39140 --template-sca 3 --template-band H158 --output-dir /dia_out_dir
 ```
 
 ## sidecar Workflow

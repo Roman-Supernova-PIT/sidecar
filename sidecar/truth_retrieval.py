@@ -46,12 +46,8 @@ def merge_science_and_template_truth(
     science_truth = science_truth[science_in_template]
     template_truth = template_truth[template_in_science]
 
-    science_skycoord = SkyCoord(
-        science_truth["ra"], science_truth["dec"], frame="fk5", unit="deg"
-    )
-    template_skycoord = SkyCoord(
-        template_truth["ra"], template_truth["dec"], frame="fk5", unit="deg"
-    )
+    science_skycoord = SkyCoord(science_truth["ra"], science_truth["dec"], frame="fk5", unit="deg")
+    template_skycoord = SkyCoord(template_truth["ra"], template_truth["dec"], frame="fk5", unit="deg")
 
     matched_status, matched_id = two_direction_skymatch(
         template_skycoord, science_skycoord, radius=match_radius * u.arcsec
@@ -64,25 +60,25 @@ def merge_science_and_template_truth(
     template_truth_unmatched["realized_flux"] *= -1
 
     science_truth[matched_id[matched_status]]["flux"] = (
-        science_truth[matched_id[matched_status]]["flux"]
-        - template_truth_matched["flux"]
+        science_truth[matched_id[matched_status]]["flux"] - template_truth_matched["flux"]
     )
 
     science_truth[matched_id[matched_status]]["realized_flux"] = (
-        science_truth[matched_id[matched_status]]["realized_flux"]
-        - template_truth_matched["realized_flux"]
+        science_truth[matched_id[matched_status]]["realized_flux"] - template_truth_matched["realized_flux"]
     )
 
     science_truth["image_type"] = ["science"] * len(science_truth)
-    science_truth[matched_id[matched_status]]["image_type"] = [
-        "both"
-    ] * matched_status.sum()
+    science_truth[matched_id[matched_status]]["image_type"] = ["both"] * matched_status.sum()
 
-    template_truth_unmatched["image_type"] = ["template"] * len(
-        template_truth_unmatched
-    )
+    # If there are objects from the truth table unmatched to detection table, then fill that image type with "template"
+    # and append (vertically stack) to table.
+    # If there are no such objects, then skip this step
+    if len(template_truth_unmatched) > 0:
+        template_truth_unmatched["image_type"] = ["template"] * len(template_truth_unmatched)
+        merged_truth = vstack([science_truth, template_truth_unmatched])
+    else:
+        merged_truth = science_truth
 
-    merged_truth = vstack([science_truth, template_truth_unmatched])
     merged_truth.remove_columns(["x", "y"])
 
     # Standardize colum names for clarity and
