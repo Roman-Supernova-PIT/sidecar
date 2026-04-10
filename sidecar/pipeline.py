@@ -15,8 +15,8 @@ from sidecar import source_detection
 from sidecar import truth_matching
 from sidecar import truth_retrieval
 from sidecar.util import (
-    find_templates_for_pointings,
-    make_data_records_from_pointing,
+    find_templates_for_observation_ids,
+    make_data_records_from_observation_id,
     make_data_records_from_image_path,
     read_data_records,
 )
@@ -34,7 +34,7 @@ class Detection:
     """
 
     DIFF_PATTERN = (
-        "{science_band}_{science_pointing}_{science_sca}_-_{template_band}_{template_pointing}_{template_sca}"
+        "{science_band}_{science_observation_id}_{science_sca}_-_{template_band}_{template_observation_id}_{template_sca}"
     )
 
     # Source detection config.
@@ -78,7 +78,7 @@ class Detection:
         except ValueError as e:
             tds_base = ""
 
-        self.INPUT_TRUTH_PATTERN = tds_base + "/truth/{band}/{pointing}/Roman_TDS_index_{band}_{pointing}_{sca}.txt"
+        self.INPUT_TRUTH_PATTERN = tds_base + "/truth/{band}/{observation_id}/Roman_TDS_index_{band}_{observation_id}_{sca}.txt"
 
         self.image_collection = image_collection
         self.data_records = data_records
@@ -315,21 +315,21 @@ class Detection:
         self,
         image_collection,
         science_band,
-        science_pointing,
+        science_observation_id,
         science_sca,
         template_band,
-        template_pointing,
+        template_observation_id,
         template_sca,
         temp_dir,
     ):
         science_id = {
             "band": science_band,
-            "pointing": science_pointing,
+            "observation_id": science_observation_id,
             "sca": science_sca,
         }
         template_id = {
             "band": template_band,
-            "pointing": template_pointing,
+            "observation_id": template_observation_id,
             "sca": template_sca,
         }
         file_path = self.path_helper(science_id, template_id)
@@ -342,10 +342,10 @@ class Detection:
         subtract = subtraction.Pipeline(
             image_collection=image_collection,
             science_band=science_band,
-            science_pointing=science_pointing,
+            science_observation_id=science_observation_id,
             science_sca=science_sca,
             template_band=template_band,
-            template_pointing=template_pointing,
+            template_observation_id=template_observation_id,
             template_sca=template_sca,
             temp_dir=temp_dir,
             out_dir=file_path["full_output_dir"],
@@ -469,10 +469,10 @@ class Detection:
             self.run_one_subtraction(
                 self.image_collection,
                 row["science_band"],
-                row["science_pointing"],
+                row["science_observation_id"],
                 row["science_sca"],
                 row["template_band"],
-                row["template_pointing"],
+                row["template_observation_id"],
                 row["template_sca"],
                 temp_dir=temp_dir,
             )
@@ -538,31 +538,31 @@ def main():
         help="Pass a template image by file path.  Optional.  Only used with --science-path.",
     )
     parser.add_argument(
-        "--science-pointing",
-        "--pointing",
+        "--science-observation_id",
+        "--observation_id",
         type=int,
         default=None,
-        help="Specify an image by pointing.  Must also specify sca, band.",
+        help="Specify an image by observation_id.  Must also specify sca, band.",
     )
     parser.add_argument(
         "--science-sca",
         "--sca",
         type=int,
         default=None,
-        help="Specify an image by sca.  Must also specify pointing, band.",
+        help="Specify an image by sca.  Must also specify observation_id, band.",
     )
     parser.add_argument(
         "--science-band",
         "--band",
         type=str,
         default=None,
-        help="Specify an image by band.  Must also specify pointing, sca.",
+        help="Specify an image by band.  Must also specify observation_id, sca.",
     )
     parser.add_argument(
-        "--template-pointing",
+        "--template-observation_id",
         type=int,
         default=None,
-        help="Specify a template pointing.",
+        help="Specify a template observation_id.",
     )
     parser.add_argument(
         "--template-sca",
@@ -586,12 +586,12 @@ def main():
     # Validate consistency
     if args.data_records_path is not None and (
         (args.science_image_path is not None)
-        or (args.science_pointing is not None)
+        or (args.science_observation_id is not None)
         or (args.science_sca is not None)
         or (args.science_band is not None)
     ):
         SNLogger.warning(
-            "It is an error to specify 'data_records_path' and any of 'science_(image_path,pointing,sca,band)'"
+            "It is an error to specify 'data_records_path' and any of 'science_(image_path,observation_id,sca,band)'"
         )
         return
 
@@ -606,10 +606,10 @@ def main():
         data_records = read_data_records(args.data_records_path)
         # Check to see if we the data_records_path provided templates
         # If not, we will search for them
-        if "template_pointing" not in data_records.columns:
-            data_records = find_templates_for_pointings(
+        if "template_observation_id" not in data_records.columns:
+            data_records = find_templates_for_observation_ids(
                 image_collection=image_collection,
-                science_pointing=data_records["science_pointing"],
+                science_observation_id=data_records["science_observation_id"],
                 science_sca=data_records["science_sca"],
                 science_band=data_records["science_band"],
             )
@@ -620,21 +620,21 @@ def main():
             science_image_path=args.science_image_path,
             template_image_path=args.template_image_path,
         )
-    elif (args.science_pointing is not None) and (args.science_sca is not None):
-        # In principle the band is already specified by the pointing,
+    elif (args.science_observation_id is not None) and (args.science_sca is not None):
+        # In principle the band is already specified by the observation_id,
         #   so we won't explicitly require it here.
         # If template values aren't specified, a template will be searched for.
-        data_records = make_data_records_from_pointing(
+        data_records = make_data_records_from_observation_id(
             image_collection=image_collection,
-            science_pointing=args.science_pointing,
+            science_observation_id=args.science_observation_id,
             science_sca=args.science_sca,
             science_band=args.science_band,
-            template_pointing=args.template_pointing,
+            template_observation_id=args.template_observation_id,
             template_sca=args.template_sca,
             template_band=args.template_band,
         )
     else:
-        SNLogger.warning("No valid set of input file, image, or pointing specified.")
+        SNLogger.warning("No valid set of input file, image, or observation_id specified.")
         SNLogger.warning("Stopping.")
         return
 

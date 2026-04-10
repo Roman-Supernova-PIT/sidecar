@@ -11,9 +11,9 @@ def run(
     ra=[8.0, 8.2, 8.4, 8.6, 8.8, 9.0, 8.0, 8.2, 8.4, 8.6, 8.8, 9.0],
     dec=[-43.2, -43.2, -43.2, -43.2, -43.2, -43.1, -43.1, -43.1, -43.1, -43.1],
 ):
-    """Get templates for 10 different pointings
+    """Get templates for 10 different observation_ids
 
-    I don't know how to query the roman-desc-simdex for a given pointing, sca
+    I don't know how to query the roman-desc-simdex for a given observation_id, sca
 
     So I'm just going to do the silly thing and ask for
     10 different RA, DEC positions and use that image info.
@@ -52,10 +52,10 @@ def run(
         template = get_earliest_template_for_image(im)
         template_images.append(template)
 
-    head = "science_band,science_pointing,science_sca,template_band,template_pointing,template_sca"
+    head = "science_band,science_observation_id,science_sca,template_band,template_observation_id,template_sca"
     print(head)
     for s, t in zip(science_images, template_images):
-        print(s.get("band"), s.pointing, s.sca, t.get("band"), t.pointing, t.sca)
+        print(s.get("band"), s.observation_id, s.sca, t.get("band"), t.observation_id, t.sca)
 
     return science_images, template_images
 

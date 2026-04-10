@@ -6,7 +6,7 @@ python sidecar/save_candidates_to_database.py \
     --diaobject-process sidecar \
     --threshold 200 \
     --threshold-column peak_value \
-    --science-pointing 56211 \
+    --science-observation_id 56211 \
     --science-sca 1 \
     --science-band R062 \
     --dia-source-catalog-path /dia_out_dir/R062_56211_1_-_R062_5819_2/cleaned_score_detection_to_transients_R062_56211_1_-_R062_5819_2.ecsv

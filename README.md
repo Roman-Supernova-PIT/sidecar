@@ -41,19 +41,19 @@ python sidecar/pipeline.py --image-collection ou2024 --data-records tests/test_o
 ```
 
 Image collection is a string specifying an image collection that snappl knows about.
-E.g., "ou2024", "manual_fits".  This will be used to generate paths for image info (pointing, sca, band), get the correct objects that know how to load WCS and PSF information.
+E.g., "ou2024", "manual_fits".  This will be used to generate paths for image info (observation_id, sca, band), get the correct objects that know how to load WCS and PSF information.
 
 Note the `/dia_out_dir` only makes sense because we're running in the podman container, where we have bound /dia_out_dir to an output directory.
 
 Can run by specifying the values on the command line
 ```
-python sidecar/pipeline.py --image-collection ou2024 --pointing 53526 --sca 1 --band R062 --template-pointing 5044 --template-sca 8 --template-band R062 --output-dir /dia_out_dir
+python sidecar/pipeline.py --image-collection ou2024 --observation-id 53526 --sca 1 --band R062 --template-observation-id 5044 --template-sca 8 --template-band R062 --output-dir /dia_out_dir
 ```
 
-Can also run by just specifying the pointing, sca, band of the science image
+Can also run by just specifying the observation_id, sca, band of the science image
 
 ```
-python sidecar/pipeline.py --image-collection ou2024 --pointing 53526 --sca 1 --band R062 --output-dir /dia_out_dir
+python sidecar/pipeline.py --image-collection ou2024 --observation-id 53526 --sca 1 --band R062 --output-dir /dia_out_dir
 ```
 
 or just by passing the image path
@@ -65,11 +65,11 @@ python sidecar/pipeline.py --image-collection ou2024 --science-path ${image_path
 
 Nov 2025 example
 ```
-python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2024 --image-process load_ou2024_image --pointing 36846 --sca 15 --band H158 --output-dir /dia_out_dir
+python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2024 --image-process load_ou2024_image --observation-id 36846 --sca 15 --band H158 --output-dir /dia_out_dir
 ```
 
 ```
-python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2024 --image-process load_ou2024_image --science-pointing 35303 --science-sca 8 --science-band H158 --template-pointing 39140 --template-sca 3 --template-band H158 --output-dir /dia_out_dir
+python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2024 --image-process load_ou2024_image --science-observation-id 35303 --science-sca 8 --science-band H158 --template-observation-id 39140 --template-sca 3 --template-band H158 --output-dir /dia_out_dir
 ```
 
 ## sidecar Workflow
@@ -77,7 +77,7 @@ python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2
 
 - Input: The pipeline takes a `csv` file with 6 required columns. They will be used as data ids to identify science and template images. During running, the pipeline will loop over each row to perform image difference, source detection, truth retrieval, and truth matching.
   ```
-  | science_band | science_pointing | science_sca | template_band | template_pointing | template_sca |
+  | science_band | science_observation_id | science_sca | template_band | template_observation_id | template_sca |
   ```
 - Subtraction: Perform image difference using [SFFT](https://github.com/thomasvrussell/sfft) algorithm.
 - Detection: Perform source detection using [Source-Extractor](https://sextractor.readthedocs.io/en/latest/Introduction.html).
