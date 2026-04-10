@@ -17,7 +17,7 @@ for obsid in 99999010010010010010002 99999010010010010010003 9999901001001001001
       --template-band ${band} \
       --template-sca 1 \
       --reject-known-stars False \
-      --output-dir /snpit_temp/dia_out_dir/test_snappl/20260406_the49 \
+      --output-dir /snpit_temp/dia_out_dir/test_snappl \
       --temp-dir /snpit_temp
   done
 done

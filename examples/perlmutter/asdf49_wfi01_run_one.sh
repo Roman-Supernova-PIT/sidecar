@@ -17,5 +17,5 @@ python \
     --template-band ${band} \
     --template-sca 1 \
     --reject-known-stars False \
-    --output-dir /snpit_temp/dia_out_dir/test_snappl/20260406_the49 \
+    --output-dir /snpit_temp/dia_out_dir/test_snappl \
     --temp-dir /snpit_temp
