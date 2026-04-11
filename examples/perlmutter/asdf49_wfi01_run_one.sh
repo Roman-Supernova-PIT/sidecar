@@ -16,4 +16,5 @@ python \
     --template-sca 1 \
     --reject-known-stars False \
     --output-dir /snpit_temp/dia_out_dir/test_snappl \
-    --temp-dir /snpit_temp
+    --temp-dir /snpit_temp \
+    --save-debug-products
