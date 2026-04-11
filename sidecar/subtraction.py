@@ -91,7 +91,7 @@ def _save_sky_subtracted_products_as_fits(path, hdr, data, noise, flags, detmask
             fits.ImageHDU(data=data, name="DATA"),
             fits.ImageHDU(data=noise, name="NOISE"),
             fits.ImageHDU(data=flags, name="FLAGS"),
-            fits.ImageHDU(data=detmask, name="DETMASK"),
+            fits.ImageHDU(data=np.asarray(detmask, dtype="uint8"), name="DETMASK"),
         ]
     )
     hdul.writeto(path, overwrite=True)
@@ -268,7 +268,7 @@ class Pipeline:
         if self.save_debug_products:
             fits.writeto(
                 self.match_kernel_debug_path,
-                np.asnumpy(sfftifier.MATCH_KERNEL).T,
+                cp.asnumpy(sfftifier.MATCH_KERNEL).T,
                 header=sfftifier.hdr_target,
                 overwrite=True,
             )
