@@ -106,10 +106,30 @@ class Pipeline:
         temp_dir=None,
         save_debug_products=False,
     ):
+        """Subtraction pipeline object.  Initialize and then run to produce subtracted image.
+
+        Parameters
+        ----------
+        image_collection: snappl.image.ImageCollection
+        science_band: str
+        science_observation_id: str
+        science_sca: int
+        template_band: str
+        template_observation_id: str
+        template_sca: int
+        out_dir: str
+            Output products are saved to this directory, default="./output"
+            Outputs: decorrelated difference image, decorrelated zero point image, decorrelated PSF, and score image.
+        temp_dir: str or None
+            Temporary directory, default None. If None, will use out_dir to save temporary products.
+        save_debug_products: bool
+            Save intermediate+debug products, default=False
+            Products are saved to temp_dir
+            These include sky subtracted images, detection masks, and PSFs for both science and template images.
+        """
         self.cross_convolve = cross_convolve
         self.backend4subtract = backend4subtract
         self.cuda_compiler = cuda_compiler
-        self.temp_dir = temp_dir
 
         self.out_dir = Path(out_dir)
         self.temp_dir = Path(temp_dir) if temp_dir is not None else self.out_dir
