@@ -163,6 +163,11 @@ class Pipeline:
                 **{"band": template_band, "observation_id": template_observation_id, "sca": template_sca},
             )
 
+        self.diff_pattern = (
+            f"{self.science_image.band}_{self.science_image.observation_id}_{self.science_image.sca}"
+            f"_-_{self.template_image.band}_{self.template_image.observation_id}_{self.template_image.sca}"
+        )
+
         # Intermediate+Debug artifact paths
         self.science_name = Path(self.science_image.path).name
         self.science_psf_path = self.temp_dir / f"psf_{self.science_name}"
@@ -175,10 +180,6 @@ class Pipeline:
         self.match_kernel_debug_path = self.temp_dir / f"match_kernel_{self.diff_pattern}.fits"
 
         # Output artifact paths
-        self.diff_pattern = (
-            f"{self.science_image.band}_{self.science_image.observation_id}_{self.science_image.sca}"
-            f"_-_{self.template_image.band}_{self.template_image.observation_id}_{self.template_image.sca}"
-        )
         self.score_image_path = self.out_dir / f"score_{self.diff_pattern}.fits"
         self.decorr_diff_path = self.out_dir / f"decorr_diff_{self.diff_pattern}.fits"
         self.decorr_zptimg_path = self.out_dir / f"decorr_zptimg_{self.diff_pattern}.fits"
