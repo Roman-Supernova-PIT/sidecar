@@ -34,8 +34,7 @@ def sky_subtract(image, nonlinear_threshold=1000, footprint_radius=10, mask_radi
     segment_img = detect_sources(sky_subtracted_data, threshold, npixels=10, mask=mask)
     detection_footprint = circular_footprint(radius=10)
 
-    # convert boolean into float 1, and 0 because data must be float (not bool or int).
-    detmask_data = np.asarray(segment_img.make_source_mask(footprint=detection_footprint), dtype="float")
+    detmask_data = np.asarray(segment_img.make_source_mask(footprint=detection_footprint))
 
     return sky_subtracted_data, detmask_data, rms
 
