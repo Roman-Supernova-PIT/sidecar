@@ -5,7 +5,7 @@ from astropy.wcs.utils import pixel_to_skycoord
 from photutils.centroids import centroid_com
 from photutils.detection import find_peaks
 
-from sidecar.data_loader import load_wcs_from_fits
+from sidecar.util import load_wcs_from_fits
 from snappl.image import FITSImageOnDisk
 
 

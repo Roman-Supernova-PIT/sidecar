@@ -3,6 +3,9 @@ import re
 
 import pandas as pd
 
+from astropy.io import fits
+from astropy.wcs import WCS
+
 from snappl.image import OpenUniverse2024FITSImage
 from snappl.dbclient import SNPITDBClient
 from snappl.imagecollection import ImageCollection
@@ -368,3 +371,8 @@ def read_data_records(data_records_path):
             df[f"science_{colname}"] = df[colname]
 
     return df
+
+
+def load_wcs_from_fits(path):
+    with fits.open(path) as hdul:
+        return WCS(hdul[0].header)
