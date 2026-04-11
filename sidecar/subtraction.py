@@ -163,6 +163,10 @@ class Pipeline:
         science_skysubim_data, science_detmask_data, science_skyrms = sky_subtract(self.science_image)
         template_skysubim_data, template_detmask_data, template_skyrms = sky_subtract(self.template_image)
 
+        # SFFT needs FITS headers with a WCS and with NAXIS[12]
+        science_hdr = make_minimal_wcs_header(self.science_image)
+        template_hdr = make_minimal_wcs_header(self.template_image)
+
         if self.save_debug_products:
             science_hdul = fits.HDUList(
                 [
