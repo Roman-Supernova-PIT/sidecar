@@ -20,5 +20,9 @@ photometry:
       radius_cut_detmask: 1
       esatur_key: "esatur"
 
+    candidate:
+      threshold: 100
+      threshold_column: "peak_value"
+
     psf:
       type: ou24PSF

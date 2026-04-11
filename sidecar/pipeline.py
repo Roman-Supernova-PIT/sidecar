@@ -14,6 +14,7 @@ from sidecar import subtraction
 from sidecar import source_detection
 from sidecar import truth_matching
 from sidecar import truth_retrieval
+from sidecar.database import save_dia_objects_from_subtraction
 from sidecar.util import (
     find_templates_for_observation_ids,
     make_data_records_from_observation_id,
@@ -615,6 +616,8 @@ def main():
     parser.add_argument("--image-id", default=None, type=str, help="Image uuid")
     parser.add_argument("--image-provenance-tag", type=str)
     parser.add_argument("--image-process", type=str)
+    parser.add_argument("--diaobject-provenance-tag", type=str, default=None)
+    parser.add_argument("--diaobject-process", type=str, default="sidecar")
     parser.add_argument(
         "--science-image-path",
         "--science-path",
@@ -682,6 +685,24 @@ def main():
     )
     parser.add_argument("-t", "--temp-dir", type=str, default=None, help="Temporary directory.")
     parser.add_argument("-o", "--output-dir", type=str, default=None, help="Output path")
+    parser.add_argument(
+        "--save-candidates-to-database",
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        help="Whether to save candidates that pass the threshold to the database as DIAObjects.",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="Significance threshold.  Only save candidates that pass this threshold.",
+    )
+    parser.add_argument(
+        "--threshold-column",
+        type=str,
+        default="peak_value",
+        help="Column name of significance threshold to use candidate catalog.",
+    )
 
     cfg.augment_argparse(parser)
     args = parser.parse_args(leftovers)
@@ -756,7 +777,23 @@ def main():
         output_dir=args.output_dir,
     )
     detection.run_subtractions()
+
+    if args.save_candidates_to_database:
+        SNLogger.info("Saving candidates to database")
+        save_dia_objects_from_subtraction(
+            dia_source_catalog_path=file_path["cleaned_score_detection_path"],
+            science_observation_id=science_observation_id,
+            science_sca=science_sca,
+            science_band=science_band,
+            image_collection=image_collection,
+            diaobject_provenance_tag=self.config.value("photometry.sidecar.diaobject_provenance_tag"),
+            diaobject_process=self.config.value("photometry.sidecar.diaobject_process"),
+            threshold=self.config.value("photometry.sidecar.candidate.threshold"),
+            threshold_column=self.config.value("photometry.sidecar.candidate.threshold_column"),
+        )
+
     if args.match_truth:
+        SNLogger.info("Matching candidates to truth catalog.")
         detection.run_match_truth()
 
 
