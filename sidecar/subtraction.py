@@ -34,7 +34,7 @@ def sky_subtract(image, nonlinear_threshold=1000, footprint_radius=10, mask_radi
     segment_img = detect_sources(sky_subtracted_data, threshold, npixels=10, mask=mask)
     detection_footprint = circular_footprint(radius=10)
 
-    detmask_data = np.asarray(segment_img.make_source_mask(footprint=detection_footprint))
+    detmask_data = segment_img.make_source_mask(footprint=detection_footprint)
 
     return sky_subtracted_data, detmask_data, rms
 
@@ -83,6 +83,19 @@ def make_minimal_wcs_header(image):
     hdr.insert("NAXIS1", ("NAXIS2", image.data.shape[0]), after=True)
 
     return hdr
+
+
+def _save_sky_subtracted_products_as_fits(path, hdr, data, noise, flags, detmask):
+    hdul = fits.HDUList(
+        [
+            fits.PrimaryHDU(data=None, header=hdr),
+            fits.ImageHDU(data=data, name="DATA"),
+            fits.ImageHDU(data=noise, name="NOISE"),
+            fits.ImageHDU(data=flags, name="FLAGS"),
+            fits.ImageHDU(data=detmask, name="DETMASK"),
+        ]
+    )
+    hdul.writeto(path, overwrite=True)
 
 
 class Pipeline:
@@ -188,25 +201,22 @@ class Pipeline:
         template_hdr = make_minimal_wcs_header(self.template_image)
 
         if self.save_debug_products:
-            science_hdul = fits.HDUList(
-                [
-                    fits.PrimaryHDU(data=science_skysubim_data, header=science_hdr),
-                    fits.ImageHDU(data=self.science_image.noise, name="NOISE"),
-                    fits.ImageHDU(data=self.science_image.flags, name="FLAGS"),
-                    fits.ImageHDU(data=np.asarray(science_detmask_data, dtype=int), name="DETMASK"),
-                ]
+            _save_sky_subtracted_products_as_fits(
+                self.science_debug_path,
+                science_hdr,
+                science_skysubim_data,
+                self.science_image.noise,
+                self.science_image.flags,
+                science_detmask_data,
             )
-            science_hdul.writeto(self.science_debug_path, overwrite=True)
-
-            template_hdul = fits.HDUList(
-                [
-                    fits.PrimaryHDU(data=template_skysubim_data, header=template_hdr),
-                    fits.ImageHDU(data=self.template_image.noise, name="NOISE"),
-                    fits.ImageHDU(data=self.template_image.flags, name="FLAGS"),
-                    fits.ImageHDU(data=np.asarray(template_detmask_data, dtype=int), name="DETMASK"),
-                ]
+            _save_sky_subtracted_products_as_fits(
+                self.template_debug_path,
+                template_hdr,
+                template_skysubim_data,
+                self.template_image.noise,
+                self.template_image.flags,
+                template_detmask_data,
             )
-            template_hdul.writeto(self.template_debug_path, overwrite=True)
 
         # SFFT needs FITS headers with a WCS and with NAXIS[12]
         science_hdr = make_minimal_wcs_header(self.science_image)
