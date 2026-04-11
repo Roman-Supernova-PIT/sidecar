@@ -74,7 +74,23 @@ python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2
 
 ASDF The 49 example
 
+Currently (2026-04-10) need to check out `sidecar`, `snappl`, and `sfft`.
+
+Needs to use the `0.1.36` version of the GPU-enabled image on NERSC to get compability between container and host NVIDIA libraries.
+
 See `sidecar/examples/perlmutter/asdf49_wfi01_run_one.sh`
+
+salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --account m4385
+
+```
+WHICHROMANENV=cuda-dev bash interactive-podman-rknop-dev.sh
+cd /home/sidecar; pip install -e . --no-deps
+cd /home/snappl; pip install -e .
+cd /home/sfft; pip install -e . --no-deps
+cd /home
+```
+
+We can run with `--no-deps` for `sidecar` and `sfft`, but we do need the dependencies for `snappl`, because we're using the version with the STPSF, and that needs to pull in packages not in the `0.1.36` container.
 
 ```
 obsid=99999010010010010010002
@@ -90,8 +106,8 @@ python \
     --template-observation-id 99999010010010010010001 \
     --template-band ${band} \
     --template-sca 1 \
-    --reject-known-stars False \
-    --output-dir /snpit_temp/dia_out_dir/test_snappl/20260406_the49 \
+    --no-reject-known-stars \
+    --output-dir /snpit_temp/dia_out_dir/test_snappl \
     --temp-dir /snpit_temp
 ```
 
