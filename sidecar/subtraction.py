@@ -172,6 +172,8 @@ class Pipeline:
         self.template_psf_path = self.temp_dir / f"psf_{self.template_name}"
         self.template_debug_path = self.temp_dir / f"template_{self.template_name}.fits"
 
+        self.match_kernel_debug_path = self.temp_dir / f"match_kernel_{self.diff_pattern}.fits"
+
         # Output artifact paths
         self.diff_pattern = (
             f"{self.science_image.band}_{self.science_image.observation_id}_{self.science_image.sca}"
@@ -261,4 +263,12 @@ class Pipeline:
         fits.writeto(self.decorr_zptimg_path, decorr_zptimg, header=sfftifier.hdr_target, overwrite=True)
         fits.writeto(self.decorr_psf_path, decorr_psf, header=None, overwrite=True)
         fits.writeto(self.score_image_path, score_image, header=sfftifier.hdr_target, overwrite=True)
+
+        if self.save_debug_products:
+            fits.writeto(
+                self.match_kernel_debug_path,
+                np.asnumpy(sfftifier.MATCH_KERNEL).T,
+                header=sfftifier.hdr_target,
+                overwrite=True,
+            )
 
