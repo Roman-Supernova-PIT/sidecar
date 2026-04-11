@@ -103,13 +103,16 @@ class Pipeline:
         cuda_compiler="nvrtc",
         temp_dir=None,
         out_dir="./output",
+        temp_dir=None,
         save_debug_products=False,
     ):
         self.cross_convolve = cross_convolve
         self.backend4subtract = backend4subtract
         self.cuda_compiler = cuda_compiler
         self.temp_dir = temp_dir
+
         self.out_dir = Path(out_dir)
+        self.temp_dir = Path(temp_dir) if temp_dir is not None else self.out_dir
         self.save_debug_products = save_debug_products
 
         # science_image and template_image contains the data_ids of images and paths of temporary files:
@@ -246,7 +249,11 @@ def main():
         choices=["Cupy", "Numpy"],
         help="Which backend to use for subtraction.",
     )
-    parser.add_argument("--temp-dir", default=None, help="Temporary directory, default None")
+    parser.add_argument(
+        "--temp-dir",
+        default=None,
+        help="Temporary directory, default None. If None, will use out_dir to save temporary products.",
+    )
     parser.add_argument("--out-dir", default="/out_dir", help="Output dir, default /out_dir")
     parser.add_argument(
         "--save-debug-products", action="store_true", help="Save intermediate debug FITS products to out_dir"
