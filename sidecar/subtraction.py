@@ -104,12 +104,14 @@ class Pipeline:
         cuda_compiler="nvrtc",
         temp_dir=None,
         out_dir="./output",
+        save_debug_products=False,
     ):
         self.cross_convolve = cross_convolve
         self.backend4subtract = backend4subtract
         self.cuda_compiler = cuda_compiler
         self.temp_dir = temp_dir
         self.out_dir = Path(out_dir)
+        self.save_debug_products = save_debug_products
 
         # science_image and template_image contains the data_ids of images and paths of temporary files:
         #   (sky subtracted images, detection masks, psfs)
@@ -127,14 +129,16 @@ class Pipeline:
                 **{"band": template_band, "observation_id": template_observation_id, "sca": template_sca},
             )
 
-        # Intermediate artifact paths
+        # Intermediate+Debug artifact paths
         self.science_name = Path(self.science_image.path).name
         self.science_psf_path = self.temp_dir / f"psf_{self.science_name}"
+        self.science_debug_path = self.temp_dir / f"science_{self.science_name}.fits"
 
         self.template_name = Path(self.template_image.path).name
         self.template_psf_path = self.temp_dir / f"psf_{self.template_name}"
+        self.template_debug_path = self.temp_dir / f"template_{self.template_name}.fits"
 
-        # data products paths
+        # Output artifact paths
         self.diff_pattern = (
             f"{self.science_image.band}_{self.science_image.observation_id}_{self.science_image.sca}"
             f"_-_{self.template_image.band}_{self.template_image.observation_id}_{self.template_image.sca}"
@@ -150,9 +154,33 @@ class Pipeline:
         science_psf = get_psf_kernel(self.science_image)
         template_psf = get_psf_kernel(self.template_image)
 
+        if self.save_debug_products:
+            fits.writeto(science_psf_path, science_psf, overwrite=True)
+            fits.writeto(template_psf_path, template_psf, overwrite=True)
+
         science_skysubim_data, science_detmask_data, science_skyrms = sky_subtract(self.science_image)
         template_skysubim_data, template_detmask_data, template_skyrms = sky_subtract(self.template_image)
 
+        if self.save_debug_products:
+            science_hdul = fits.HDUList(
+                [
+                    fits.PrimaryHDU(data=science_skysubim_data, header=science_hdr),
+                    fits.ImageHDU(data=self.science_image.noise, name="NOISE"),
+                    fits.ImageHDU(data=np.asarray(science_detmask_data, dtype=int), name="DETMASK"),
+                ]
+            )
+            science_hdul.writeto(science_debug_path, overwrite=True)
+
+            template_hdul = fits.HDUList(
+                [
+                    fits.PrimaryHDU(data=template_skysubim_data, header=template_hdr),
+                    fits.ImageHDU(data=self.template_image.noise, name="NOISE"),
+                    fits.ImageHDU(data=np.asarray(template_detmask_data, dtype=int), name="DETMASK"),
+                ]
+            )
+            template_hdul.writeto(template_debug_path, overwrite=True)
+
+        # SFFT needs FITS headers with a WCS and with NAXIS[12]
         science_hdr = make_minimal_wcs_header(self.science_image)
         template_hdr = make_minimal_wcs_header(self.template_image)
 
@@ -221,6 +249,9 @@ def main():
     )
     parser.add_argument("--temp-dir", default=None, help="Temporary directory, default None")
     parser.add_argument("--out-dir", default="/out_dir", help="Output dir, default /out_dir")
+    parser.add_argument(
+        "--save-debug-products", action="store_true", help="Save intermediate debug FITS products to out_dir"
+    )
 
     args = parser.parse_args()
 
@@ -235,6 +266,7 @@ def main():
         backend4subtract=args.backend4subtract,
         temp_dir=args.temp_dir,
         out_dir=args.out_dir,
+        save_debug_products=args.save_debug_products,
     )
 
     pipeline.run()

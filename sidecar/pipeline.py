@@ -738,6 +738,12 @@ def main():
     parser.add_argument("-t", "--temp-dir", type=str, default=None, help="Temporary directory.")
     parser.add_argument("-o", "--output-dir", type=str, default=None, help="Output path")
     parser.add_argument(
+        "--save-debug-products",
+        defaultFalse,
+        action=argparse.BooleanOptionalAction,
+        help="Save intermediate debug FITS products to out_dir"
+    )
+    parser.add_argument(
         "--save-candidates-to-database",
         default=False,
         action=argparse.BooleanOptionalAction,
@@ -842,6 +848,7 @@ def main():
         output_dir=args.output_dir,
         backend4subtract=args.backend4subtract,
         cross_convolve=args.cross_convolve,
+        save_debug_products=args.save_debug_products,
     )
     detection.run_subtractions()
 
