@@ -9,7 +9,7 @@ from astropy.coordinates import SkyCoord
 from astropy.wcs.utils import pixel_to_skycoord
 import astropy.units as u
 
-from sidecar import data_loader
+from sidecar.data_loader import load_wcs_from_fits
 from sidecar import subtraction
 from sidecar import source_detection
 from sidecar import truth_matching
@@ -156,7 +156,7 @@ class Detection:
             truth matched to detections,
             detections matched to truth
         """
-        difference_wcs = data_loader.load_wcs(difference_image_path, hdu_id=0)
+        difference_wcs = load_wcs_from_fits(difference_image_path, hdu_id=0)
 
         detection = data_loader.load_table(difference_detection_path)
         transients = truth[truth["object_type"] == "transient"]
@@ -209,7 +209,7 @@ class Detection:
         astropy.table.Table :
             cleaned catalog with matches to bright stars removed.
         """
-        difference_wcs = data_loader.load_wcs(difference_image_path, hdu_id=0)
+        difference_wcs = load_wcs_from_fits(difference_image_path, hdu_id=0)
 
         detection = data_loader.load_table(difference_detection_path)
         star = truth[truth["object_type"] == "star"]
