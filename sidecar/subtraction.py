@@ -157,8 +157,8 @@ class Pipeline:
         template_psf = get_psf_kernel(self.template_image)
 
         if self.save_debug_products:
-            fits.writeto(science_psf_path, science_psf, overwrite=True)
-            fits.writeto(template_psf_path, template_psf, overwrite=True)
+            fits.writeto(self.science_psf_path, science_psf, overwrite=True)
+            fits.writeto(self.template_psf_path, template_psf, overwrite=True)
 
         science_skysubim_data, science_detmask_data, science_skyrms = sky_subtract(self.science_image)
         template_skysubim_data, template_detmask_data, template_skyrms = sky_subtract(self.template_image)
@@ -168,19 +168,21 @@ class Pipeline:
                 [
                     fits.PrimaryHDU(data=science_skysubim_data, header=science_hdr),
                     fits.ImageHDU(data=self.science_image.noise, name="NOISE"),
+                    fits.ImageHDU(data=self.science_image.flags, name="FLAGS"),
                     fits.ImageHDU(data=np.asarray(science_detmask_data, dtype=int), name="DETMASK"),
                 ]
             )
-            science_hdul.writeto(science_debug_path, overwrite=True)
+            science_hdul.writeto(self.science_debug_path, overwrite=True)
 
             template_hdul = fits.HDUList(
                 [
                     fits.PrimaryHDU(data=template_skysubim_data, header=template_hdr),
                     fits.ImageHDU(data=self.template_image.noise, name="NOISE"),
+                    fits.ImageHDU(data=self.template_image.flags, name="FLAGS"),
                     fits.ImageHDU(data=np.asarray(template_detmask_data, dtype=int), name="DETMASK"),
                 ]
             )
-            template_hdul.writeto(template_debug_path, overwrite=True)
+            template_hdul.writeto(self.template_debug_path, overwrite=True)
 
         # SFFT needs FITS headers with a WCS and with NAXIS[12]
         science_hdr = make_minimal_wcs_header(self.science_image)
