@@ -1,10 +1,13 @@
-# cd /home/sidecar; pip install -e . --no-deps
+cd /home/sidecar; pip install -e . --no-deps
+cd /home/snappl; pip install -e .
+cd /home/sfft; pip install -e . --no-deps
+cd /home
 
 # Can't reject known stars because we don't have a star catalog
 obsid=99999010010010010010002
 band=F106
 python \
-    sidecar/sidecar/pipeline.py  \
+    /home/sidecar/sidecar/pipeline.py  \
     --image-collection snpitdb \
     --image-provenance-tag asdf_functional_test \
     --image-process load_rdm_image \
