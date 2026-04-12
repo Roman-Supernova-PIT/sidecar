@@ -114,6 +114,7 @@ class Pipeline:
         backend4subtract="Cupy",
         cuda_compiler="nvrtc",
         temp_dir=None,
+        psf_type="STPSF",
         out_dir="./output",
         temp_dir=None,
         save_debug_products=False,
@@ -129,6 +130,8 @@ class Pipeline:
         template_band: str
         template_observation_id: str
         template_sca: int
+        psf_type: str
+            Type of PSF to use.  Name must be known to snappl.psf.
         out_dir: str
             Output products are saved to this directory, default="./output"
             Outputs: decorrelated difference image, decorrelated zero point image, decorrelated PSF, and score image.
@@ -142,6 +145,8 @@ class Pipeline:
         self.cross_convolve = cross_convolve
         self.backend4subtract = backend4subtract
         self.cuda_compiler = cuda_compiler
+
+        self.psf_type = psf_type
 
         self.out_dir = Path(out_dir)
         self.temp_dir = Path(temp_dir) if temp_dir is not None else self.out_dir
@@ -188,8 +193,8 @@ class Pipeline:
     def run(self):
         os.makedirs(self.out_dir, exist_ok=True)
 
-        science_psf = get_psf_kernel(self.science_image)
-        template_psf = get_psf_kernel(self.template_image)
+        science_psf = get_psf_kernel(self.science_image, psf_type=self.psf_type)
+        template_psf = get_psf_kernel(self.template_image, psf_type=self.psf_type)
 
         if self.save_debug_products:
             fits.writeto(self.science_psf_path, science_psf, overwrite=True)

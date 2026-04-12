@@ -72,6 +72,7 @@ class Detection:
         self,
         image_collection,
         data_records,
+        psf_type="STPSF",
         reject_known_stars=True,
         cross_convolve=False,
         backend4subtract=None,
@@ -99,6 +100,7 @@ class Detection:
 
         self.image_collection = image_collection
         self.data_records = data_records
+        self.psf_type = psf_type
         self.reject_known_stars = reject_known_stars
         self.cross_convolve = cross_convolve
 
@@ -356,9 +358,10 @@ class Detection:
         template_band,
         template_observation_id,
         template_sca,
-        temp_dir,
         science_image_path=None,
         template_image_path=None,
+        psf_type="STPSF",
+        temp_dir=None,
         reject_known_stars=True,
         cross_convolve=False,
         backend4subtract="Cupy",
@@ -393,6 +396,7 @@ class Detection:
             science_image_path=science_image_path,
             template_image_path=template_image_path,
             cross_convolve=self.cross_convolve,
+            psf_type=psf_type,
             temp_dir=temp_dir,
             out_dir=file_path["full_output_dir"],
             backend4subtract=backend4subtract,
@@ -603,6 +607,7 @@ class Detection:
                 row["template_sca"],
                 science_image_path=row.get("science_image_path") or None,
                 template_image_path=row.get("template_image_path") or None,
+                psf_type=self.psf_type,
                 temp_dir=temp_dir,
                 reject_known_stars=self.reject_known_stars,
                 backend4subtract=self.backend4subtract,
@@ -759,6 +764,12 @@ def main():
         help="Specify an image by template band.  This is optional and will default to --science-band",
     )
     parser.add_argument(
+        "--psf-type",
+        type=str,
+        default="STPSF",
+        help="Type of PSF to use.  Name must be known to snappl.psf.  Default is 'STPSF'.",
+    )
+    parser.add_argument(
         "--reject-known-stars",
         default=True,
         action=argparse.BooleanOptionalAction,
@@ -875,6 +886,7 @@ def main():
     detection = Detection(
         image_collection=image_collection,
         data_records=data_records,
+        psf_type=args.psf_type,
         reject_known_stars=args.reject_known_stars,
         temp_dir=args.temp_dir,
         output_dir=args.output_dir,
