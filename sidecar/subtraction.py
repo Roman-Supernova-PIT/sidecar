@@ -38,7 +38,7 @@ def sky_subtract(image, nonlinear_threshold=1000, footprint_radius=10, mask_radi
     return sky_subtracted_data, detmask_data, rms
 
 
-def get_psf_kernel(image, psf_type="STPSF", **kwargs):
+def get_psf_kernel(image, psf_type="STPSF", psf_size=None, **kwargs):
     """Return PSF at center of image as a 2D numpy array.  Will be of size of PSF model.
 
     Parameters
@@ -46,6 +46,8 @@ def get_psf_kernel(image, psf_type="STPSF", **kwargs):
     get_psf : snappl.image.Image
     psf_type : str
         Type of PSF
+    psf_size : int
+        Size of PSF to be psf_size x psf_size
 
     Returns
     -------
@@ -58,6 +60,21 @@ def get_psf_kernel(image, psf_type="STPSF", **kwargs):
         psf_type, x=x, y=y, observation_id=image.observation_id, sca=image.sca, band=image.band
     )
     stamp = psf_obj.get_stamp()
+
+    if psf_size is not None:
+        sized_stamp = np.array((psf_size, psf_size), dtype=np.float)
+        returned_stamp_size, _ = np.shape(stamp)
+        if returned_stamp_size == psf_size:
+            sized_stamp[:] = stamp[:]
+        if returned_stamp_size < psf_size:
+            edge = psf_size // 2 - returned_stamp_size // 2
+            sized_stamp = stamp[edge:-edge, edge:-edge]
+        if returned_stamp_size > psf_size:
+            edge = returned_stamp_size // 2 - psf_size // 2
+            sized_stamp[edge:-edge, edge:-edge] = stamp
+
+        stamp = sized_stamp
+
     return stamp
 
 

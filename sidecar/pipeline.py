@@ -73,6 +73,7 @@ class Detection:
         image_collection,
         data_records,
         psf_type="STPSF",
+        psf_size=None,
         reject_known_stars=True,
         cross_convolve=False,
         backend4subtract=None,
@@ -101,6 +102,7 @@ class Detection:
         self.image_collection = image_collection
         self.data_records = data_records
         self.psf_type = psf_type
+        self.psf_size = psf_size
         self.reject_known_stars = reject_known_stars
         self.cross_convolve = cross_convolve
 
@@ -361,6 +363,7 @@ class Detection:
         science_image_path=None,
         template_image_path=None,
         psf_type="STPSF",
+        psf_size=None,
         temp_dir=None,
         reject_known_stars=True,
         cross_convolve=False,
@@ -397,6 +400,7 @@ class Detection:
             template_image_path=template_image_path,
             cross_convolve=self.cross_convolve,
             psf_type=psf_type,
+            psf_size=psf_size,
             temp_dir=temp_dir,
             out_dir=file_path["full_output_dir"],
             backend4subtract=backend4subtract,
@@ -608,6 +612,7 @@ class Detection:
                 science_image_path=row.get("science_image_path") or None,
                 template_image_path=row.get("template_image_path") or None,
                 psf_type=self.psf_type,
+                psf_size=self.psf_size,
                 temp_dir=temp_dir,
                 reject_known_stars=self.reject_known_stars,
                 backend4subtract=self.backend4subtract,
@@ -770,6 +775,12 @@ def main():
         help="Type of PSF to use.  Name must be known to snappl.psf.",
     )
     parser.add_argument(
+        "--psf-size",
+        size=str,
+        default=None,
+        help="Define size of PSF stamp to be psf-size x psf-size."
+    )
+    parser.add_argument(
         "--reject-known-stars",
         default=True,
         action=argparse.BooleanOptionalAction,
@@ -887,6 +898,7 @@ def main():
         image_collection=image_collection,
         data_records=data_records,
         psf_type=args.psf_type,
+        psf_size=args.psf_size,
         reject_known_stars=args.reject_known_stars,
         temp_dir=args.temp_dir,
         output_dir=args.output_dir,
