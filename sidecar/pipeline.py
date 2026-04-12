@@ -683,7 +683,7 @@ def main():
             "help to show you all config options that can be passed on the command line."
         )
 
-    parser = argparse.ArgumentParser(description=desc)
+    parser = argparse.ArgumentParser(description=desc, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     # The --config argument will have been consumed by configparser above, and
     #   but include it so it shows up with --help.
@@ -767,7 +767,7 @@ def main():
         "--psf-type",
         type=str,
         default="STPSF",
-        help="Type of PSF to use.  Name must be known to snappl.psf.  Default is 'STPSF'.",
+        help="Type of PSF to use.  Name must be known to snappl.psf.",
     )
     parser.add_argument(
         "--reject-known-stars",
