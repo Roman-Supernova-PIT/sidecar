@@ -14,7 +14,7 @@ python \
     --template-observation-id 99999010010010010010001 \
     --template-band ${band} \
     --template-sca 1 \
-    --reject-known-stars False \
+    --no-reject-known-stars \
     --output-dir /snpit_temp/dia_out_dir/test_snappl \
     --temp-dir /snpit_temp \
     --save-debug-products
