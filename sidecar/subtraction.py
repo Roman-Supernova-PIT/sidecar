@@ -175,11 +175,11 @@ class Pipeline:
 
         # Intermediate+Debug artifact paths
         self.science_name = Path(self.science_image.path).name
-        self.science_psf_path = self.temp_dir / f"psf_{self.science_name}"
+        self.science_psf_path = self.temp_dir / f"psf_{self.science_name}.fits"
         self.science_debug_path = self.temp_dir / f"science_{self.science_name}.fits"
 
         self.template_name = Path(self.template_image.path).name
-        self.template_psf_path = self.temp_dir / f"psf_{self.template_name}"
+        self.template_psf_path = self.temp_dir / f"psf_{self.template_name}.fits"
         self.template_debug_path = self.temp_dir / f"template_{self.template_name}.fits"
 
         self.match_kernel_debug_path = self.temp_dir / f"match_kernel_{self.diff_pattern}.fits"
