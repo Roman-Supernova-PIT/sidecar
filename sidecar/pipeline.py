@@ -776,9 +776,9 @@ def main():
     )
     parser.add_argument(
         "--psf-size",
-        size=str,
+        type=int,
         default=None,
-        help="Define size of PSF stamp to be psf-size x psf-size."
+        help="Define size of PSF stamp to be psf-size x psf-size.",
     )
     parser.add_argument(
         "--reject-known-stars",

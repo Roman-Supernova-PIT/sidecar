@@ -48,6 +48,7 @@ def get_psf_kernel(image, psf_type="STPSF", psf_size=None, **kwargs):
         Type of PSF
     psf_size : int
         Size of PSF to be psf_size x psf_size
+        If None, then defaults to size returned by PSF model.
 
     Returns
     -------
@@ -132,6 +133,7 @@ class Pipeline:
         cuda_compiler="nvrtc",
         temp_dir=None,
         psf_type="STPSF",
+        psf_size=None,
         out_dir="./output",
         temp_dir=None,
         save_debug_products=False,
@@ -149,6 +151,8 @@ class Pipeline:
         template_sca: int
         psf_type: str
             Type of PSF to use.  Name must be known to snappl.psf.
+        psf_size: int
+            Size of psf stamp.  psf_size x psf_size.  If None, then whatever PSF size the model returns will be used.
         out_dir: str
             Output products are saved to this directory, default="./output"
             Outputs: decorrelated difference image, decorrelated zero point image, decorrelated PSF, and score image.
@@ -164,6 +168,7 @@ class Pipeline:
         self.cuda_compiler = cuda_compiler
 
         self.psf_type = psf_type
+        self.psf_size = psf_size
 
         self.out_dir = Path(out_dir)
         self.temp_dir = Path(temp_dir) if temp_dir is not None else self.out_dir
@@ -210,8 +215,8 @@ class Pipeline:
     def run(self):
         os.makedirs(self.out_dir, exist_ok=True)
 
-        science_psf = get_psf_kernel(self.science_image, psf_type=self.psf_type)
-        template_psf = get_psf_kernel(self.template_image, psf_type=self.psf_type)
+        science_psf = get_psf_kernel(self.science_image, psf_type=self.psf_type, psf_size=self.psf_size)
+        template_psf = get_psf_kernel(self.template_image, psf_type=self.psf_type, psf_size=self.psf_size)
 
         if self.save_debug_products:
             fits.writeto(self.science_psf_path, science_psf, overwrite=True)
