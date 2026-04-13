@@ -64,15 +64,18 @@ def get_psf_kernel(image, psf_type="STPSF", psf_size=None, **kwargs):
 
     if psf_size is not None:
         sized_stamp = np.zeros((psf_size, psf_size), dtype=float)
-        returned_stamp_size, _ = np.shape(stamp)
-        if returned_stamp_size == psf_size:
+        returned_nx, returned_ny = stamp.shape
+
+        if returned_nx == psf_size and returned_ny == psf_size:
             sized_stamp[:] = stamp[:]
-        if returned_stamp_size <  psf_size:
-            edge = returned_stamp_size // 2 - psf_size // 2
-            sized_stamp[edge:-edge, edge:-edge] = stamp
-        if returned_stamp_size > psf_size:
-            edge = psf_size // 2 - returned_stamp_size // 2
-            sized_stamp = stamp[edge:-edge, edge:-edge]
+        elif returned_nx < psf_size and returned_ny < psf_size:
+            x0 = (psf_size - returned_nx) // 2
+            y0 = (psf_size - returned_ny) // 2
+            sized_stamp[x0 : x0 + returned_nx, y0 : y0 + returned_ny] = stamp
+        else:
+            x0 = (returned_nx - psf_size) // 2
+            y0 = (returned_ny - psf_size) // 2
+            sized_stamp = stamp[x0 : x0 + psf_size, y0 : y0 + psf_size]
 
         stamp = sized_stamp
 
