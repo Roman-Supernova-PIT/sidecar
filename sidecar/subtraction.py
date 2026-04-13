@@ -60,7 +60,7 @@ def get_psf_kernel(image, psf_type="STPSF", psf_size=None, **kwargs):
     psf_obj = PSF.get_psf_object(
         psf_type, x=x, y=y, observation_id=image.observation_id, sca=image.sca, band=image.band
     )
-    stamp = psf_obj.get_stamp()
+    stamp = psf_obj.get_stamp(x=x, y=y)
 
     if psf_size is not None:
         sized_stamp = np.array((psf_size, psf_size), dtype=np.float)
