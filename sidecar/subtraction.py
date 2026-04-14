@@ -208,6 +208,7 @@ class Pipeline:
         self.template_debug_path = self.temp_dir / f"template_{self.template_name}.fits"
         self.resamp_template_path = self.temp_dir / f"resamp_template_{self.diff_pattern}.fits"
         self.mask_cresamp_template_path = self.temp_dir / f"mask_cresamp_template_{self.diff_pattern}.fits"
+        self.mask_ctarget_science_path = self.temp_dir / f"mask_ctarget_science_{self.diff_pattern}.fits"
 
         self.match_kernel_debug_path = self.temp_dir / f"match_kernel_{self.diff_pattern}.fits"
         self.diff_path = self.temp_dir / f"diff_{self.diff_pattern}.fits"
@@ -310,9 +311,38 @@ class Pipeline:
                 header=sfftifier.hdr_target,
                 overwrite=True
             )
+
+        # Write out masked aray to check.  This is a little involved
+        if self.save_debug_products:
+            # Repeat code from SFFT here because these arrays aren't saved in SFFT
+            LYMASK_BKG = sfftifier.op.logical_or(sfftifier.PixA_target_DMASK == 0,
+                                           sfftifier.PixA_resamp_object_DMASK < 0.1)
+
+            NaNmask_Ctarget = sfftifier.op.isnan(sfftifier.PixA_Ctarget)
+            NaNmask_Cresamp_object = sfftifier.op.isnan(sfftifier.PixA_Cresamp_object)
+            if NaNmask_Ctarget.any() or NaNmask_Cresamp_object.any():
+                NaNmask = sfftifier.op.logical_or(NaNmask_Ctarget, NaNmask_Cresamp_object)
+                ZeroMask = sfftifier.op.logical_or(NaNmask, LYMASK_BKG)
+            else:
+                ZeroMask = LYMASK_BKG
+
+            del LYMASK_BKG
+
+            PixA_mCtarget = self.PixA_Ctarget.copy()
+            PixA_mCtarget[ZeroMask] = 0.
+
+            PixA_mCresamp_object = self.PixA_Cresamp_object.copy()
+            PixA_mCresamp_object[ZeroMask] = 0.
+
             fits.writeto(
                 self.mask_cresamp_template_path,
-                sfftifier.op.asnumpy(sfftifier.PixA_mCresamp_object_GPU).T,
+                sfftifier.op.asnumpy(sfftifier.PixA_mCresamp_object),
+                header=sfftifier.hdr_target,
+                overwrite=True
+            )
+            fits.writeto(
+                self.mask_ctarget_science_path,
+                sfftifier.op.asnumpy(PixA_mCtarget),
                 header=sfftifier.hdr_target,
                 overwrite=True
             )
