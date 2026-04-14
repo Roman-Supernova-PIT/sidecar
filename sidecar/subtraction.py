@@ -208,6 +208,7 @@ class Pipeline:
         self.template_debug_path = self.temp_dir / f"template_{self.template_name}.fits"
 
         self.match_kernel_debug_path = self.temp_dir / f"match_kernel_{self.diff_pattern}.fits"
+        self.diff_path = self.temp_dir / f"diff_{self.diff_pattern}.fits"
 
         # Output artifact paths
         self.score_image_path = self.out_dir / f"score_{self.diff_pattern}.fits"
@@ -290,6 +291,14 @@ class Pipeline:
 
         score_image = sfftifier.create_score_image()
 
+        if self.save_debug_products:
+            fits.writeto(
+                self.diff_path,
+                sfftifier.op.asnumpy(sfftifier.PixA_DIFF),
+                header=sfftifier.hdr_target,
+                overwrite=True
+            )
+
         fits.writeto(self.decorr_diff_path, decorr_diff, header=sfftifier.hdr_target, overwrite=True)
         fits.writeto(self.decorr_zptimg_path, decorr_zptimg, header=sfftifier.hdr_target, overwrite=True)
         fits.writeto(self.decorr_psf_path, decorr_psf, header=None, overwrite=True)
@@ -298,7 +307,7 @@ class Pipeline:
         if self.save_debug_products:
             fits.writeto(
                 self.match_kernel_debug_path,
-                cp.asnumpy(sfftifier.MATCH_KERNEL).T,
+                sfftifier.op.asnumpy(sfftifier.MATCH_KERNEL).T,
                 header=sfftifier.hdr_target,
                 overwrite=True,
             )
