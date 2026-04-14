@@ -207,6 +207,7 @@ class Pipeline:
         self.template_psf_path = self.temp_dir / f"psf_{self.template_name}.fits"
         self.template_debug_path = self.temp_dir / f"template_{self.template_name}.fits"
         self.resamp_template_path = self.temp_dir / f"resamp_template_{self.diff_pattern}.fits"
+        self.mask_cresamp_template_path = self.temp_dir / f"mask_cresamp_template_{self.diff_pattern}.fits"
 
         self.match_kernel_debug_path = self.temp_dir / f"match_kernel_{self.diff_pattern}.fits"
         self.diff_path = self.temp_dir / f"diff_{self.diff_pattern}.fits"
@@ -306,6 +307,12 @@ class Pipeline:
             fits.writeto(
                 self.resamp_template_path,
                 sfftifier.op.asnumpy(sfftifier.PixA_resamp_object),
+                header=sfftifier.hdr_target,
+                overwrite=True
+            )
+            fits.writeto(
+                self.mask_cresamp_template_path,
+                sfftifier.op.asnumpy(sfftifier.PixA_mCresamp_object_GPU).T,
                 header=sfftifier.hdr_target,
                 overwrite=True
             )
