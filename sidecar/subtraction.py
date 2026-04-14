@@ -206,6 +206,7 @@ class Pipeline:
         self.template_name = Path(self.template_image.path).name
         self.template_psf_path = self.temp_dir / f"psf_{self.template_name}.fits"
         self.template_debug_path = self.temp_dir / f"template_{self.template_name}.fits"
+        self.resamp_template_path = self.temp_dir / f"resamp_template_{self.diff_pattern}.fits"
 
         self.match_kernel_debug_path = self.temp_dir / f"match_kernel_{self.diff_pattern}.fits"
         self.diff_path = self.temp_dir / f"diff_{self.diff_pattern}.fits"
@@ -289,12 +290,22 @@ class Pipeline:
             decorr_zptimg = sfftifier.apply_decorrelation(sfftifier.PixA_target)
             decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_target)
 
+        # create_score_image has to come after find_decorrelation
+        # because the create_score_image uses FKDECO_GPU
+        # which is calculated in find_decorrelation
+        # and saved as an attribute of instance
         score_image = sfftifier.create_score_image()
 
         if self.save_debug_products:
             fits.writeto(
                 self.diff_path,
                 sfftifier.op.asnumpy(sfftifier.PixA_DIFF),
+                header=sfftifier.hdr_target,
+                overwrite=True
+            )
+            fits.writeto(
+                self.resamp_template_path,
+                sfftifier.op.asnumpy(sfftifier.PixA_resamp_object),
                 header=sfftifier.hdr_target,
                 overwrite=True
             )
