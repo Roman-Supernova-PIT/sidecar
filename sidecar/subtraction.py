@@ -10,7 +10,7 @@ from photutils.background import Background2D
 from photutils.segmentation import detect_threshold, detect_sources
 from photutils.utils import circular_footprint
 
-from rdm import dqflags
+from roman_datamodels import dqflags
 
 from sfft.SpaceSFFTFlow import SpaceSFFT_Flow
 from snappl.psf import PSF
