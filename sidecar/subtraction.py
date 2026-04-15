@@ -16,14 +16,14 @@ from sfft.SpaceSFFTFlow import SpaceSFFT_Flow
 from snappl.psf import PSF
 
 
-def sky_subtract(
+def sky_subtract_and_detect(
     image,
     nsigma=20,
     footprint_radius=10,
-    bad_mask_radius=5,
+    bad_mask_radius=3,
     bad_pixel_flags=dqflags.pixel.DO_NOT_USE + dqflags.pixel.NONLINEAR + dqflags.pixel.HOT,
     too_bright_threshold=None,
-    **kwargs,
+    background_box_size=64,
 ):
     """Perform sky subtraction and create a detection mask for an image.
 
@@ -32,17 +32,15 @@ def sky_subtract(
     image : object
         Input image object containing `data`, `flags`, and `noise` arrays.
     nsigma : float, optional
-        Threshold multiplier for source detection relative to the background RMS.
+        Threshold for source detection relative to the background RMS.
     footprint_radius : int, optional
         Radius of the footprint used for source detection and source mask creation.
     bad_mask_radius : int, optional
-        Radius used to dilate flagged bad pixels before applying the final detection mask.
+        Radius used to dilate flagged bad pixels before masking them in source detection.
     bad_pixel_flags : int, optional
         Bitwise combination of DQ flags used to identify bad pixels.
     too_bright_threshold : float or None, optional
         If set, pixels with absolute sky-subtracted values above this threshold are also masked.
-    **kwargs : dict, optional
-        Additional keyword arguments are accepted for API compatibility but ignored.
 
     Returns
     -------
@@ -55,11 +53,12 @@ def sky_subtract(
 
     Notes
     -----
-    The background is estimated using `photutils.Background2D` with a fixed box size of 64.
-    The detection mask is created by `photutils.detect_sources` and then cleaned using the
-    dilated bad-pixel mask.
+    The background is estimated using `photutils.Background2D` with a `background_box_size`.
+    The detection mask is created by `photutils.detect_sources` with the bad_pixel_flags and,
+        optionally, bright pixels that are too bright masked out.
+    The bad pixels are dilated by `bad_mask_radius` to ensure they are fully masked in the detection process.
     """
-    bkg = Background2D(image.data, box_size=64)
+    bkg = Background2D(image.data, box_size=background_box_size)
 
     sky_subtracted_data = image.data - bkg.background
     rms = bkg.background_rms_median
@@ -278,8 +277,9 @@ class Pipeline:
             fits.writeto(self.science_psf_path, science_psf, overwrite=True)
             fits.writeto(self.template_psf_path, template_psf, overwrite=True)
 
-        science_skysubim_data, science_detmask_data, science_skyrms = sky_subtract(self.science_image)
-        template_skysubim_data, template_detmask_data, template_skyrms = sky_subtract(self.template_image)
+        # sky subtraction and source detection
+        science_skysubim_data, science_detmask_data, science_skyrms = sky_subtract_and_detect(self.science_image)
+        template_skysubim_data, template_detmask_data, template_skyrms = sky_subtract_and_detect(self.template_image)
 
         # SFFT needs FITS headers with a WCS and with NAXIS[12]
         science_hdr = make_minimal_wcs_header(self.science_image)
