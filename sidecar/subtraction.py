@@ -10,11 +10,21 @@ from photutils.background import Background2D
 from photutils.segmentation import detect_threshold, detect_sources
 from photutils.utils import circular_footprint
 
+from rdm import dqflags
+
 from sfft.SpaceSFFTFlow import SpaceSFFT_Flow
 from snappl.psf import PSF
 
 
-def sky_subtract(image, nonlinear_threshold=1000, footprint_radius=10, mask_radius=5, **kwargs):
+def sky_subtract(
+    image,
+    nsigma=20,
+    footprint_radius=10,
+    mask_radius=5,
+    bad_pixel_flags=dqflags.pixel.DO_NOT_USE + dqflags.pixel.NONLINEAR + dqflags.pixel.HOT,
+    too_bright_threshold=None,
+    **kwargs,
+):
     bkg = Background2D(image.data, box_size=64)
 
     sky_subtracted_data = image.data - bkg.background
@@ -22,10 +32,16 @@ def sky_subtract(image, nonlinear_threshold=1000, footprint_radius=10, mask_radi
 
     # Based on the photutils.background documentation
     sigma_clip = SigmaClip(sigma=2.0, maxiters=10)
-    threshold = detect_threshold(sky_subtracted_data, nsigma=20.0, sigma_clip=sigma_clip)
+    threshold = detect_threshold(sky_subtracted_data, nsigma=nsigma, sigma_clip=sigma_clip)
 
-    # Build a mask of pixels that are in the non-linear retime
-    mask = np.abs(sky_subtracted_data) > nonlinear_threshold
+    # Mask pixels that are flagged as bad in the input image
+    mask = image.flags & bad_pixel_flags > 0
+
+    # Build a mask of pixels that are in the non-linear regime
+    if too_bright_threshold is not None:
+        too_bright_mask = np.abs(sky_subtracted_data) > too_bright_threshold
+        mask = mask | too_bright_mask
+
     # Grow individual pixels by mask_radius
     mask_footprint = circular_footprint(radius=mask_radius)
     mask = convolve2d(mask, mask_footprint, fillvalue=0, mode="same")
