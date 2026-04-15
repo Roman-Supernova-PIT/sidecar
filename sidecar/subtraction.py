@@ -325,14 +325,16 @@ class Pipeline:
                 self.resamp_template_path,
                 sfftifier.op.asnumpy(sfftifier.PixA_resamp_object),
                 header=sfftifier.hdr_target,
-                overwrite=True
+                overwrite=True,
             )
 
         # Write out masked aray to check.  This is a little involved
         if self.save_debug_products:
             # Repeat code from SFFT here because these arrays aren't saved in SFFT
-            LYMASK_BKG = sfftifier.op.logical_or(sfftifier.PixA_target_DMASK == 0,
-                                           sfftifier.PixA_resamp_object_DMASK < 0.1)
+            LYMASK_BKG = sfftifier.op.logical_or(
+                sfftifier.PixA_target_DMASK == 0,
+                sfftifier.PixA_resamp_object_DMASK < 0.1
+            )
 
             NaNmask_Ctarget = sfftifier.op.isnan(sfftifier.PixA_Ctarget)
             NaNmask_Cresamp_object = sfftifier.op.isnan(sfftifier.PixA_Cresamp_object)
@@ -345,23 +347,23 @@ class Pipeline:
 
             del LYMASK_BKG
 
-            PixA_mCtarget = self.PixA_Ctarget.copy()
+            PixA_mCtarget = sfftifier.PixA_Ctarget.copy()
             PixA_mCtarget[ZeroMask] = 0.
 
-            PixA_mCresamp_object = self.PixA_Cresamp_object.copy()
+            PixA_mCresamp_object = sfftifier.PixA_Cresamp_object.copy()
             PixA_mCresamp_object[ZeroMask] = 0.
 
             fits.writeto(
                 self.mask_cresamp_template_path,
                 sfftifier.op.asnumpy(sfftifier.PixA_mCresamp_object),
                 header=sfftifier.hdr_target,
-                overwrite=True
+                overwrite=True,
             )
             fits.writeto(
                 self.mask_ctarget_science_path,
                 sfftifier.op.asnumpy(PixA_mCtarget),
                 header=sfftifier.hdr_target,
-                overwrite=True
+                overwrite=True,
             )
 
         fits.writeto(self.decorr_diff_path, decorr_diff, header=sfftifier.hdr_target, overwrite=True)
