@@ -20,11 +20,45 @@ def sky_subtract(
     image,
     nsigma=20,
     footprint_radius=10,
-    mask_radius=5,
+    bad_mask_radius=5,
     bad_pixel_flags=dqflags.pixel.DO_NOT_USE + dqflags.pixel.NONLINEAR + dqflags.pixel.HOT,
     too_bright_threshold=None,
     **kwargs,
 ):
+    """Perform sky subtraction and create a detection mask for an image.
+
+    Parameters
+    ----------
+    image : object
+        Input image object containing `data`, `flags`, and `noise` arrays.
+    nsigma : float, optional
+        Threshold multiplier for source detection relative to the background RMS.
+    footprint_radius : int, optional
+        Radius of the footprint used for source detection and source mask creation.
+    bad_mask_radius : int, optional
+        Radius used to dilate flagged bad pixels before applying the final detection mask.
+    bad_pixel_flags : int, optional
+        Bitwise combination of DQ flags used to identify bad pixels.
+    too_bright_threshold : float or None, optional
+        If set, pixels with absolute sky-subtracted values above this threshold are also masked.
+    **kwargs : dict, optional
+        Additional keyword arguments are accepted for API compatibility but ignored.
+
+    Returns
+    -------
+    sky_subtracted_data : ndarray
+        The input image data with background removed.
+    detmask_data : ndarray
+        Boolean source detection mask with bad pixels excluded.
+    rms : float
+        Median background RMS estimated by Background2D.
+
+    Notes
+    -----
+    The background is estimated using `photutils.Background2D` with a fixed box size of 64.
+    The detection mask is created by `photutils.detect_sources` and then cleaned using the
+    dilated bad-pixel mask.
+    """
     bkg = Background2D(image.data, box_size=64)
 
     sky_subtracted_data = image.data - bkg.background
@@ -35,20 +69,19 @@ def sky_subtract(
     threshold = detect_threshold(sky_subtracted_data, nsigma=nsigma, sigma_clip=sigma_clip)
 
     # Mask pixels that are flagged as bad in the input image
-    mask = image.flags & bad_pixel_flags > 0
+    bad_mask = image.flags & bad_pixel_flags > 0
 
     # Build a mask of pixels that are in the non-linear regime
     if too_bright_threshold is not None:
         too_bright_mask = np.abs(sky_subtracted_data) > too_bright_threshold
-        mask = mask | too_bright_mask
+        bad_mask = bad_mask | too_bright_mask
 
-    # Grow individual pixels by mask_radius
-    mask_footprint = circular_footprint(radius=mask_radius)
-    mask = convolve2d(mask, mask_footprint, fillvalue=0, mode="same")
+    # Grow individual pixels by bad_mask_radius
+    bad_mask_footprint = circular_footprint(radius=bad_mask_radius)
+    convolved_bad_mask = convolve2d(bad_mask, bad_mask_footprint, fillvalue=0, mode="same")
 
-    segment_img = detect_sources(sky_subtracted_data, threshold, npixels=10, mask=mask)
-    detection_footprint = circular_footprint(radius=10)
-
+    detection_footprint = circular_footprint(radius=footprint_radius)
+    segment_img = detect_sources(sky_subtracted_data, threshold, npixels=footprint_radius, mask=convolved_bad_mask)
     detmask_data = segment_img.make_source_mask(footprint=detection_footprint)
 
     return sky_subtracted_data, detmask_data, rms
