@@ -323,6 +323,7 @@ class Pipeline:
             if NaNmask_Ctarget.any() or NaNmask_Cresamp_object.any():
                 NaNmask = sfftifier.op.logical_or(NaNmask_Ctarget, NaNmask_Cresamp_object)
                 ZeroMask = sfftifier.op.logical_or(NaNmask, LYMASK_BKG)
+                del NaNmask
             else:
                 ZeroMask = LYMASK_BKG
 
