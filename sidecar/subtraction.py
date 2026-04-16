@@ -15,13 +15,18 @@ from roman_datamodels import dqflags
 from sfft.SpaceSFFTFlow import SpaceSFFT_Flow
 from snappl.psf import PSF
 
+# dqflags.pixel.DO_NOT_USE + dqflags.pixel.NONLINEAR + dqflags.pixel.HOT,
+# Data quality flags
+# Set all bits in enum
+# (could just use 2**32 - 1, but using len of dqflags.pixel is in principle more flexible):
+bad_pixel_flags = 2**len(dqflags.pixel) - 1 - dqflags.pixel.WARM - dqflags.pixel.LOW_QE
 
 def sky_subtract_and_detect(
     image,
     nsigma=20,
     footprint_radius=10,
     bad_mask_radius=3,
-    bad_pixel_flags=dqflags.pixel.DO_NOT_USE + dqflags.pixel.NONLINEAR + dqflags.pixel.HOT,
+    bad_pixel_flags=bad_pixel_flags,
     too_bright_threshold=None,
     background_box_size=64,
 ):
