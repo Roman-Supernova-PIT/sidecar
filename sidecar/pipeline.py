@@ -52,6 +52,7 @@ class Detection:
     REJECT_MATCH_RADIUS = 5 * u.arcsec
 
     # file prefix
+    SIMPLE_DIFF_IMAGE_PREFIX = "simple_diff_"
     DIFF_IMAGE_PREFIX = "diff_"
     DECORR_DIFF_IMAGE_PREFIX = "decorr_diff_"
     DIFF_SCORE_PREFIX = "score_"
@@ -284,7 +285,11 @@ class Detection:
             file_path["template_image_path"] = self.image_collection.get_image(**template_id).path
 
         # subtraction
-        file_path["difference_image_path"] = Path(
+        file_path["simple_difference_image_path"] = Path(
+            file_path["full_output_dir"],
+            self.SIMPLE_DIFF_IMAGE_PREFIX + diff_pattern + ".fits",
+        )
+         file_path["difference_image_path"] = Path(
             file_path["full_output_dir"],
             self.DIFF_IMAGE_PREFIX + diff_pattern + ".fits",
         )
@@ -411,7 +416,7 @@ class Detection:
 
         SNLogger.info("Processing detection")
         source_detection.detect(
-            file_path["difference_image_path"],
+            file_path["simple_difference_image_path"],
             file_path["difference_detection_path"],
             source_extractor_executable=self.SOURCE_EXTRACTOR_EXECUTABLE,
             detection_config=self.DETECTION_CONFIG,
