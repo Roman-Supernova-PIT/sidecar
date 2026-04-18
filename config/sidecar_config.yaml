@@ -25,4 +25,4 @@ photometry:
       threshold_column: "peak_value"
 
     psf:
-      type: ou24PSF
+      type: STPSF
