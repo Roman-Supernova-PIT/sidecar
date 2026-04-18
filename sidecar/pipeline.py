@@ -289,7 +289,7 @@ class Detection:
             file_path["full_output_dir"],
             self.SIMPLE_DIFF_IMAGE_PREFIX + diff_pattern + ".fits",
         )
-         file_path["difference_image_path"] = Path(
+        file_path["difference_image_path"] = Path(
             file_path["full_output_dir"],
             self.DIFF_IMAGE_PREFIX + diff_pattern + ".fits",
         )
