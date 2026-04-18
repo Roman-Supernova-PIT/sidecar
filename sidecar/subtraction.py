@@ -368,7 +368,9 @@ class Pipeline:
                 overwrite=True,
             )
 
-        # Write out masked aray to check.  This is a little involved
+        # Write out masked aray to check if we're passing good stamps to SFFT.
+        # This is a little involved because we're re-running a bit of the prep code
+        # that's in SFFT to get the comparable product.
         if self.save_debug_products:
             # Repeat code from SFFT here because these arrays aren't saved in SFFT
             LYMASK_BKG = sfftifier.op.logical_or(
