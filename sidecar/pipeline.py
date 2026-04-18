@@ -52,7 +52,8 @@ class Detection:
     REJECT_MATCH_RADIUS = 5 * u.arcsec
 
     # file prefix
-    DIFF_IMAGE_PREFIX = "decorr_diff_"
+    DIFF_IMAGE_PREFIX = "diff_"
+    DECORR_DIFF_IMAGE_PREFIX = "decorr_diff_"
     DIFF_SCORE_PREFIX = "score_"
     DIFF_DETECTION_PREFIX = "detection_"
     SCORE_DETECTION_PREFIX = "score_detection_"

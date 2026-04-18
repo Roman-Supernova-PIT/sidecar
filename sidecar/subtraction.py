@@ -21,6 +21,7 @@ from snappl.psf import PSF
 # (could just use 2**32 - 1, but using len of dqflags.pixel is in principle more flexible):
 bad_pixel_flags = 2**len(dqflags.pixel) - 1 - dqflags.pixel.WARM - dqflags.pixel.LOW_QE
 
+
 def sky_subtract_and_detect(
     image,
     nsigma=20,
@@ -264,10 +265,11 @@ class Pipeline:
         self.mask_ctarget_science_path = self.temp_dir / f"mask_ctarget_science_{self.diff_pattern}.fits"
 
         self.match_kernel_debug_path = self.temp_dir / f"match_kernel_{self.diff_pattern}.fits"
-        self.diff_path = self.temp_dir / f"diff_{self.diff_pattern}.fits"
 
         # Output artifact paths
         self.score_image_path = self.out_dir / f"score_{self.diff_pattern}.fits"
+        self.simple_diff_path = self.out_dir / f"simple_diff_{self.diff_pattern}.fits"
+        self.diff_path = self.out_dir / f"diff_{self.diff_pattern}.fits"
         self.decorr_diff_path = self.out_dir / f"decorr_diff_{self.diff_pattern}.fits"
         self.decorr_zptimg_path = self.out_dir / f"decorr_zptimg_{self.diff_pattern}.fits"
         self.decorr_psf_path = self.out_dir / f"decorr_psf_{self.diff_pattern}.fits"
@@ -404,16 +406,28 @@ class Pipeline:
                 overwrite=True,
             )
 
+        if self.save_debug_products:
+            fits.writeto(
+                self.match_kernel_debug_path,
+                sfftifier.op.asnumpy(sfftifier.MATCH_KERNEL),
+                header=sfftifier.hdr_target,
+                overwrite=True,
+            )
+
+            simple_diff = sfftifier.op.asnumpy(
+                sfftifier.op.transpose_if_needed(
+                    sfftifier.PixA_Ctarget - sfftifier.PixA_Cresamp_object
+                )
+            )
+
+            # save data products
+            fits.writeto(self.simple_diff_path, simple_diff, header=sfftifier.hdr_target, overwrite=True)
+            fits.writeto(
+                self.diff_path, cp.asnumpy(sfftifier.PixA_DIFF), header=sfftifier.hdr_target, overwrite=True
+            )
+
         fits.writeto(self.decorr_diff_path, decorr_diff, header=sfftifier.hdr_target, overwrite=True)
         fits.writeto(self.decorr_zptimg_path, decorr_zptimg, header=sfftifier.hdr_target, overwrite=True)
         fits.writeto(self.decorr_psf_path, decorr_psf, header=None, overwrite=True)
         fits.writeto(self.score_image_path, score_image, header=sfftifier.hdr_target, overwrite=True)
-
-        if self.save_debug_products:
-            fits.writeto(
-                self.match_kernel_debug_path,
-                sfftifier.op.asnumpy(sfftifier.MATCH_KERNEL).T,
-                header=sfftifier.hdr_target,
-                overwrite=True,
-            )
 
