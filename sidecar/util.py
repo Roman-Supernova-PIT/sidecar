@@ -15,6 +15,7 @@ INPUT_IMAGE_PATTERN = (
     "RomanTDS/images/simple_model/{band}/{observation_id}/Roman_TDS_simple_model_{band}_{observation_id}_{sca}.fits.gz"
 )
 
+
 def get_image_info_for_ra_dec(ra, dec, collection, provenance_tag, process, band=None, dbclient=None):
     if dbclient is None:
         dbclient = SNPITDBClient()
