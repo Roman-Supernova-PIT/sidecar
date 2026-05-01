@@ -1,5 +1,10 @@
 #!/usr/bin/bash
 
+# 2026-05-01  MWV:
+# This should go away by 2027-07-01 when Rob and MWV update the environments successfully on NERSC.
+# For now this is stored here for reference.
+# To get the bindmounts correct, this file should be executed from the directory above the sidecar checkout.
+
 # See comments in nov2025_container_config.yaml for instructions
 
 export PODMANHPC_ADDITIONAL_STORES=/global/cfs/cdirs/m4385/podman_images

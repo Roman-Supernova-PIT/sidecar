@@ -77,6 +77,9 @@ ASDF The 49 example
 Currently (2026-04-10) need to check out `sidecar`, `snappl`, and `sfft`.
 
 Needs to use the `0.1.36` version of the GPU-enabled image on NERSC to get compability between container and host NVIDIA libraries.
+There is a copy of a interactive podman file in `sidecar/examples/perlmutter/interactive-podman-rknop-dev.sh`.
+
+Also need an `sfft` version that's updated from the one currently in the `0.1.36` image.  We use a lightly customized version of SFFT in our Roman SN pipelines.  You can check it out from: https://github.com/Roman-Supernova-PIT/sfft
 
 See `sidecar/examples/perlmutter/asdf49_wfi01_run_one.sh`
 
