@@ -3,17 +3,17 @@ import re
 
 import pandas as pd
 
-from snappl.image import OpenUniverse2024FITSImage
+from astropy.io import fits
+from astropy.wcs import WCS
+
 from snappl.dbclient import SNPITDBClient
+from snappl.image import OpenUniverse2024FITSImage
 from snappl.imagecollection import ImageCollection
 
 
 INPUT_IMAGE_PATTERN = (
     "RomanTDS/images/simple_model/{band}/{observation_id}/Roman_TDS_simple_model_{band}_{observation_id}_{sca}.fits.gz"
 )
-
-IMAGE_WIDTH = 4088
-IMAGE_HEIGHT = 4088
 
 
 def get_image_info_for_ra_dec(ra, dec, collection, provenance_tag, process, band=None, dbclient=None):
@@ -368,3 +368,8 @@ def read_data_records(data_records_path):
             df[f"science_{colname}"] = df[colname]
 
     return df
+
+
+def load_wcs_from_fits(path):
+    with fits.open(path) as hdul:
+        return WCS(hdul[0].header)

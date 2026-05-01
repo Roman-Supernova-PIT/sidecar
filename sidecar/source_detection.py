@@ -5,7 +5,7 @@ from astropy.wcs.utils import pixel_to_skycoord
 from photutils.centroids import centroid_com
 from photutils.detection import find_peaks
 
-from sidecar import data_loader
+from sidecar.util import load_wcs_from_fits
 from snappl.image import FITSImageOnDisk
 
 
@@ -92,7 +92,7 @@ def score_image_detect(
     # "AttributeError: 'AstropyWCS' object has no attribute 'cpdis1'"
     # wcs = image.get_wcs()
     # Filed as Issue #40
-    wcs = data_loader.load_wcs(image_path, hdu_id=0)
+    wcs = load_wcs_from_fits(image_path, hdu_id=0)
 
     find_peaks_kwargs = {"threshold": threshold, "box_size": box_size, "centroid_func": centroid_com}
     pos_obj = find_peaks(data, **find_peaks_kwargs)

@@ -6,10 +6,10 @@ from pathlib import Path
 import tempfile
 
 from astropy.coordinates import SkyCoord
+from astropy.table import Table
 from astropy.wcs.utils import pixel_to_skycoord
 import astropy.units as u
 
-from sidecar import data_loader
 from sidecar import subtraction
 from sidecar import source_detection
 from sidecar import truth_matching
@@ -19,6 +19,7 @@ from sidecar.util import (
     make_data_records_from_observation_id,
     make_data_records_from_image_path,
     read_data_records,
+    load_wcs_from_fits,
 )
 
 from snappl.config import Config
@@ -108,8 +109,8 @@ class Detection:
     ):
         science_wcs = science_image.get_wcs()
         template_wcs = template_image.get_wcs()
-        science_truth = data_loader.load_table(science_truth_path)
-        template_truth = data_loader.load_table(template_truth_path)
+        science_truth = Table.read(science_truth_path, format="ascii")
+        template_truth = Table.read(template_truth_path, format="ascii")
 
         truth = truth_retrieval.merge_science_and_template_truth(
             science_truth, template_truth, science_wcs, template_wcs, offset=50
@@ -156,9 +157,9 @@ class Detection:
             truth matched to detections,
             detections matched to truth
         """
-        difference_wcs = data_loader.load_wcs(difference_image_path, hdu_id=0)
+        difference_wcs = load_wcs_from_fits(difference_image_path, hdu_id=0)
 
-        detection = data_loader.load_table(difference_detection_path)
+        detection = Table.read(difference_detection_path, format="ascii")
         transients = truth[truth["object_type"] == "transient"]
         transients_skycoord = SkyCoord(transients["object_ra"], transients["object_dec"], frame=frame, unit="deg")
         detection_skycoord = pixel_to_skycoord(detection[x_col], detection[y_col], difference_wcs)
@@ -209,9 +210,9 @@ class Detection:
         astropy.table.Table :
             cleaned catalog with matches to bright stars removed.
         """
-        difference_wcs = data_loader.load_wcs(difference_image_path, hdu_id=0)
+        difference_wcs = load_wcs_from_fits(difference_image_path, hdu_id=0)
 
-        detection = data_loader.load_table(difference_detection_path)
+        detection = Table.read(difference_detection_path, format="ascii")
         star = truth[truth["object_type"] == "star"]
         bright_star_idx = star["realized_flux"] > bright
         if sum(bright_star_idx) < 1:
