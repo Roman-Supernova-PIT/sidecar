@@ -1,0 +1,3 @@
+Remove unused functions.
+
+Use astropy.table.Table to read text files instead of custom loader.
