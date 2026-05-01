@@ -1,7 +1,6 @@
 from pathlib import Path
 import pytest
 
-from snappl.config import Config
 from snappl.imagecollection import ImageCollection
 
 from sidecar.util import (

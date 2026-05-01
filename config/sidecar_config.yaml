@@ -1,3 +1,6 @@
+preloads:
+  - /snpit_env/configs/${SNPIT_DEFAULT_CONFIG}
+
 replaceable_preloads:
   - /home/environment/nov2025_container_config.yaml
 
@@ -6,6 +9,16 @@ photometry:
     diaobject:
       diaobject_provenance_tag: "nov2025_test3"
       diaobject_process: "sidecar"
+
+    sfft:
+      back_size: 64
+      back_filtersize: 3
+      detect_threshold: 1.5
+      detect_minarea: 5
+      detect_maxarea: 0
+      verbose_level: 2
+      radius_cut_detmask: 1
+      esatur_key: "esatur"
 
     psf:
       type: ou24PSF

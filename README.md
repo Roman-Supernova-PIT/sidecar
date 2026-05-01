@@ -72,6 +72,48 @@ python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2
 python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2024 --image-process load_ou2024_image --science-observation-id 35303 --science-sca 8 --science-band H158 --template-observation-id 39140 --template-sca 3 --template-band H158 --output-dir /dia_out_dir
 ```
 
+ASDF The 49 example
+
+Currently (2026-04-10) need to check out `sidecar`, `snappl`, and `sfft`.
+
+Needs to use the `0.1.36` version of the GPU-enabled image on NERSC to get compability between container and host NVIDIA libraries.
+There is a copy of a interactive podman file in `sidecar/examples/perlmutter/interactive-podman-rknop-dev.sh`.
+
+Also need an `sfft` version that's updated from the one currently in the `0.1.36` image.  We use a lightly customized version of SFFT in our Roman SN pipelines.  You can check it out from: https://github.com/Roman-Supernova-PIT/sfft
+
+See `sidecar/examples/perlmutter/asdf49_wfi01_run_one.sh`
+
+salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --account m4385
+
+```
+WHICHROMANENV=cuda-dev bash interactive-podman-rknop-dev.sh
+cd /home/sidecar; pip install -e . --no-deps
+cd /home/snappl; pip install -e .
+cd /home/sfft; pip install -e . --no-deps
+cd /home
+```
+
+We can run with `--no-deps` for `sidecar` and `sfft`, but we do need the dependencies for `snappl`, because we're using the version with the STPSF, and that needs to pull in packages not in the `0.1.36` container.
+
+```
+obsid=99999010010010010010002
+band=F106
+python \
+    sidecar/sidecar/pipeline.py  \
+    --image-collection snpitdb \
+    --image-provenance-tag asdf_functional_test \
+    --image-process load_rdm_image \
+    --science-observation-id ${obsid} \
+    --science-band ${band} \
+    --science-sca 1 \
+    --template-observation-id 99999010010010010010001 \
+    --template-band ${band} \
+    --template-sca 1 \
+    --no-reject-known-stars \
+    --output-dir /snpit_temp/dia_out_dir/test_snappl \
+    --temp-dir /snpit_temp
+```
+
 ## sidecar Workflow
 <img src="workflow.png" alt="Workflow of the detection pipeline." style="width:800px; height:auto;">
 
