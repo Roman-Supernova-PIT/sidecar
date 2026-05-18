@@ -68,22 +68,25 @@ python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2
 python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2024 --image-process load_ou2024_image --science-observation-id 35303 --science-sca 8 --science-band H158 --template-observation-id 39140 --template-sca 3 --template-band H158 --output-dir /dia_out_dir
 ```
 
-ASDF The 49 example
+## ASDF The 49 example
 
-Currently (2026-05-18) need to check out `sidecar` and `sfft`.
+After git cloning `sidecar` as above, see `sidecar/examples/perlmutter/asdf49_wfi01_run_one.sh` for an example of running
 
-We use a lightly customized version of SFFT in our Roman SN pipelines.  You can check it out from: https://github.com/Roman-Supernova-PIT/sfft
+We need to run on a compute note to make sure we can use all of the GPU memory:
 
-See `sidecar/examples/perlmutter/asdf49_wfi01_run_one.sh`
-
+```
 salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --account m4385
+```
+
+Once you get your allocation and have a terminal on the node.
 
 ```
 WHICHROMANENV=cuda-dev bash /global/cfs/cdirs/m4385/env/interactive-podman-rknop-dev.sh
 cd /home/sidecar; pip install -e . --no-deps
-cd /home/sfft; pip install -e . --no-deps
 cd /home
 ```
+
+Then run the subtraction with:
 
 ```
 obsid=99999010010010010010002
