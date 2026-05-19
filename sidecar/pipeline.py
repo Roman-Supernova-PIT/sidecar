@@ -625,6 +625,8 @@ def main():
         default=None,
         help="Pass a science image by file path.  Will find a template image if --template-path not specified.",
     )
+    parser.add_argument("--diaobject-provenance-tag", type=str, default=None)
+    parser.add_argument("--diaobject-process", type=str, default="sidecar")
     parser.add_argument(
         "--template-image-path",
         "--template-path",
