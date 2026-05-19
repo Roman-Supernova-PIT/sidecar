@@ -1,6 +1,4 @@
 # cd /home/sidecar; pip install -e . --no-deps
-# cd /home/snappl; pip install -e .
-# cd /home/sfft; pip install -e . --no-deps
 
 # Can't reject known stars because we don't have a star catalog
 for obsid in 99999010010010010010002 99999010010010010010003 99999010010010010010004 99999010010010010010005; do

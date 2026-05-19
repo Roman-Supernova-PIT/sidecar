@@ -8,13 +8,9 @@ The name "sidecar" (which we could pretend is an acronym for "Supernova Ia DEteC
 
 ## Step 1: Setup Container Environment
 
-This package is compatible with the Roman Supernova PIT environment used to run `phrosty`:
+This package is meant to be run within the Roman Supernova PIT environment.  Follow the appropriate directions on the following page to set up your environment on the system you are running on:
 
-https://github.com/Roman-Supernova-PIT/phrosty/tree/main/examples/perlmutter
-
-Before using `sidecar`, first follow the `phrosty` Perlmutter setup instructions and ensure that you can run `phrosty` interactively. You can stop following `phrosty` instructions at the "Running with the Nsight Profiler" section.
-
-Once `phrosty` is working, return to the same directory where you setup the `phrosty` environment and proceed with Step 2. 
+https://roman-supernova-pit.github.io/snappl/environment.html
 
 ## Step 2: Clone `sidecar`
 
@@ -72,28 +68,25 @@ python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2
 python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2024 --image-process load_ou2024_image --science-observation-id 35303 --science-sca 8 --science-band H158 --template-observation-id 39140 --template-sca 3 --template-band H158 --output-dir /dia_out_dir
 ```
 
-ASDF The 49 example
+## ASDF The 49 example
 
-Currently (2026-04-10) need to check out `sidecar`, `snappl`, and `sfft`.
+After git cloning `sidecar` as above, see `sidecar/examples/perlmutter/asdf49_wfi01_run_one.sh` for an example of running
 
-Needs to use the `0.1.36` version of the GPU-enabled image on NERSC to get compability between container and host NVIDIA libraries.
-There is a copy of a interactive podman file in `sidecar/examples/perlmutter/interactive-podman-rknop-dev.sh`.
-
-Also need an `sfft` version that's updated from the one currently in the `0.1.36` image.  We use a lightly customized version of SFFT in our Roman SN pipelines.  You can check it out from: https://github.com/Roman-Supernova-PIT/sfft
-
-See `sidecar/examples/perlmutter/asdf49_wfi01_run_one.sh`
-
-salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --account m4385
+We need to run on a compute note to make sure we can use all of the GPU memory:
 
 ```
-WHICHROMANENV=cuda-dev bash interactive-podman-rknop-dev.sh
+salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --account m4385
+```
+
+Once you get your allocation and have a terminal on the node.
+
+```
+WHICHROMANENV=cuda-dev bash /global/cfs/cdirs/m4385/env/interactive-podman-rknop-dev.sh
 cd /home/sidecar; pip install -e . --no-deps
-cd /home/snappl; pip install -e .
-cd /home/sfft; pip install -e . --no-deps
 cd /home
 ```
 
-We can run with `--no-deps` for `sidecar` and `sfft`, but we do need the dependencies for `snappl`, because we're using the version with the STPSF, and that needs to pull in packages not in the `0.1.36` container.
+Then run the subtraction with:
 
 ```
 obsid=99999010010010010010002
