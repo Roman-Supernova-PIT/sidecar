@@ -10,6 +10,7 @@ from astropy.table import Table
 from astropy.wcs.utils import pixel_to_skycoord
 import astropy.units as u
 
+from sidecar.database import save_dia_objects_from_subtraction
 from sidecar import subtraction
 from sidecar import source_detection
 from sidecar import truth_matching
@@ -570,6 +571,41 @@ class Detection:
                 row["template_sca"],
             )
 
+    def save_candidates_to_database(self):
+        for _, row in self.data_records.iterrows():
+            science_band = row["science_band"],
+            science_observation_id = row["science_observation_id"],
+            science_sca = row["science_sca"],
+            template_band = row["template_band"],
+            template_observation_id = row["template_observation_id"],
+            template_sca = row["template_sca"],
+            science_id = {
+                "band": science_band,
+                "observation_id": science_observation_id,
+                "sca": science_sca,
+            }
+            template_id = {
+                "band": template_band,
+                "observation_id": template_observation_id,
+                "sca": template_sca,
+            }
+            file_path = Detection.path_helper(science_id, template_id)
+            dia_source_catalog_path = file_path["cleaned_score_detection_path"]
+
+            SNLogger.info(f"Saving candidates from {dia_source_catalog_path}")
+
+            save_dia_objects_from_subtraction(
+                dia_source_catalog_path=dia_source_catalog_path,
+                science_observation_id=science_observation_id,
+                science_sca=science_sca,
+                science_band=science_band,
+                image_collection=self.image_collection,
+                diaobject_provenance_tag=self.config.value("photometry.sidecar.diaobject_provenance_tag"),
+                diaobject_process=self.config.value("photometry.sidecar.diaobject_process"),
+                threshold=self.config.value("photometry.sidecar.candidate.threshold"),
+                threshold_column=self.config.value("photometry.sidecar.candidate.threshold_column"),
+            )
+
 
 def main():
     # Run one arg pass just to get the config file, so we can augment
@@ -782,17 +818,7 @@ def main():
 
     if args.save_candidates_to_database:
         SNLogger.info("Saving candidates to database")
-        save_dia_objects_from_subtraction(
-            dia_source_catalog_path=file_path["cleaned_score_detection_path"],
-            science_observation_id=science_observation_id,
-            science_sca=science_sca,
-            science_band=science_band,
-            image_collection=image_collection,
-            diaobject_provenance_tag=self.config.value("photometry.sidecar.diaobject_provenance_tag"),
-            diaobject_process=self.config.value("photometry.sidecar.diaobject_process"),
-            threshold=self.config.value("photometry.sidecar.candidate.threshold"),
-            threshold_column=self.config.value("photometry.sidecar.candidate.threshold_column"),
-        )
+        detection.save_candidates_to_database()
 
     if args.match_truth:
         SNLogger.info("Matching candidates to truth catalog.")
