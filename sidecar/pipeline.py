@@ -238,7 +238,7 @@ class Detection:
         difference_id = {**_prefixed_science, **_prefixed_template}
         return difference_id
 
-    def path_helper(self, science_id, template_id):
+    def path_helper(self, science_id, template_id, science_image_path=None, template_image_path=None):
         file_path = {}
 
         difference_id = self.__class__.get_difference_id(science_id, template_id)
@@ -246,8 +246,15 @@ class Detection:
         file_path["full_output_dir"] = Path(self.output_dir, diff_pattern)
         os.makedirs(file_path["full_output_dir"], exist_ok=True)
 
-        file_path["science_image_path"] = self.image_collection.get_image(**science_id).path
-        file_path["template_image_path"] = self.image_collection.get_image(**template_id).path
+        if science_image_path is not None:
+            file_path["science_image_path"] = science_image_path
+        else:
+            file_path["science_image_path"] = self.image_collection.get_image(**science_id).path
+
+        if template_image_path is not None:
+            file_path["template_image_path"] = template_image_path
+        else:
+            file_path["template_image_path"] = self.image_collection.get_image(**template_id).path
 
         # subtraction
         file_path["difference_image_path"] = Path(
@@ -328,6 +335,8 @@ class Detection:
         template_observation_id,
         template_sca,
         temp_dir,
+        science_image_path=None,
+        template_image_path=None,
         reject_known_stars=True,
     ):
         science_id = {
@@ -340,7 +349,7 @@ class Detection:
             "observation_id": template_observation_id,
             "sca": template_sca,
         }
-        file_path = self.path_helper(science_id, template_id)
+        file_path = self.path_helper(science_id, template_id, science_image_path=science_image_path, template_image_path=template_image_path)
 
         SNLogger.info(
             "Processing started for data records " f"| Science ID {science_id} " f"| Template ID {template_id} "
@@ -355,6 +364,8 @@ class Detection:
             template_band=template_band,
             template_observation_id=template_observation_id,
             template_sca=template_sca,
+            science_image_path=science_image_path,
+            template_image_path=template_image_path,
             temp_dir=temp_dir,
             out_dir=file_path["full_output_dir"],
         )
@@ -536,6 +547,8 @@ class Detection:
                 row["template_band"],
                 row["template_observation_id"],
                 row["template_sca"],
+                science_image_path=row.get("science_image_path") or None,
+                template_image_path=row.get("template_image_path") or None,
                 temp_dir=temp_dir,
                 reject_known_stars=self.reject_known_stars,
             )
@@ -688,6 +701,7 @@ def main():
         collection=args.image_collection,
         provenance_tag=args.image_provenance_tag,
         process=args.image_process,
+        base_path=args.base_path,
     )
 
     if args.data_records_path is not None:
