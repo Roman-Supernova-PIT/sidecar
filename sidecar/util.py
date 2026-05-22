@@ -413,6 +413,6 @@ def read_data_records(data_records_path):
     return df
 
 
-def load_wcs_from_fits(path):
+def load_wcs_from_fits(path, hdu_id=0):
     with fits.open(path) as hdul:
-        return WCS(hdul[0].header)
+        return WCS(hdul[hdu_id].header)
