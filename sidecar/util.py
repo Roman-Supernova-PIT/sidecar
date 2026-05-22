@@ -1,4 +1,3 @@
-from pathlib import Path
 import re
 
 import pandas as pd
@@ -7,7 +6,6 @@ from astropy.io import fits
 from astropy.wcs import WCS
 
 from snappl.dbclient import SNPITDBClient
-from snappl.image import OpenUniverse2024FITSImage
 from snappl.imagecollection import ImageCollection
 
 
@@ -226,9 +224,9 @@ def make_data_records_from_observation_id(
     template_band: str, None
         Filter of template image
     science_image_path: str, None
-        Path to science image.   [Optional]  If not given, will be looked up from image_collection using science_{observation_id, sca, band}
+        Path to science image.   [Optional]
     template_image_path: str, None
-        Path to template image.  [Optional]  If not given, will be looked up from image_collection using template_{observation_id, sca, band}
+        Path to template image.  [Optional]
 
     Returns
     -------
@@ -260,7 +258,9 @@ def make_data_records_from_observation_id(
                 "band": template_image_info.band,
             }
         else:
-            template_observation_id, template_sca, template_band = get_observation_id_sca_band_from_image_path(template_image_path)
+            template_observation_id, template_sca, template_band = get_observation_id_sca_band_from_image_path(
+                template_image_path
+            )
             template_id = {
                 "observation_id": template_observation_id,
                 "sca": template_sca,
@@ -319,7 +319,12 @@ def make_data_records_from_image_path(image_collection, science_image_path, temp
     science_observation_id, science_sca, science_band = get_observation_id_sca_band_from_image_path(science_image_path)
 
     data_records = make_data_records_from_observation_id(
-        image_collection, science_observation_id, science_sca, science_band, science_image_path=science_image_path, template_image_path=template_image_path
+        image_collection,
+        science_observation_id,
+        science_sca,
+        science_band,
+        science_image_path=science_image_path,
+        template_image_path=template_image_path,
     )
 
     return data_records
@@ -373,9 +378,7 @@ def get_observation_id_sca_band_from_image_path(image_path):
             band = match.group("band").upper()
             return (observation_id, sca, band)
 
-    raise ValueError(
-        f"Could not parse observation_id, sca, and band from image path: {image_path}"
-    )
+    raise ValueError(f"Could not parse observation_id, sca, and band from image path: {image_path}")
 
 
 def read_data_records(data_records_path):

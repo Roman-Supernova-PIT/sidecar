@@ -349,7 +349,9 @@ class Detection:
             "observation_id": template_observation_id,
             "sca": template_sca,
         }
-        file_path = self.path_helper(science_id, template_id, science_image_path=science_image_path, template_image_path=template_image_path)
+        file_path = self.path_helper(
+            science_id, template_id, science_image_path=science_image_path, template_image_path=template_image_path
+        )
 
         SNLogger.info(
             "Processing started for data records " f"| Science ID {science_id} " f"| Template ID {template_id} "
