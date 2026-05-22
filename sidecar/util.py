@@ -345,9 +345,11 @@ def get_observation_id_sca_band_from_image_path(image_path):
     (observation_id, sca, band): (int, int, str)
 
     >>> get_observation_id_sca_band_from_image_path("../Roman_TDS_simple_model_R062_52395_03.fits.gz")
-    (52395, 3, "R062")
+    ('52395', 3, 'R062')
     >>> get_observation_id_sca_band_from_image_path("r9999901001001001001_0001_wfi01_f158_cal.asdf")
-    (99999010010010010010001, 1, "F158")
+    ('99999010010010010010001', 1, 'F158')
+
+    The output strings are listed with single-quotes because that's what doctest is going to get.
     """
 
     # The 'str' call means we can accept either strings or Path objects.
@@ -361,7 +363,7 @@ def get_observation_id_sca_band_from_image_path(image_path):
         ),
         # RomanTDS simulated catalog / ASDF naming convention.
         re.compile(
-            r"[rR]?(?P<observation_id>\d+)_(?P<sca>\d+)_wfi\d+_(?P<band>[A-Za-z0-9]+)_cal\.asdf",
+            r"[rR]?(?P<observation_id>\d+)_(?P<observation_id_suffix>\d+)_wfi(?P<sca>\d+)_(?P<band>[A-Za-z0-9]+)_cal\.asdf",
             re.IGNORECASE,
         ),
     ]
@@ -376,6 +378,11 @@ def get_observation_id_sca_band_from_image_path(image_path):
             observation_id = match.group("observation_id")
             sca = int(match.group("sca"))
             band = match.group("band").upper()
+
+            # Handle ASDF naming case that has an incrementing suffix after the observation_id base.
+            if "observation_id_suffix" in match.groupdict() and match.group("observation_id_suffix") is not None:
+                observation_id += match.group("observation_id_suffix")
+
             return (observation_id, sca, band)
 
     raise ValueError(f"Could not parse observation_id, sca, and band from image path: {image_path}")
