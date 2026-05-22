@@ -1,0 +1,1 @@
+Support direct subtraction of ASDF or OU2024 FITS files from CLI.
