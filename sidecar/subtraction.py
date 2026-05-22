@@ -16,7 +16,7 @@ from sfft.SpaceSFFTCupyFlow import SpaceSFFT_CupyFlow
 from snappl.psf import PSF
 
 
-def sky_subtract(image, nonlinear_threshold=100, footprint_radius=10, mask_radius=5, **kwargs):
+def sky_subtract(image, nonlinear_threshold=1000, footprint_radius=10, mask_radius=5, **kwargs):
     bkg = Background2D(image.data, box_size=64)
 
     sky_subtracted_data = image.data - bkg.background
