@@ -107,6 +107,16 @@ python \
     --temp-dir /snpit_temp
 ```
 
+Running simple tests w/o database
+
+For iterative CI testing or just ensuring basic functionality, there are two test scripts that are runnable on NERSC that subtract (1) two FITS files from OU224, and (2) two ASDF files "The 49" set of simulations.
+
+```
+sidecar/examples/perlmutter/test_sidecar_fits_manualou2024.sh
+sidecar/examples/perlmutter/test_sidecar_asdf_manualrdm.sh
+```
+
+
 ## sidecar Workflow
 <img src="workflow.png" alt="Workflow of the detection pipeline." style="width:800px; height:auto;">
 

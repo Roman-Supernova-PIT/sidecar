@@ -16,7 +16,7 @@ from sfft.SpaceSFFTCupyFlow import SpaceSFFT_CupyFlow
 from snappl.psf import PSF
 
 
-def sky_subtract(image, nonlinear_threshold=100, footprint_radius=10, mask_radius=5, **kwargs):
+def sky_subtract(image, nonlinear_threshold=1000, footprint_radius=10, mask_radius=5, **kwargs):
     bkg = Background2D(image.data, box_size=64)
 
     sky_subtracted_data = image.data - bkg.background
@@ -98,6 +98,8 @@ class Pipeline:
         template_band,
         template_observation_id,
         template_sca,
+        science_image_path=None,
+        template_image_path=None,
         temp_dir=None,
         out_dir="./output",
     ):
@@ -107,12 +109,19 @@ class Pipeline:
 
         # science_image and template_image contains the data_ids of images and paths of temporary files:
         #   (sky subtracted images, detection masks, psfs)
-        self.science_image = image_collection.get_image(
-            **{"band": science_band, "observation_id": science_observation_id, "sca": science_sca},
-        )
-        self.template_image = image_collection.get_image(
-            **{"band": template_band, "observation_id": template_observation_id, "sca": template_sca},
-        )
+        if science_image_path is not None:
+            self.science_image = image_collection.get_image(path=science_image_path)
+        else:
+            self.science_image = image_collection.get_image(
+                **{"band": science_band, "observation_id": science_observation_id, "sca": science_sca},
+            )
+
+        if template_image_path is not None:
+            self.template_image = image_collection.get_image(path=template_image_path)
+        else:
+            self.template_image = image_collection.get_image(
+                **{"band": template_band, "observation_id": template_observation_id, "sca": template_sca},
+            )
 
         # Intermediate artifact paths
         self.science_name = Path(self.science_image.path).name

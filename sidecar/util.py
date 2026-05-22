@@ -1,4 +1,3 @@
-from pathlib import Path
 import re
 
 import pandas as pd
@@ -7,7 +6,6 @@ from astropy.io import fits
 from astropy.wcs import WCS
 
 from snappl.dbclient import SNPITDBClient
-from snappl.image import OpenUniverse2024FITSImage
 from snappl.imagecollection import ImageCollection
 
 
@@ -199,6 +197,8 @@ def make_data_records_from_observation_id(
     template_observation_id=None,
     template_sca=None,
     template_band=None,
+    science_image_path=None,
+    template_image_path=None,
 ):
     """Returns data records from a specified science observation_id and template observation_id
 
@@ -223,10 +223,15 @@ def make_data_records_from_observation_id(
         Sensor Chip Assembly (SCA) of template image
     template_band: str, None
         Filter of template image
+    science_image_path: str, None
+        Path to science image.   [Optional]
+    template_image_path: str, None
+        Path to template image.  [Optional]
 
     Returns
     -------
     pandas.DataFrame with rows of science_{observation_id, sca, band} and template_{observation_id, sca, band}
+    and optionalling science_image_path and template_image_path if those were given as input
     """
     science_id = {
         "observation_id": science_observation_id,
@@ -240,17 +245,27 @@ def make_data_records_from_observation_id(
             "band": template_band,
         }
     else:
-        science_image = image_collection.get_image(**science_id)
+        if template_image_path is None:
+            science_image = image_collection.get_image(**science_id)
 
-        template_image_info = get_earliest_template_for_image(image_collection, science_image)
-        if template_image_info is None:
-            return None
+            template_image_info = get_earliest_template_for_image(image_collection, science_image)
+            if template_image_info is None:
+                return None
 
-        template_id = {
-            "observation_id": template_image_info.observation_id,
-            "sca": template_image_info.sca,
-            "band": template_image_info.band,
-        }
+            template_id = {
+                "observation_id": template_image_info.observation_id,
+                "sca": template_image_info.sca,
+                "band": template_image_info.band,
+            }
+        else:
+            template_observation_id, template_sca, template_band = get_observation_id_sca_band_from_image_path(
+                template_image_path
+            )
+            template_id = {
+                "observation_id": template_observation_id,
+                "sca": template_sca,
+                "band": template_band,
+            }
 
     # Create a DataFrame that looks just like what we were loading in from the file.
     INPUT_COLUMNS = [
@@ -261,6 +276,13 @@ def make_data_records_from_observation_id(
         "template_sca",
         "template_band",
     ]
+    if science_image_path is not None:
+        INPUT_COLUMNS += ["science_image_path"]
+        science_id["science_image_path"] = science_image_path
+    if template_image_path is not None:
+        INPUT_COLUMNS += ["template_image_path"]
+        template_id["template_image_path"] = template_image_path
+
     data_records = pd.DataFrame.from_records(
         [
             (
@@ -270,6 +292,8 @@ def make_data_records_from_observation_id(
                 template_id["observation_id"],
                 template_id["sca"],
                 template_id["band"],
+                science_id.get("science_image_path") or None,
+                template_id.get("template_image_path") or None,
             )
         ],
         columns=INPUT_COLUMNS,
@@ -295,7 +319,12 @@ def make_data_records_from_image_path(image_collection, science_image_path, temp
     science_observation_id, science_sca, science_band = get_observation_id_sca_band_from_image_path(science_image_path)
 
     data_records = make_data_records_from_observation_id(
-        image_collection, science_observation_id, science_sca, science_band
+        image_collection,
+        science_observation_id,
+        science_sca,
+        science_band,
+        science_image_path=science_image_path,
+        template_image_path=template_image_path,
     )
 
     return data_records
@@ -314,28 +343,49 @@ def get_observation_id_sca_band_from_image_path(image_path):
     Returns
     -------
     (observation_id, sca, band): (int, int, str)
+
+    >>> get_observation_id_sca_band_from_image_path("../Roman_TDS_simple_model_R062_52395_03.fits.gz")
+    ('52395', 3, 'R062')
+    >>> get_observation_id_sca_band_from_image_path("r9999901001001001001_0001_wfi01_f158_cal.asdf")
+    ('99999010010010010010001', 1, 'F158')
+
+    The output strings are listed with single-quotes because that's what doctest is going to get.
     """
-    # We would do it this way if all of the information were available in the header
-    observation_id_WERE_IN_HEADER = False
-    if observation_id_WERE_IN_HEADER:
-        image = OpenUniverse2024FITSImage(image_path, None, None)
-        return (image.observation_id, image.sca, image.band)
-
-    # We're going to take a string like
-    # "../Roman_TDS_simple_model_{band}_{observation_id}_{sca}.fits.gz"
-    # And use that to construct our regex to parse.
-    # We should get something like
-    # regex = "Roman_TDS_simple_model_(?P<band>[^_]+)_(?P<observation_id>[^_]+)_(?P<sca>[^_]+).fits.gz"
-
-    regex = Path(INPUT_IMAGE_PATTERN).name
-    regex = re.sub("{observation_id}", "(?P<observation_id>[^_]+)", regex)
-    regex = re.sub("{band}", "(?P<band>[^_]+)", regex)
-    regex = re.sub("{sca}", "(?P<sca>[^_]+)", regex)
 
     # The 'str' call means we can accept either strings or Path objects.
-    r = re.search(regex, str(image_path))
+    image_path = str(image_path)
 
-    return (r["observation_id"], r["sca"], r["band"])
+    patterns = [
+        # RomanTDS simple_model naming convention.
+        re.compile(
+            r"Roman_TDS_simple_model_(?P<band>[^_]+)_(?P<observation_id>\d+)_(?P<sca>\d+)\.fits(?:\.gz)?$",
+            re.IGNORECASE,
+        ),
+        # RomanTDS simulated catalog / ASDF naming convention.
+        re.compile(
+            r"[rR]?(?P<observation_id>\d+)_(?P<observation_id_suffix>\d+)_wfi(?P<sca>\d+)_(?P<band>[A-Za-z0-9]+)_cal\.asdf",
+            re.IGNORECASE,
+        ),
+    ]
+
+    for pattern in patterns:
+        # Use str() to ensure we pass a string to the regex search, since image_path could be a Path object.
+        match = pattern.search(str(image_path))
+        if match:
+            # observation_id is explicitly a str (even thought it is composed of characters that are all numeric digits)
+            # sca is an int
+            # band is a str (with upper-case letters)
+            observation_id = match.group("observation_id")
+            sca = int(match.group("sca"))
+            band = match.group("band").upper()
+
+            # Handle ASDF naming case that has an incrementing suffix after the observation_id base.
+            if "observation_id_suffix" in match.groupdict() and match.group("observation_id_suffix") is not None:
+                observation_id += match.group("observation_id_suffix")
+
+            return (observation_id, sca, band)
+
+    raise ValueError(f"Could not parse observation_id, sca, and band from image path: {image_path}")
 
 
 def read_data_records(data_records_path):
@@ -370,6 +420,6 @@ def read_data_records(data_records_path):
     return df
 
 
-def load_wcs_from_fits(path):
+def load_wcs_from_fits(path, hdu_id=0):
     with fits.open(path) as hdul:
-        return WCS(hdul[0].header)
+        return WCS(hdul[hdu_id].header)
