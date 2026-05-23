@@ -292,7 +292,7 @@ def main():
         "--backend4subtract",
         type=str,
         default="Cupy",
-        choices=["Cupy", "Numpy"],
+        choices=["Cupy", "Numpy", "cupy", "numpy"],
         help="Which backend to use for subtraction",
     )
     parser.add_argument("--temp-dir", default=None, help="Temporary directory, default None")
