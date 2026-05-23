@@ -69,7 +69,14 @@ class Detection:
     CLEANED_SCORE_DETECTION_TO_TRANSIENTS_PREFIX = "cleaned_score_detection_to_transients_"
 
     def __init__(
-        self, image_collection, data_records, reject_known_stars=True, temp_dir=None, output_dir=None, backend4subtract=None, verbose=False
+        self,
+        image_collection,
+        data_records,
+        reject_known_stars=True,
+        temp_dir=None,
+        output_dir=None,
+        backend4subtract=None,
+        verbose=False,
     ):
         SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
         self.config = Config.get()
@@ -718,13 +725,10 @@ def main():
         "--reject-known-stars",
         default=True,
         action=argparse.BooleanOptionalAction,
-        help="Reject known stars.  Requires an available catalog of known stars."
+        help="Reject known stars.  Requires an available catalog of known stars.",
     )
     parser.add_argument(
-        "--match-truth",
-        default=False,
-        action=argparse.BooleanOptionalAction,
-        help="Match to truth catalog."
+        "--match-truth", default=False, action=argparse.BooleanOptionalAction, help="Match to truth catalog."
     )
     parser.add_argument("-t", "--temp-dir", type=str, default=None, help="Temporary directory.")
     parser.add_argument("-o", "--output-dir", type=str, default=None, help="Output path")
@@ -746,8 +750,13 @@ def main():
         default="peak_value",
         help="Column name of significance threshold to use candidate catalog.",
     )
-    parser.add_argument("--backend4subtract", type=str, default="Cupy", choices=["Cupy", "Numpy", "cupy", "numpy"],
-    help="Which backend to use for subtraction")
+    parser.add_argument(
+        "--backend4subtract",
+        type=str,
+        default="Cupy",
+        choices=["Cupy", "Numpy", "cupy", "numpy"],
+        help="Which backend to use for subtraction",
+    )
 
     cfg.augment_argparse(parser)
     args = parser.parse_args(leftovers)
