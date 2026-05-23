@@ -69,7 +69,7 @@ class Detection:
     CLEANED_SCORE_DETECTION_TO_TRANSIENTS_PREFIX = "cleaned_score_detection_to_transients_"
 
     def __init__(
-        self, image_collection, data_records, reject_known_stars=True, temp_dir=None, output_dir=None, verbose=False
+        self, image_collection, data_records, reject_known_stars=True, temp_dir=None, output_dir=None, backend4subtract=None, verbose=False
     ):
         SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
         self.config = Config.get()
@@ -99,6 +99,11 @@ class Detection:
             self.output_dir = output_dir
         else:
             self.output_dir = self.config.value("system.paths.temp_dir") + "dia_out_dir"
+
+        if backend4subtract is not None:
+            self.backend4subtract = backend4subtract
+        else:
+            self.backend4subtract = self.config.value("sidecar.pipeline.backend4subtract", default="Cupy")
 
     @staticmethod
     def retrieve_truth(
@@ -339,6 +344,7 @@ class Detection:
         science_image_path=None,
         template_image_path=None,
         reject_known_stars=True,
+        backend4subtract="Cupy",
     ):
         science_id = {
             "band": science_band,
@@ -371,6 +377,7 @@ class Detection:
             template_image_path=template_image_path,
             temp_dir=temp_dir,
             out_dir=file_path["full_output_dir"],
+            backend4subtract=backend4subtract,
         )
         subtract.run()
 
@@ -554,6 +561,7 @@ class Detection:
                 template_image_path=row.get("template_image_path") or None,
                 temp_dir=temp_dir,
                 reject_known_stars=self.reject_known_stars,
+                backend4subtract=self.backend4subtract,
             )
 
     def run_match_truth(self):
@@ -738,6 +746,8 @@ def main():
         default="peak_value",
         help="Column name of significance threshold to use candidate catalog.",
     )
+    parser.add_argument("--backend4subtract", type=str, default="Cupy", choices=["Cupy", "Numpy", "cupy", "numpy"],
+    help="Which backend to use for subtraction")
 
     cfg.augment_argparse(parser)
     args = parser.parse_args(leftovers)
@@ -810,6 +820,7 @@ def main():
         reject_known_stars=args.reject_known_stars,
         temp_dir=args.temp_dir,
         output_dir=args.output_dir,
+        backend4subtract=args.backend4subtract,
     )
     detection.run_subtractions()
 

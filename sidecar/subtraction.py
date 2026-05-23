@@ -108,7 +108,7 @@ class Pipeline:
         template_sca,
         science_image_path=None,
         template_image_path=None,
-        BACKEND4SUBTRACT="Cupy",
+        backend4subtract="Cupy",
         temp_dir=None,
         out_dir="./output",
     ):
@@ -116,16 +116,16 @@ class Pipeline:
         self.temp_dir = temp_dir
         self.out_dir = Path(out_dir)
 
-        backend = str(BACKEND4SUBTRACT).strip().lower()
+        backend = str(backend4subtract).strip().lower()
         if backend in ("cupy", "cuda"):
-            self.BACKEND4SUBTRACT = "Cupy"
+            self.backend4subtract = "Cupy"
         elif backend in ("numpy", "np"):
-            self.BACKEND4SUBTRACT = "Numpy"
+            self.backend4subtract = "Numpy"
         else:
-            raise ValueError("BACKEND4SUBTRACT must be 'Cupy' or 'Numpy'")
+            raise ValueError("backend4subtract must be 'Cupy' or 'Numpy'")
 
-        if self.BACKEND4SUBTRACT == "Cupy" and cp is None:
-            raise ImportError("cupy is required for BACKEND4SUBTRACT='Cupy'")
+        if self.backend4subtract == "Cupy" and cp is None:
+            raise ImportError("cupy is required for backend4subtract='Cupy'")
 
         # science_image and template_image contains the data_ids of images and paths of temporary files:
         #   (sky subtracted images, detection masks, psfs)
@@ -161,15 +161,15 @@ class Pipeline:
         self.decorr_psf_path = self.out_dir / f"decorr_psf_{self.diff_pattern}.fits"
 
     def run(self):
-        if self.BACKEND4SUBTRACT == "Cupy":
+        if self.backend4subtract == "Cupy":
             return self.run_cupy()
-        if self.BACKEND4SUBTRACT == "Numpy":
+        if self.backend4subtract == "Numpy":
             return self.run_numpy()
-        raise ValueError("BACKEND4SUBTRACT must be 'Cupy' or 'Numpy'")
+        raise ValueError("backend4subtract must be 'Cupy' or 'Numpy'")
 
     def run_cupy(self):
         if cp is None:
-            raise ImportError("cupy is required for BACKEND4SUBTRACT='Cupy'")
+            raise ImportError("cupy is required for backend4subtract='Cupy'")
         if SpaceSFFT_CupyFlow is None:
             raise ImportError("SpaceSFFT_CupyFlow is unavailable because the Cupy backend module could not be imported")
 
@@ -301,7 +301,7 @@ def main():
         args.template_band,
         args.template_observation_id,
         args.template_sca,
-        BACKEND4SUBTRACT=args.backend4subtract,
+        backend4subtract=args.backend4subtract,
         temp_dir=args.temp_dir,
         out_dir=args.out_dir,
     )
