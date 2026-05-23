@@ -161,17 +161,14 @@ class Pipeline:
         self.decorr_psf_path = self.out_dir / f"decorr_psf_{self.diff_pattern}.fits"
 
     def run(self):
-        if self.backend4subtract == "Cupy":
-            return self.run_cupy()
         if self.backend4subtract == "Numpy":
-            return self.run_numpy()
-        raise ValueError("backend4subtract must be 'Cupy' or 'Numpy'")
-
-    def run_cupy(self):
-        if cp is None:
-            raise ImportError("cupy is required for backend4subtract='Cupy'")
-        if SpaceSFFT_CupyFlow is None:
-            raise ImportError("SpaceSFFT_CupyFlow is unavailable because the Cupy backend module could not be imported")
+            ensure_numpy = np.asarray
+            ensure_array = np.asarray
+            SpaceSFFT = SpaceSFFT_NumpyFlow
+        else:
+            ensure_numpy = cp.asnumpy
+            ensure_array = cp.array
+            SpaceSFFT = SpaceSFFT_CupyFlow
 
         os.makedirs(self.out_dir, exist_ok=True)
 
@@ -182,19 +179,19 @@ class Pipeline:
         template_skysubim_data, template_detmask_data, template_skyrms = sky_subtract(self.template_image)
 
         science_hdr = make_minimal_wcs_header(self.science_image)
-        science_data = cp.array(np.ascontiguousarray(science_skysubim_data.T), dtype=cp.float64)
-        science_noise = cp.array(np.ascontiguousarray(self.science_image.noise.T), dtype=cp.float64)
-        science_detmask = cp.array(np.ascontiguousarray(science_detmask_data.T))
+        science_data = ensure_array(np.ascontiguousarray(science_skysubim_data.T), dtype=np.float64)
+        science_noise = ensure_array(np.ascontiguousarray(self.science_image.noise.T), dtype=np.float64)
+        science_detmask = ensure_array(np.ascontiguousarray(science_detmask_data.T))
 
         template_hdr = make_minimal_wcs_header(self.template_image)
-        template_data = cp.array(np.ascontiguousarray(template_skysubim_data.T), dtype=cp.float64)
-        template_noise = cp.array(np.ascontiguousarray(self.template_image.noise.T), dtype=cp.float64)
-        template_detmask = cp.array(np.ascontiguousarray(template_detmask_data.T))
+        template_data = ensure_array(np.ascontiguousarray(template_skysubim_data.T), dtype=np.float64)
+        template_noise = ensure_array(np.ascontiguousarray(self.template_image.noise.T), dtype=np.float64)
+        template_detmask = ensure_array(np.ascontiguousarray(template_detmask_data.T))
 
-        science_psf = cp.array(np.ascontiguousarray(science_psf.T), dtype=cp.float64)
-        template_psf = cp.array(np.ascontiguousarray(template_psf.T), dtype=cp.float64)
+        science_psf = ensure_array(np.ascontiguousarray(science_psf.T), dtype=np.float64)
+        template_psf = ensure_array(np.ascontiguousarray(template_psf.T), dtype=np.float64)
 
-        sfftifier = SpaceSFFT_CupyFlow(
+        sfftifier = SpaceSFFT(
             science_hdr,
             template_hdr,
             science_skyrms,
@@ -217,67 +214,19 @@ class Pipeline:
 
         score_image = sfftifier.create_score_image()
 
-        decorr_diff = sfftifier.apply_decorrelation(sfftifier.PixA_DIFF_GPU)
-        decorr_zptimg = sfftifier.apply_decorrelation(sfftifier.PixA_Ctarget_GPU)
-        decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_Ctarget_GPU)
+        if self.backend4subtract == "Numpy":
+            decorr_diff = sfftifier.apply_decorrelation(sfftifier.PixA_DIFF)
+            decorr_zptimg = sfftifier.apply_decorrelation(sfftifier.PixA_Ctarget)
+            decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_Ctarget)
+        else:
+            decorr_diff = sfftifier.apply_decorrelation(sfftifier.PixA_DIFF_GPU)
+            decorr_zptimg = sfftifier.apply_decorrelation(sfftifier.PixA_Ctarget_GPU)
+            decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_Ctarget_GPU)
 
-        fits.writeto(self.score_image_path, cp.asnumpy(score_image).T, header=sfftifier.hdr_target, overwrite=True)
-        fits.writeto(self.decorr_diff_path, cp.asnumpy(decorr_diff).T, header=sfftifier.hdr_target, overwrite=True)
-        fits.writeto(self.decorr_zptimg_path, cp.asnumpy(decorr_zptimg).T, header=sfftifier.hdr_target, overwrite=True)
-        fits.writeto(self.decorr_psf_path, cp.asnumpy(decorr_psf).T, header=None, overwrite=True)
-
-    def run_numpy(self):
-        os.makedirs(self.out_dir, exist_ok=True)
-
-        science_psf = get_psf_kernel(self.science_image)
-        template_psf = get_psf_kernel(self.template_image)
-
-        science_skysubim_data, science_detmask_data, science_skyrms = sky_subtract(self.science_image)
-        template_skysubim_data, template_detmask_data, template_skyrms = sky_subtract(self.template_image)
-
-        science_hdr = make_minimal_wcs_header(self.science_image)
-        science_data = np.ascontiguousarray(science_skysubim_data.T, dtype=np.float64)
-        science_noise = np.ascontiguousarray(self.science_image.noise.T, dtype=np.float64)
-        science_detmask = np.ascontiguousarray(science_detmask_data.T).astype(np.float64)
-
-        template_hdr = make_minimal_wcs_header(self.template_image)
-        template_data = np.ascontiguousarray(template_skysubim_data.T, dtype=np.float64)
-        template_noise = np.ascontiguousarray(self.template_image.noise.T, dtype=np.float64)
-        template_detmask = np.ascontiguousarray(template_detmask_data.T).astype(np.float64)
-
-        science_psf = np.ascontiguousarray(science_psf.T, dtype=np.float64)
-        template_psf = np.ascontiguousarray(template_psf.T, dtype=np.float64)
-
-        sfftifier = SpaceSFFT_NumpyFlow(
-            science_hdr,
-            template_hdr,
-            science_skyrms,
-            template_skyrms,
-            science_data,
-            template_data,
-            science_noise,
-            template_noise,
-            science_detmask,
-            template_detmask,
-            science_psf,
-            template_psf,
-        )
-
-        sfftifier.resampling_image_mask_psf()
-        sfftifier.cross_convolution()
-        sfftifier.sfft_subtraction()
-        sfftifier.find_decorrelation()
-
-        score_image = sfftifier.create_score_image()
-
-        decorr_diff = sfftifier.apply_decorrelation(sfftifier.PixA_DIFF)
-        decorr_zptimg = sfftifier.apply_decorrelation(sfftifier.PixA_Ctarget)
-        decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_Ctarget)
-
-        fits.writeto(self.score_image_path, score_image.T, header=sfftifier.hdr_target, overwrite=True)
-        fits.writeto(self.decorr_diff_path, decorr_diff.T, header=sfftifier.hdr_target, overwrite=True)
-        fits.writeto(self.decorr_zptimg_path, decorr_zptimg.T, header=sfftifier.hdr_target, overwrite=True)
-        fits.writeto(self.decorr_psf_path, decorr_psf.T, header=None, overwrite=True)
+        fits.writeto(self.score_image_path, ensure_numpy(score_image).T, header=sfftifier.hdr_target, overwrite=True)
+        fits.writeto(self.decorr_diff_path, ensure_numpy(decorr_diff).T, header=sfftifier.hdr_target, overwrite=True)
+        fits.writeto(self.decorr_zptimg_path, ensure_numpy(decorr_zptimg).T, header=sfftifier.hdr_target, overwrite=True)
+        fits.writeto(self.decorr_psf_path, ensure_numpy(decorr_psf).T, header=None, overwrite=True)
 
 
 def main():
