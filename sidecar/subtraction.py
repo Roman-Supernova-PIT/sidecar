@@ -153,15 +153,15 @@ class Pipeline:
         science_hdr = make_minimal_wcs_header(self.science_image)
         template_hdr = make_minimal_wcs_header(self.template_image)
 
-        sfftifier = SpaceSFFT(
+        sfftifier = SpaceSFFT_Flow(
             science_hdr,
             template_hdr,
             science_skyrms,
             template_skyrms,
             science_skysubim_data,
             template_skysubim_data,
-            science_noise,
-            template_noise,
+            self.science_image.noise,
+            self.template_image.noise,
             science_detmask,
             template_detmask,
             science_psf,
