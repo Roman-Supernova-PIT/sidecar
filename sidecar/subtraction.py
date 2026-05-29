@@ -104,7 +104,8 @@ class Pipeline:
         temp_dir=None,
         out_dir="./output",
     ):
-
+        self.backend4subtract = backend4subtract
+        self.cuda_compiler = cuda_compiler
         self.temp_dir = temp_dir
         self.out_dir = Path(out_dir)
 
@@ -162,8 +163,8 @@ class Pipeline:
             template_skysubim_data,
             self.science_image.noise,
             self.template_image.noise,
-            science_detmask,
-            template_detmask,
+            science_detmask_data,
+            template_detmask_data,
             science_psf,
             template_psf,
             BACKEND_4SUBTRACT=self.backend4subtract,
@@ -176,11 +177,12 @@ class Pipeline:
         sfftifier.find_decorrelation()
 
         # Get our output products, ensuring they are in FORTRAN contiguous order (y, x) for writing to FITS files.
-        decorr_diff = sfftifier.apply_decorrelation(sfftifier.PixA_DIFF, requirements="F_CONTIGUOUS")
-        decorr_zptimg = sfftifier.apply_decorrelation(sfftifier.PixA_Ctarget, requirements="F_CONTIGUOUS")
-        decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_Ctarget, requirements="F_CONTIGUOUS")
+        requirements = ["F_CONTIGUOUS"]
+        decorr_diff = sfftifier.apply_decorrelation(sfftifier.PixA_DIFF, requirements=requirements)
+        decorr_zptimg = sfftifier.apply_decorrelation(sfftifier.PixA_Ctarget, requirements=requirements)
+        decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_Ctarget, requirements=requirements)
 
-        score_image = sfftifier.create_score_image(requirements="F_CONTIGUOUS")
+        score_image = sfftifier.create_score_image(requirements=requirements)
 
         fits.writeto(self.decorr_diff_path, decorr_diff, header=sfftifier.hdr_target, overwrite=True)
         fits.writeto(self.decorr_zptimg_path, decorr_zptimg, header=sfftifier.hdr_target, overwrite=True)
