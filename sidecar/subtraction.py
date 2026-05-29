@@ -191,17 +191,17 @@ class Pipeline:
 def main():
     parser = argparse.ArgumentParser("subtraction pipeline")
     parser.add_argument("--science-band", type=str, required=True, help="Science band")
-    parser.add_argument("--science-observation_id", type=int, required=True, help="Science observation_id")
+    parser.add_argument("--science-observation-id", type=int, required=True, help="Science observation_id")
     parser.add_argument("--science-sca", type=int, required=True, help="Science sca")
     parser.add_argument("--template-band", type=str, required=True, help="Template band")
-    parser.add_argument("--template-observation_id", type=int, required=True, help="Template observation_id")
+    parser.add_argument("--template-observation-id", type=int, required=True, help="Template observation_id")
     parser.add_argument("--template-sca", type=int, required=True, help="Template sca")
     parser.add_argument(
         "--backend4subtract",
         type=str,
         default="Cupy",
-        choices=["Cupy", "Numpy", "cupy", "numpy"],
-        help="Which backend to use for subtraction",
+        choices=["Cupy", "Numpy"],
+        help="Which backend to use for subtraction.  Passed directly on to SpaceSFFTFlow.",
     )
     parser.add_argument("--temp-dir", default=None, help="Temporary directory, default None")
     parser.add_argument("--out-dir", default="/out_dir", help="Output dir, default /out_dir")
