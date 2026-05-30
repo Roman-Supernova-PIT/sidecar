@@ -73,6 +73,7 @@ class Detection:
         image_collection,
         data_records,
         reject_known_stars=True,
+        cross_convolve=False,
         temp_dir=None,
         output_dir=None,
         backend4subtract=None,
@@ -98,6 +99,8 @@ class Detection:
         self.image_collection = image_collection
         self.data_records = data_records
         self.reject_known_stars = reject_known_stars
+        self.cross_convolve = cross_convolve
+
         if temp_dir is not None:
             self.temp_dir = temp_dir
         else:
@@ -351,6 +354,7 @@ class Detection:
         science_image_path=None,
         template_image_path=None,
         reject_known_stars=True,
+        cross_convolve=False,
         backend4subtract="Cupy",
     ):
         science_id = {
@@ -382,6 +386,7 @@ class Detection:
             template_sca=template_sca,
             science_image_path=science_image_path,
             template_image_path=template_image_path,
+            cross_convolve=self.cross_convolve,
             temp_dir=temp_dir,
             out_dir=file_path["full_output_dir"],
             backend4subtract=backend4subtract,
@@ -751,6 +756,12 @@ def main():
         help="Column name of significance threshold to use candidate catalog.",
     )
     parser.add_argument(
+        "--cross-convolve",
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        help="Whether to cross convolve each image with the other's PSF before subtraction.  Default %(default)."
+    )
+    parser.add_argument(
         "--backend4subtract",
         type=str,
         default="Cupy",
@@ -830,6 +841,7 @@ def main():
         temp_dir=args.temp_dir,
         output_dir=args.output_dir,
         backend4subtract=args.backend4subtract,
+        cross_convolve=args.cross_convolve,
     )
     detection.run_subtractions()
 

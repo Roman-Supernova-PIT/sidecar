@@ -99,11 +99,13 @@ class Pipeline:
         template_sca,
         science_image_path=None,
         template_image_path=None,
+        cross_convolve=False,
         backend4subtract="Cupy",
         cuda_compiler="nvrtc",
         temp_dir=None,
         out_dir="./output",
     ):
+        self.cross_convolve = cross_convolve
         self.backend4subtract = backend4subtract
         self.cuda_compiler = cuda_compiler
         self.temp_dir = temp_dir
@@ -167,12 +169,20 @@ class Pipeline:
             template_detmask_data,
             science_psf,
             template_psf,
+            transpose=True,
             BACKEND_4SUBTRACT=self.backend4subtract,
             CUDA_COMPILER=self.cuda_compiler,
         )
 
         sfftifier.resampling_image_mask_psf()
-        sfftifier.cross_convolution()
+        CROSS_CONVOLVE = False
+        if CROSS_CONVOLVE:
+            sfftifier.cross_convolve()
+        else:
+            sfftifier.PixA_Ctarget = sfftifier.PixA_target
+            sfftifier.PixA_Cresamp_object = sfftifier.PixA_resamp_object
+            sfftifier.PSF_Ctarget = sfftifier.PSF_target
+
         sfftifier.sfft_subtraction()
         sfftifier.find_decorrelation()
 
@@ -199,11 +209,17 @@ def main():
     parser.add_argument("--template-observation-id", type=int, required=True, help="Template observation_id")
     parser.add_argument("--template-sca", type=int, required=True, help="Template sca")
     parser.add_argument(
+        "--cross-convolve",
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        help="Whether to cross convolve each image with the other's PSF before subtraction.  Default %(default)."
+    )
+    parser.add_argument(
         "--backend4subtract",
         type=str,
         default="Cupy",
         choices=["Cupy", "Numpy"],
-        help="Which backend to use for subtraction.  Passed directly on to SpaceSFFTFlow.",
+        help="Which backend to use for subtraction.",
     )
     parser.add_argument("--temp-dir", default=None, help="Temporary directory, default None")
     parser.add_argument("--out-dir", default="/out_dir", help="Output dir, default /out_dir")
@@ -217,6 +233,7 @@ def main():
         args.template_band,
         args.template_observation_id,
         args.template_sca,
+        args.cross_convolve,
         backend4subtract=args.backend4subtract,
         temp_dir=args.temp_dir,
         out_dir=args.out_dir,
