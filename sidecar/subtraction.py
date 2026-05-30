@@ -174,25 +174,23 @@ class Pipeline:
             CUDA_COMPILER=self.cuda_compiler,
         )
 
-        sfftifier.resampling_image_mask_psf()
-        CROSS_CONVOLVE = False
-        if CROSS_CONVOLVE:
+        sfftifier.resample_image_mask_psf()
+        if self.cross_convolve:
             sfftifier.cross_convolve()
-        else:
-            sfftifier.PixA_Ctarget = sfftifier.PixA_target
-            sfftifier.PixA_Cresamp_object = sfftifier.PixA_resamp_object
-            sfftifier.PSF_Ctarget = sfftifier.PSF_target
 
-        sfftifier.sfft_subtraction()
+        sfftifier.sfft_subtract()
         sfftifier.find_decorrelation()
 
-        # Get our output products, ensuring they are in FORTRAN contiguous order (y, x) for writing to FITS files.
-        requirements = ["F_CONTIGUOUS"]
-        decorr_diff = sfftifier.apply_decorrelation(sfftifier.PixA_DIFF, requirements=requirements)
-        decorr_zptimg = sfftifier.apply_decorrelation(sfftifier.PixA_Ctarget, requirements=requirements)
-        decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_Ctarget, requirements=requirements)
+        decorr_diff = sfftifier.apply_decorrelation(sfftifier.PixA_DIFF)
 
-        score_image = sfftifier.create_score_image(requirements=requirements)
+        if self.cross_convolve:
+            decorr_zptimg = sfftifier.apply_decorrelation(sfftifier.PixA_Ctarget)
+            decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_Ctarget)
+        else:
+            decorr_zptimg = sfftifier.apply_decorrelation(sfftifier.PixA_target)
+            decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_target)
+
+        score_image = sfftifier.create_score_image()
 
         fits.writeto(self.decorr_diff_path, decorr_diff, header=sfftifier.hdr_target, overwrite=True)
         fits.writeto(self.decorr_zptimg_path, decorr_zptimg, header=sfftifier.hdr_target, overwrite=True)
