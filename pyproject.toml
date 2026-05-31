@@ -1,5 +1,5 @@
 [project]
-name = "sidecar"
+name = "roman_snpit_sidecar"
 description = "Supernova discovery for Roman SNPIT"
 requires-python = ">=3.11"
 dynamic = ["version"]
