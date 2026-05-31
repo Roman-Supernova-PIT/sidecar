@@ -1,10 +1,13 @@
-# cd /home/sidecar; pip install -e . --no-deps
-# cd /home
+SNPIT_PIPELINE_BASE = ${HOME}/Roman/pipeline
 
-base_path=${HOME}/Roman/pipeline/photometry_test_data/ou2024/images/simple_model
+# cd ${SNPIT_PIPELINE_BASE}/sidecar; pip install -e . --no-deps
+# cd ${SNPIT_PIPELINE_BASE}
+
+base_path=${SNPIT_PIPELINE_BASE}/photometry_test_data/ou2024/images/simple_model
 science_path="R062/54300/Roman_TDS_simple_model_R062_54300_13.fits.gz"
 template_path="R062/1/Roman_TDS_simple_model_R062_1_2.fits.gz"
-ipython --pdb -- \
+
+python \
     sidecar/sidecar/pipeline.py \
     --image-collection ou2024 \
     --base-path ${base_path} \
