@@ -1,3 +1,4 @@
+cd /home/sfft; pip install -e .
 cd /home/sidecar; pip install -e . --no-deps
 cd /home
 
