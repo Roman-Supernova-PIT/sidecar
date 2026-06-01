@@ -1,7 +1,7 @@
 cd /home/sidecar; pip install -e . --no-deps
 cd /home
 
-base_path=/ou2024/RomanTDS/images/simple_model/
+base_path=/home/photometry_test_data/ou2024/images/simple_model/
 science_path="R062/54300/Roman_TDS_simple_model_R062_54300_13.fits.gz"
 template_path="R062/1/Roman_TDS_simple_model_R062_1_2.fits.gz"
 python \
