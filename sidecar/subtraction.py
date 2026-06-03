@@ -188,7 +188,6 @@ class Pipeline:
         cross_convolve=False,
         backend4subtract="Cupy",
         cuda_compiler="nvrtc",
-        temp_dir=None,
         psf_type="STPSF",
         psf_size=None,
         out_dir="./output",

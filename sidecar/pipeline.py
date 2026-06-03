@@ -83,6 +83,9 @@ class Detection:
         save_candidates_to_database=False,
         threshold=None,
         threshold_column="peak_value",
+        temp_dir=None,
+        output_dir=None,
+        verbose=False,
     ):
         SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
         self.config = Config.get()
