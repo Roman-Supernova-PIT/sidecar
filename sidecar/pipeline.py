@@ -10,7 +10,6 @@ from astropy.table import Table
 from astropy.wcs.utils import pixel_to_skycoord
 import astropy.units as u
 
-from sidecar.database import save_dia_objects_from_subtraction
 from sidecar import subtraction
 from sidecar import source_detection
 from sidecar import truth_matching
