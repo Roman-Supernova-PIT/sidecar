@@ -1,0 +1,1 @@
+Add ability to save candidates at end of run with --save-candidates-to-database
