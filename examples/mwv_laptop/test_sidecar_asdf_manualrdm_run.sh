@@ -1,4 +1,4 @@
-SNPIT_PIPELINE_BASE = ${HOME}/Roman/pipeline
+SNPIT_PIPELINE_BASE=${HOME}/Roman/pipeline
 
 # cd ${SNPIT_PIPELINE_BASE}/sidecar; pip install -e . --no-deps
 # cd ${SNPIT_PIPELINE_BASE}
