@@ -275,14 +275,9 @@ def make_data_records_from_observation_id(
         "template_observation_id",
         "template_sca",
         "template_band",
+        "science_image_path",
+        "template_image_path",
     ]
-    if science_image_path is not None:
-        INPUT_COLUMNS += ["science_image_path"]
-        science_id["science_image_path"] = science_image_path
-    if template_image_path is not None:
-        INPUT_COLUMNS += ["template_image_path"]
-        template_id["template_image_path"] = template_image_path
-
     data_records = pd.DataFrame.from_records(
         [
             (
