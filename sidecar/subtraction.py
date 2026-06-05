@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 import numpy as np
+from scipy.interpolate import griddata
 from scipy.signal import convolve2d
 
 from astropy.io import fits
@@ -39,6 +40,9 @@ def interpolate_over_bad_pixels(image, bad_pixel_flags=bad_pixel_flags, fill_val
     interpolated_data : ndarray
         The input image data with bad pixels interpolated over.
 
+    bad_pixel_mask : ndarray
+        Boolean mask indicating the locations of bad pixels that were interpolated over.
+
     Notes
     -----
     This function identifies bad pixels based on the provided `bad_pixel_flags` and performs interpolation to fill in those pixels. The interpolation method can be simple (e.g., nearest neighbor) or more sophisticated (e.g., using neighboring pixel values), depending on the implementation.
@@ -46,23 +50,20 @@ def interpolate_over_bad_pixels(image, bad_pixel_flags=bad_pixel_flags, fill_val
     # Create a mask of bad pixels based on the flags
     bad_mask = image.flags & bad_pixel_flags > 0
 
-    # Interpolate over bad pixels (this is a placeholder; actual interpolation method may vary)
     interpolated_data = image.data.copy()
     interpolated_data[bad_mask] = np.nan  # Mark bad pixels as NaN for interpolation
 
-    # Example interpolation using nearest neighbor (this can be replaced with a more sophisticated method)
-    from scipy.interpolate import griddata
-
+    # Example interpolation using nearest neighbor
     x, y = np.indices(image.data.shape)
     good_pixels = ~bad_mask
     interpolated_data[bad_mask] = griddata(
         (x[good_pixels], y[good_pixels]),
         image.data[good_pixels],
         (x[bad_mask], y[bad_mask]),
-        method='nearest'
+        method="nearest"
     )
 
-    return interpolated_data
+    return interpolated_data, bad_mask
 
 
 def sky_subtract_and_detect(
@@ -328,8 +329,8 @@ class Pipeline:
 
         # Interpolate over bad pixels in the science and template images before sky subtraction and source detection.
         # This is to avoid bad pixels in the images being convolved out to look like sources
-        self.science_image.data = interpolate_over_bad_pixels(self.science_image, bad_pixel_flags=bad_pixel_flags)
-        self.template_image.data = interpolate_over_bad_pixels(self.template_image, bad_pixel_flags=bad_pixel_flags)
+        self.science_image.data, science_image_bad_pixel_mask = interpolate_over_bad_pixels(self.science_image, bad_pixel_flags=bad_pixel_flags)
+        self.template_image.data, template_image_bad_pixel_mask = interpolate_over_bad_pixels(self.template_image, bad_pixel_flags=bad_pixel_flags)
 
         # sky subtraction and source detection
         science_skysubim_data, science_detmask_data, science_skyrms = sky_subtract_and_detect(self.science_image)
