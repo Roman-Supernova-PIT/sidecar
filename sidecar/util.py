@@ -237,12 +237,14 @@ def make_data_records_from_observation_id(
         "observation_id": science_observation_id,
         "sca": science_sca,
         "band": science_band,
+        "image_path": science_image_path,
     }
     if template_observation_id is not None:
         template_id = {
             "observation_id": template_observation_id,
             "sca": template_sca,
             "band": template_band,
+            "image_path": template_image_path,
         }
     else:
         if template_image_path is None:
@@ -256,6 +258,7 @@ def make_data_records_from_observation_id(
                 "observation_id": template_image_info.observation_id,
                 "sca": template_image_info.sca,
                 "band": template_image_info.band,
+                "image_path": template_image_info.get_image_path(),
             }
         else:
             template_observation_id, template_sca, template_band = get_observation_id_sca_band_from_image_path(
@@ -265,6 +268,7 @@ def make_data_records_from_observation_id(
                 "observation_id": template_observation_id,
                 "sca": template_sca,
                 "band": template_band,
+                "image_path": template_image_path,
             }
 
     # Create a DataFrame that looks just like what we were loading in from the file.
@@ -287,8 +291,8 @@ def make_data_records_from_observation_id(
                 template_id["observation_id"],
                 template_id["sca"],
                 template_id["band"],
-                science_id.get("science_image_path") or None,
-                template_id.get("template_image_path") or None,
+                science_id["image_path"],
+                template_id["image_path"],
             )
         ],
         columns=INPUT_COLUMNS,
