@@ -1,8 +1,10 @@
 import re
 
+import numpy as np
 import pandas as pd
 
 from astropy.io import fits
+from astropy.table import Table
 from astropy.wcs import WCS
 
 from snappl.dbclient import SNPITDBClient
@@ -417,6 +419,70 @@ def read_data_records(data_records_path):
             df[f"science_{colname}"] = df[colname]
 
     return df
+
+
+def write_ds9_regions_from_ecsv(
+    ecsv_catalog_path,
+    ds9_region_path="ds9.reg",
+    peak_value_threshold=100,
+    ra_column="ra",
+    dec_column="dec",
+    peak_value_column="peak_value",
+    radius_arcsec=1.0,
+    coord_system="fk5",
+    region_color="green",
+):
+    """Write a DS9 region file for catalog sources with peak_value above a threshold.
+
+    Parameters
+    ----------
+    ecsv_catalog_path : str or pathlib.Path
+        Path to the input ECSV catalog.
+    ds9_region_path : str or pathlib.Path
+        Output DS9 region file path.
+    peak_value_threshold : float
+        Only sources with peak_value greater than this threshold are written.
+    ra_column : str
+        Column name containing right ascension values in degrees.
+    dec_column : str
+        Column name containing declination values in degrees.
+    peak_value_column : str
+        Column name containing peak values used for thresholding.
+    radius_arcsec : float
+        Circle radius in arcseconds for each region.
+    coord_system : str
+        Coordinate system for the DS9 file (default: fk5).
+    region_color : str
+        Color used for DS9 regions.
+    
+    Returns
+    -------
+    astropy.table.Table
+        Filtered `astropy.table.Table` containing only rows with
+        `peak_value` greater than `peak_value_threshold`. The returned table
+        preserves the original catalog columns in the `ecsv_catalog_path` file.
+    """
+    catalog = Table.read(ecsv_catalog_path, format="ascii.ecsv")
+    missing_columns = {ra_column, dec_column, peak_value_column} - set(catalog.colnames)
+    if len(missing_columns) > 0:
+        raise ValueError(f"Catalog is missing required columns: {sorted(missing_columns)}")
+
+    mask = np.abs(catalog[peak_value_column]) > peak_value_threshold
+
+    with open(ds9_region_path, "w") as region_file:
+        region_file.write("# Region file format: DS9 version 4.1\n")
+        region_file.write(
+            f"global color={region_color} width=1 font=\"helvetica 10 normal\" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n"
+        )
+        region_file.write(f"{coord_system}\n")
+
+        for row in catalog[mask]:
+            ra = float(row[ra_column])
+            dec = float(row[dec_column])
+            peak_value = float(row[peak_value_column])
+            region_file.write(f"circle({ra:.8f}, {dec:.8f}, {radius_arcsec:.3f}\")  # text={{{peak_value:.0f}}}\n")
+
+    return catalog[mask]
 
 
 def load_wcs_from_fits(path, hdu_id=0):
