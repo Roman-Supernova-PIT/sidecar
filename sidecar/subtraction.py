@@ -207,10 +207,10 @@ def _save_sky_subtracted_products_as_fits(path, hdr, data, noise, flags, detmask
     hdul = fits.HDUList(
         [
             fits.PrimaryHDU(data=None, header=hdr),
-            fits.ImageHDU(data=data, name="DATA"),
-            fits.ImageHDU(data=noise, name="NOISE"),
-            fits.ImageHDU(data=flags, name="FLAGS"),
-            fits.ImageHDU(data=np.asarray(detmask, dtype="uint8"), name="DETMASK"),
+            fits.ImageHDU(data=data, name="DATA", header=hdr),
+            fits.ImageHDU(data=noise, name="NOISE", header=hdr),
+            fits.ImageHDU(data=flags, name="FLAGS", header=hdr),
+            fits.ImageHDU(data=np.asarray(detmask, dtype="uint8"), name="DETMASK", header=hdr),
         ]
     )
     hdul.writeto(path, overwrite=True)
@@ -357,10 +357,6 @@ class Pipeline:
                 self.template_image.flags,
                 template_detmask_data,
             )
-
-        # SFFT needs FITS headers with a WCS and with NAXIS[12]
-        science_hdr = make_minimal_wcs_header(self.science_image)
-        template_hdr = make_minimal_wcs_header(self.template_image)
 
         sfftifier = SpaceSFFT_Flow(
             science_hdr,
