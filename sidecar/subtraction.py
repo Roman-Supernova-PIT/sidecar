@@ -314,7 +314,6 @@ class Pipeline:
         self.simple_diff_path = self.out_dir / f"simple_diff_{self.diff_pattern}.fits"
         self.diff_path = self.out_dir / f"diff_{self.diff_pattern}.fits"
         self.decorr_diff_path = self.out_dir / f"decorr_diff_{self.diff_pattern}.fits"
-        self.decorr_zptimg_path = self.out_dir / f"decorr_zptimg_{self.diff_pattern}.fits"
         self.decorr_psf_path = self.out_dir / f"decorr_psf_{self.diff_pattern}.fits"
 
     def run(self):
@@ -386,10 +385,8 @@ class Pipeline:
         decorr_diff = sfftifier.apply_decorrelation(sfftifier.PixA_DIFF)
 
         if self.cross_convolve:
-            decorr_zptimg = sfftifier.apply_decorrelation(sfftifier.PixA_Ctarget)
             decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_Ctarget)
         else:
-            decorr_zptimg = sfftifier.apply_decorrelation(sfftifier.PixA_target)
             decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_target)
 
         # create_score_image has to come after find_decorrelation
@@ -399,7 +396,6 @@ class Pipeline:
         score_image = sfftifier.create_score_image()
 
         fits.writeto(self.decorr_diff_path, decorr_diff, header=sfftifier.hdr_target, overwrite=True)
-        fits.writeto(self.decorr_zptimg_path, decorr_zptimg, header=sfftifier.hdr_target, overwrite=True)
         fits.writeto(self.decorr_psf_path, decorr_psf, header=None, overwrite=True)
         fits.writeto(self.score_image_path, score_image, header=sfftifier.hdr_target, overwrite=True)
 
