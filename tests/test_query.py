@@ -15,6 +15,7 @@ from sidecar.util import (
     read_data_records,
 )
 
+_rundir =  Path(__file__).parent.resolve()
 
 def test_ra_dec_query():
     ra, dec = 7.55, -44.8
@@ -137,7 +138,7 @@ def test_get_image_info_for_ra_dec():
 
 
 def test_read_data_records_from_file():
-    data_records_path = Path(__file__).parent / "test_ten_data_records.csv"
+    data_records_path = _rundir / "test_ten_data_records.csv"
     data_records = read_data_records(data_records_path=data_records_path)
 
     assert len(data_records) == 10
@@ -152,7 +153,7 @@ def test_read_data_records_from_file():
 
 
 def test_read_data_records_from_file_with_just_science_images():
-    data_records_path = Path(__file__).parent / "test_ten_data_records_only_science.csv"
+    data_records_path = _rundir / "test_ten_data_records_only_science.csv"
     data_records = read_data_records(data_records_path=data_records_path)
 
     assert len(data_records) == 10
@@ -164,7 +165,7 @@ def test_read_data_records_from_file_with_just_science_images():
 
 
 def test_get_templates_for_science_images_from_csv():
-    data_records_path = Path(__file__).parent / "test_six_nov2025_only_science.csv"
+    data_records_path = _rundir / "test_six_nov2025_only_science.csv"
     data_records = read_data_records(data_records_path=data_records_path)
     collection = "snpitdb"
     provenance_tag = "ou2024"
@@ -191,7 +192,7 @@ def test_get_templates_for_science_images_from_csv():
 
 
 def test_read_data_records_from_file_with_not_enough_columns():
-    data_records_path = Path(__file__).parent / "test_ten_data_records_not_enough_columns.csv"
+    data_records_path = _rundir / "test_ten_data_records_not_enough_columns.csv"
     with pytest.raises(ValueError):
         read_data_records(data_records_path=data_records_path)
 
@@ -245,7 +246,7 @@ def test_make_data_records_from_just_science_path():
         collection=collection, provenance_tag=provenance_tag, process=process
     )
     image_path = Path(
-        Path(__file__).parent,
+        _rundir,
         "photometry_test_data",
         "RomanTDS",
         "images",
