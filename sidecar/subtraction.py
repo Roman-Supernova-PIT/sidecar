@@ -203,14 +203,14 @@ def make_minimal_wcs_header(image):
     return hdr
 
 
-def _save_sky_subtracted_products_as_fits(path, hdr, data, noise, flags, detmask):
+def _save_products_as_fits(path, hdr, data, noise, flags, mask):
     hdul = fits.HDUList(
         [
             fits.PrimaryHDU(data=None, header=hdr),
             fits.ImageHDU(data=data, name="DATA", header=hdr),
             fits.ImageHDU(data=noise, name="NOISE", header=hdr),
             fits.ImageHDU(data=flags, name="FLAGS", header=hdr),
-            fits.ImageHDU(data=np.asarray(detmask, dtype="uint8"), name="DETMASK", header=hdr),
+            fits.ImageHDU(data=np.asarray(mask, dtype="uint8"), name="MASK", header=hdr),
         ]
     )
     hdul.writeto(path, overwrite=True)
@@ -328,8 +328,8 @@ class Pipeline:
 
         # Interpolate over bad pixels in the science and template images before sky subtraction and source detection.
         # This is to avoid bad pixels in the images being convolved out to look like sources
-        self.science_image.data, science_image_bad_pixel_mask = interpolate_over_bad_pixels(self.science_image, bad_pixel_flags=bad_pixel_flags)
-        self.template_image.data, template_image_bad_pixel_mask = interpolate_over_bad_pixels(self.template_image, bad_pixel_flags=bad_pixel_flags)
+        self.science_image._data, science_image_interpolated_mask = interpolate_over_bad_pixels(self.science_image, bad_pixel_flags=bad_pixel_flags)
+        self.template_image._data, template_image_interpolated_mask = interpolate_over_bad_pixels(self.template_image, bad_pixel_flags=bad_pixel_flags)
 
         # sky subtraction and source detection
         science_skysubim_data, science_detmask_data, science_skyrms = sky_subtract_and_detect(self.science_image)
@@ -340,21 +340,21 @@ class Pipeline:
         template_hdr = make_minimal_wcs_header(self.template_image)
 
         if self.save_debug_products:
-            _save_sky_subtracted_products_as_fits(
-                self.science_debug_path,
-                science_hdr,
-                science_skysubim_data,
-                self.science_image.noise,
-                self.science_image.flags,
-                science_detmask_data,
+            _save_products_as_fits(
+                path=self.science_debug_path,
+                hdr=science_hdr,
+                data=science_skysubim_data,
+                noise=self.science_image.noise,
+                flags=self.science_image.flags,
+                mask=science_detmask_data,
             )
-            _save_sky_subtracted_products_as_fits(
-                self.template_debug_path,
-                template_hdr,
-                template_skysubim_data,
-                self.template_image.noise,
-                self.template_image.flags,
-                template_detmask_data,
+            _save_products_as_fits(
+                path=self.template_debug_path,
+                hdr=template_hdr,
+                data=template_skysubim_data,
+                noise=self.template_image.noise,
+                flags=self.template_image.flags,
+                mask=template_detmask_data,
             )
 
         sfftifier = SpaceSFFT_Flow(
@@ -395,9 +395,22 @@ class Pipeline:
         # and saved as an attribute of instance
         score_image = sfftifier.create_score_image()
 
-        fits.writeto(self.decorr_diff_path, decorr_diff, header=sfftifier.hdr_target, overwrite=True)
-        fits.writeto(self.decorr_psf_path, decorr_psf, header=None, overwrite=True)
+        diff_noise = np.sqrt(sfftifier.create_variance_image())
+        diff_flags = self.template_image.flags + self.science_image.flags
+        diff_detmask = template_detmask_data | science_detmask_data
+        diff_interpolated_mask = template_image_interpolated_mask | science_image_interpolated_mask
+
+        _save_products_as_fits(
+            path=self.decorr_diff_path,
+            hdr=sfftifier.hdr_target,
+            data=decorr_diff,
+            noise=diff_noise,
+            flags=diff_flags,
+            mask=diff_interpolated_mask,
+        )
+
         fits.writeto(self.score_image_path, score_image, header=sfftifier.hdr_target, overwrite=True)
+        fits.writeto(self.decorr_psf_path, decorr_psf, header=None, overwrite=True)
 
         if self.save_debug_products:
             fits.writeto(
@@ -408,7 +421,7 @@ class Pipeline:
             )
             fits.writeto(
                 self.resamp_template_path,
-                sfftifier.op.asnumpy(sfftifier.PixA_resamp_object),
+                sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_resamp_object)),
                 header=sfftifier.hdr_target,
                 overwrite=True,
             )
@@ -486,7 +499,6 @@ class Pipeline:
                     )
                 )
 
-            # save data products
             fits.writeto(self.simple_diff_path, simple_diff, header=sfftifier.hdr_target, overwrite=True)
             fits.writeto(
                 self.diff_path, sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_DIFF)), header=sfftifier.hdr_target, overwrite=True
