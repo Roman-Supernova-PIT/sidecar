@@ -4,9 +4,9 @@ cd /home/sfft; pip install -e . --no-deps
 cd /home
 
 # Can't reject known stars because we don't have a star catalog
-# This last combination of 99999010010010010010005 + F158 doesn't exist, so we only get 7 subtractions:
+# For 99999010010010010010005, only F062 exists, so F106 and F158 will fail
 for obsid in 99999010010010010010002 99999010010010010010003 99999010010010010010004 99999010010010010010005; do
-  for band in F106 F158; do
+  for band in F062 F106 F158; do
     python \
       /home/sidecar/sidecar/pipeline.py  \
       --image-collection snpitdb \
