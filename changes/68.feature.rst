@@ -1,0 +1,1 @@
+Adapt to cpu/gpu backend options in sfft.  Adds examples that use CPU/numpy.
