@@ -2,7 +2,6 @@ import argparse
 import os
 from pathlib import Path
 
-import cupy as cp
 import numpy as np
 from scipy.signal import convolve2d
 
@@ -12,7 +11,7 @@ from photutils.background import Background2D
 from photutils.segmentation import detect_threshold, detect_sources
 from photutils.utils import circular_footprint
 
-from sfft.SpaceSFFTCupyFlow import SpaceSFFT_CupyFlow
+from sfft.SpaceSFFTFlow import SpaceSFFT_Flow
 from snappl.psf import PSF
 
 
@@ -100,10 +99,15 @@ class Pipeline:
         template_sca,
         science_image_path=None,
         template_image_path=None,
+        cross_convolve=False,
+        backend4subtract="Cupy",
+        cuda_compiler="nvrtc",
         temp_dir=None,
         out_dir="./output",
     ):
-
+        self.cross_convolve = cross_convolve
+        self.backend4subtract = backend4subtract
+        self.cuda_compiler = cuda_compiler
         self.temp_dir = temp_dir
         self.out_dir = Path(out_dir)
 
@@ -143,79 +147,78 @@ class Pipeline:
     def run(self):
         os.makedirs(self.out_dir, exist_ok=True)
 
-        # get psf
         science_psf = get_psf_kernel(self.science_image)
         template_psf = get_psf_kernel(self.template_image)
 
-        # sky subtraction
         science_skysubim_data, science_detmask_data, science_skyrms = sky_subtract(self.science_image)
         template_skysubim_data, template_detmask_data, template_skyrms = sky_subtract(self.template_image)
 
-        # SFFT needs FITS headers with a WCS and with NAXIS[12]
-        # and wants the transpose of the data array.
         science_hdr = make_minimal_wcs_header(self.science_image)
-        science_data = cp.array(np.ascontiguousarray(science_skysubim_data.T), dtype=cp.float64)
-        # The noise array is unchanged by the sky subtraction
-        science_noise = cp.array(np.ascontiguousarray(self.science_image.noise.T), dtype=cp.float64)
-        science_detmask = cp.array(np.ascontiguousarray(science_detmask_data.T))
-
         template_hdr = make_minimal_wcs_header(self.template_image)
-        template_data = cp.array(np.ascontiguousarray(template_skysubim_data.T), dtype=cp.float64)
-        template_noise = cp.array(np.ascontiguousarray(self.template_image.noise.T), dtype=cp.float64)
-        template_detmask = cp.array(np.ascontiguousarray(template_detmask_data.T))
 
-        # Transpose PSF to match the transpose of the data array.
-        science_psf = cp.array(np.ascontiguousarray(science_psf.T), dtype=cp.float64)
-        template_psf = cp.array(np.ascontiguousarray(template_psf.T), dtype=cp.float64)
-
-        # cupy flow
-        sfftifier = SpaceSFFT_CupyFlow(
+        sfftifier = SpaceSFFT_Flow(
             science_hdr,
             template_hdr,
             science_skyrms,
             template_skyrms,
-            science_data,
-            template_data,
-            science_noise,
-            template_noise,
-            science_detmask,
-            template_detmask,
+            science_skysubim_data,
+            template_skysubim_data,
+            self.science_image.noise,
+            self.template_image.noise,
+            science_detmask_data,
+            template_detmask_data,
             science_psf,
             template_psf,
-            CUDA_COMPILER="nvrtc",
+            transpose=True,
+            BACKEND_4SUBTRACT=self.backend4subtract,
+            CUDA_COMPILER=self.cuda_compiler,
         )
 
-        sfftifier.resampling_image_mask_psf()
-        sfftifier.cross_convolution()
-        sfftifier.sfft_subtraction()
+        sfftifier.resample_image_mask_psf()
+        if self.cross_convolve:
+            sfftifier.cross_convolve()
+
+        sfftifier.sfft_subtract()
         sfftifier.find_decorrelation()
 
-        # create_score_image has to come after find_decorrelation
-        # because the create_score_image uses FKDECO_GPU
-        # which is calculated in find_decorrelation
-        # and saved as attribute of instance
+        decorr_diff = sfftifier.apply_decorrelation(sfftifier.PixA_DIFF)
+
+        if self.cross_convolve:
+            decorr_zptimg = sfftifier.apply_decorrelation(sfftifier.PixA_Ctarget)
+            decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_Ctarget)
+        else:
+            decorr_zptimg = sfftifier.apply_decorrelation(sfftifier.PixA_target)
+            decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_target)
+
         score_image = sfftifier.create_score_image()
 
-        # run decorrelation
-        decorr_diff = sfftifier.apply_decorrelation(sfftifier.PixA_DIFF_GPU)
-        decorr_zptimg = sfftifier.apply_decorrelation(sfftifier.PixA_Ctarget_GPU)
-        decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_Ctarget_GPU)
-
-        # save data products
-        fits.writeto(self.score_image_path, cp.asnumpy(score_image).T, header=sfftifier.hdr_target, overwrite=True)
-        fits.writeto(self.decorr_diff_path, cp.asnumpy(decorr_diff).T, header=sfftifier.hdr_target, overwrite=True)
-        fits.writeto(self.decorr_zptimg_path, cp.asnumpy(decorr_zptimg).T, header=sfftifier.hdr_target, overwrite=True)
-        fits.writeto(self.decorr_psf_path, cp.asnumpy(decorr_psf).T, header=None, overwrite=True)
+        fits.writeto(self.decorr_diff_path, decorr_diff, header=sfftifier.hdr_target, overwrite=True)
+        fits.writeto(self.decorr_zptimg_path, decorr_zptimg, header=sfftifier.hdr_target, overwrite=True)
+        fits.writeto(self.decorr_psf_path, decorr_psf, header=None, overwrite=True)
+        fits.writeto(self.score_image_path, score_image, header=sfftifier.hdr_target, overwrite=True)
 
 
 def main():
     parser = argparse.ArgumentParser("subtraction pipeline")
     parser.add_argument("--science-band", type=str, required=True, help="Science band")
-    parser.add_argument("--science-observation_id", type=int, required=True, help="Science observation_id")
+    parser.add_argument("--science-observation-id", type=int, required=True, help="Science observation_id")
     parser.add_argument("--science-sca", type=int, required=True, help="Science sca")
     parser.add_argument("--template-band", type=str, required=True, help="Template band")
-    parser.add_argument("--template-observation_id", type=int, required=True, help="Template observation_id")
+    parser.add_argument("--template-observation-id", type=int, required=True, help="Template observation_id")
     parser.add_argument("--template-sca", type=int, required=True, help="Template sca")
+    parser.add_argument(
+        "--cross-convolve",
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        help="Whether to cross convolve each image with the other's PSF before subtraction.  Default %(default)."
+    )
+    parser.add_argument(
+        "--backend4subtract",
+        type=str,
+        default="Cupy",
+        choices=["Cupy", "Numpy"],
+        help="Which backend to use for subtraction.",
+    )
     parser.add_argument("--temp-dir", default=None, help="Temporary directory, default None")
     parser.add_argument("--out-dir", default="/out_dir", help="Output dir, default /out_dir")
 
@@ -228,6 +231,8 @@ def main():
         args.template_band,
         args.template_observation_id,
         args.template_sca,
+        args.cross_convolve,
+        backend4subtract=args.backend4subtract,
         temp_dir=args.temp_dir,
         out_dir=args.out_dir,
     )

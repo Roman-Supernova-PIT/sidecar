@@ -25,7 +25,7 @@ dependencies = [
   "astropy>=3.2",
   "photutils",
   "roman_snpit_snappl>=0.39",
-  "sfft-romansnpit>=1.6.4.dev6",
+  "sfft-romansnpit>=1.6.4.dev14",
   "sep",
 ]
 

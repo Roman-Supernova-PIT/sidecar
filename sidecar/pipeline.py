@@ -69,7 +69,15 @@ class Detection:
     CLEANED_SCORE_DETECTION_TO_TRANSIENTS_PREFIX = "cleaned_score_detection_to_transients_"
 
     def __init__(
-        self, image_collection, data_records, reject_known_stars=True, temp_dir=None, output_dir=None, verbose=False
+        self,
+        image_collection,
+        data_records,
+        reject_known_stars=True,
+        cross_convolve=False,
+        temp_dir=None,
+        output_dir=None,
+        backend4subtract=None,
+        verbose=False,
     ):
         SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
         self.config = Config.get()
@@ -91,6 +99,8 @@ class Detection:
         self.image_collection = image_collection
         self.data_records = data_records
         self.reject_known_stars = reject_known_stars
+        self.cross_convolve = cross_convolve
+
         if temp_dir is not None:
             self.temp_dir = temp_dir
         else:
@@ -99,6 +109,11 @@ class Detection:
             self.output_dir = output_dir
         else:
             self.output_dir = self.config.value("system.paths.temp_dir") + "dia_out_dir"
+
+        if backend4subtract is not None:
+            self.backend4subtract = backend4subtract
+        else:
+            self.backend4subtract = self.config.value("sidecar.pipeline.backend4subtract", default="Cupy")
 
     @staticmethod
     def retrieve_truth(
@@ -339,6 +354,8 @@ class Detection:
         science_image_path=None,
         template_image_path=None,
         reject_known_stars=True,
+        cross_convolve=False,
+        backend4subtract="Cupy",
     ):
         science_id = {
             "band": science_band,
@@ -369,8 +386,10 @@ class Detection:
             template_sca=template_sca,
             science_image_path=science_image_path,
             template_image_path=template_image_path,
+            cross_convolve=self.cross_convolve,
             temp_dir=temp_dir,
             out_dir=file_path["full_output_dir"],
+            backend4subtract=backend4subtract,
         )
         subtract.run()
 
@@ -554,6 +573,7 @@ class Detection:
                 template_image_path=row.get("template_image_path") or None,
                 temp_dir=temp_dir,
                 reject_known_stars=self.reject_known_stars,
+                backend4subtract=self.backend4subtract,
             )
 
     def run_match_truth(self):
@@ -710,13 +730,10 @@ def main():
         "--reject-known-stars",
         default=True,
         action=argparse.BooleanOptionalAction,
-        help="Reject known stars.  Requires an available catalog of known stars."
+        help="Reject known stars.  Requires an available catalog of known stars.",
     )
     parser.add_argument(
-        "--match-truth",
-        default=False,
-        action=argparse.BooleanOptionalAction,
-        help="Match to truth catalog."
+        "--match-truth", default=False, action=argparse.BooleanOptionalAction, help="Match to truth catalog."
     )
     parser.add_argument("-t", "--temp-dir", type=str, default=None, help="Temporary directory.")
     parser.add_argument("-o", "--output-dir", type=str, default=None, help="Output path")
@@ -737,6 +754,19 @@ def main():
         type=str,
         default="peak_value",
         help="Column name of significance threshold to use candidate catalog.",
+    )
+    parser.add_argument(
+        "--cross-convolve",
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        help="Whether to cross convolve each image with the other's PSF before subtraction.  Default %(default)."
+    )
+    parser.add_argument(
+        "--backend4subtract",
+        type=str,
+        default="Cupy",
+        choices=["Cupy", "Numpy", "cupy", "numpy"],
+        help="Which backend to use for subtraction",
     )
 
     cfg.augment_argparse(parser)
@@ -810,6 +840,8 @@ def main():
         reject_known_stars=args.reject_known_stars,
         temp_dir=args.temp_dir,
         output_dir=args.output_dir,
+        backend4subtract=args.backend4subtract,
+        cross_convolve=args.cross_convolve,
     )
     detection.run_subtractions()
 
