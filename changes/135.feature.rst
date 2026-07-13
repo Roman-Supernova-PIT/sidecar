@@ -1,0 +1,1 @@
+Use DQflags to interpolate over bad pixels.  Improve sky subtraction.
