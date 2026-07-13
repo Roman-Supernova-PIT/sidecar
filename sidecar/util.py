@@ -454,7 +454,7 @@ def write_ds9_regions_from_ecsv(
         Coordinate system for the DS9 file (default: fk5).
     region_color : str
         Color used for DS9 regions.
-    
+
     Returns
     -------
     astropy.table.Table
@@ -472,7 +472,7 @@ def write_ds9_regions_from_ecsv(
     with open(ds9_region_path, "w") as region_file:
         region_file.write("# Region file format: DS9 version 4.1\n")
         region_file.write(
-            f"global color={region_color} width=1 font=\"helvetica 10 normal\" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n"
+            f"global color={region_color} width=1 font=\"helvetica 10 normal\" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n"  # noqa
         )
         region_file.write(f"{coord_system}\n")
 

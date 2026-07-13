@@ -20,7 +20,7 @@ from snappl.psf import PSF
 # Data quality flags
 # Set all bits in enum
 # (could just use 2**32 - 1, but using len of dqflags.pixel is in principle more flexible):
-bad_pixel_flags = 2**len(dqflags.pixel) - 1 - dqflags.pixel.WARM - dqflags.pixel.LOW_QE
+bad_pixel_flags = 2 ** len(dqflags.pixel) - 1 - dqflags.pixel.WARM - dqflags.pixel.LOW_QE
 
 
 def interpolate_over_bad_pixels(image, bad_pixel_flags=bad_pixel_flags, fill_value=0):
@@ -45,7 +45,10 @@ def interpolate_over_bad_pixels(image, bad_pixel_flags=bad_pixel_flags, fill_val
 
     Notes
     -----
-    This function identifies bad pixels based on the provided `bad_pixel_flags` and performs interpolation to fill in those pixels. The interpolation method can be simple (e.g., nearest neighbor) or more sophisticated (e.g., using neighboring pixel values), depending on the implementation.
+    This function identifies bad pixels based on the provided `bad_pixel_flags`
+    and performs interpolation to fill in those pixels.
+    The interpolation method can be simple (e.g., nearest neighbor) or more sophisticated
+    (e.g., using neighboring pixel values), depending on the implementation.
     """
     # Create a mask of bad pixels based on the flags
     bad_mask = image.flags & bad_pixel_flags > 0
@@ -57,10 +60,7 @@ def interpolate_over_bad_pixels(image, bad_pixel_flags=bad_pixel_flags, fill_val
     x, y = np.indices(image.data.shape)
     good_pixels = ~bad_mask
     interpolated_data[bad_mask] = griddata(
-        (x[good_pixels], y[good_pixels]),
-        image.data[good_pixels],
-        (x[bad_mask], y[bad_mask]),
-        method="nearest"
+        (x[good_pixels], y[good_pixels]), image.data[good_pixels], (x[bad_mask], y[bad_mask]), method="nearest"
     )
 
     return interpolated_data, bad_mask
@@ -328,8 +328,12 @@ class Pipeline:
 
         # Interpolate over bad pixels in the science and template images before sky subtraction and source detection.
         # This is to avoid bad pixels in the images being convolved out to look like sources
-        self.science_image._data, science_image_interpolated_mask = interpolate_over_bad_pixels(self.science_image, bad_pixel_flags=bad_pixel_flags)
-        self.template_image._data, template_image_interpolated_mask = interpolate_over_bad_pixels(self.template_image, bad_pixel_flags=bad_pixel_flags)
+        self.science_image._data, science_image_interpolated_mask = interpolate_over_bad_pixels(
+            self.science_image, bad_pixel_flags=bad_pixel_flags
+        )
+        self.template_image._data, template_image_interpolated_mask = interpolate_over_bad_pixels(
+            self.template_image, bad_pixel_flags=bad_pixel_flags
+        )
 
         # sky subtraction and source detection
         science_skysubim_data, science_detmask_data, science_skyrms = sky_subtract_and_detect(self.science_image)
@@ -397,7 +401,6 @@ class Pipeline:
 
         diff_noise = np.sqrt(sfftifier.create_variance_image())
         diff_flags = self.template_image.flags + self.science_image.flags
-        diff_detmask = template_detmask_data | science_detmask_data
         diff_interpolated_mask = template_image_interpolated_mask | science_image_interpolated_mask
 
         _save_products_as_fits(
@@ -414,10 +417,7 @@ class Pipeline:
 
         if self.save_debug_products:
             fits.writeto(
-                self.diff_path,
-                sfftifier.op.asnumpy(sfftifier.PixA_DIFF),
-                header=sfftifier.hdr_target,
-                overwrite=True
+                self.diff_path, sfftifier.op.asnumpy(sfftifier.PixA_DIFF), header=sfftifier.hdr_target, overwrite=True
             )
             fits.writeto(
                 self.resamp_template_path,
@@ -434,16 +434,13 @@ class Pipeline:
             if sfftifier.CROSS_CONVOLVED:
                 target = sfftifier.PixA_Ctarget
                 resamp_object = sfftifier.PixA_Cresamp_object
-                psf_target = sfftifier.PSF_Ctarget
             else:
                 target = sfftifier.PixA_target
                 resamp_object = sfftifier.PixA_resamp_object
-                psf_target = sfftifier.PSF_target
 
             # Repeat code from SFFT here because these arrays aren't saved in SFFT
             LYMASK_BKG = sfftifier.op.logical_or(
-                sfftifier.PixA_target_DMASK == 0,
-                sfftifier.PixA_resamp_object_DMASK < 0.1
+                sfftifier.PixA_target_DMASK == 0, sfftifier.PixA_resamp_object_DMASK < 0.1
             )
 
             NaNmask_target = sfftifier.op.isnan(target)
@@ -488,19 +485,17 @@ class Pipeline:
 
             if sfftifier.CROSS_CONVOLVED:
                 simple_diff = sfftifier.op.asnumpy(
-                    sfftifier.op.transpose_if_needed(
-                        sfftifier.PixA_Ctarget - sfftifier.PixA_Cresamp_object
-                    )
+                    sfftifier.op.transpose_if_needed(sfftifier.PixA_Ctarget - sfftifier.PixA_Cresamp_object)
                 )
             else:
                 simple_diff = sfftifier.op.asnumpy(
-                    sfftifier.op.transpose_if_needed(
-                        sfftifier.PixA_target - sfftifier.PixA_resamp_object
-                    )
+                    sfftifier.op.transpose_if_needed(sfftifier.PixA_target - sfftifier.PixA_resamp_object)
                 )
 
             fits.writeto(self.simple_diff_path, simple_diff, header=sfftifier.hdr_target, overwrite=True)
             fits.writeto(
-                self.diff_path, sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_DIFF)), header=sfftifier.hdr_target, overwrite=True
+                self.diff_path,
+                sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_DIFF)),
+                header=sfftifier.hdr_target,
+                overwrite=True,
             )
-
