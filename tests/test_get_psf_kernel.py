@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from snappl.image import FITSImageOnDisk, RomanDatamodelImage
+from snappl.image import RomanDatamodelImage
 
 from sidecar import subtraction
 
@@ -13,6 +13,7 @@ testdata = [
     ("STPSF", None,),
     ("STPSF", 23),
 ]
+
 
 @pytest.mark.parametrize("psf_type,psf_size", testdata)
 def test_get_psf_kernel(psf_type, psf_size):
