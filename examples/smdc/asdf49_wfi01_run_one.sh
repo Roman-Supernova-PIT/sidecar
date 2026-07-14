@@ -1,6 +1,6 @@
-cd /home/sidecar; pip install -e . --no-deps
 cd /home/snappl; pip install -e .
-cd /home/sfft; pip install -e . --no-deps
+cd /home/sfft; pip install -e .
+cd /home/sidecar; pip install -e . --no-deps
 cd /home
 
 # Can't reject known stars because we don't have a star catalog
@@ -18,6 +18,7 @@ python \
     --template-band ${band} \
     --template-sca 1 \
     --no-reject-known-stars \
-    --output-dir /snpit_temp/dia_out_dir/test_snappl \
-    --temp-dir /snpit_temp \
+    --output-dir /sidecar_dia_out \
+    --temp-dir /dev/shm \
+    --backend4subtract numpy \
     --save-debug-products

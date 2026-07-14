@@ -4,8 +4,9 @@ cd /home/sfft; pip install -e . --no-deps
 cd /home
 
 # Can't reject known stars because we don't have a star catalog
+# For 99999010010010010010005, only F062 exists, so F106 and F158 will fail
 for obsid in 99999010010010010010002 99999010010010010010003 99999010010010010010004 99999010010010010010005; do
-  for band in F106 F158; do
+  for band in F062 F106 F158; do
     python \
       /home/sidecar/sidecar/pipeline.py  \
       --image-collection snpitdb \
@@ -18,7 +19,8 @@ for obsid in 99999010010010010010002 99999010010010010010003 9999901001001001001
       --template-band ${band} \
       --template-sca 1 \
       --no-reject-known-stars \
-      --output-dir /snpit_temp/dia_out_dir/test_snappl \
-      --temp-dir /snpit_temp
+      --output-dir /sidecar_dia_out \
+      --temp-dir /dev/shm \
+      --backend4subtract numpy
   done
 done

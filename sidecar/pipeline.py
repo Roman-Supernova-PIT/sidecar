@@ -52,7 +52,9 @@ class Detection:
     REJECT_MATCH_RADIUS = 5 * u.arcsec
 
     # file prefix
-    DIFF_IMAGE_PREFIX = "decorr_diff_"
+    SIMPLE_DIFF_IMAGE_PREFIX = "simple_diff_"
+    DIFF_IMAGE_PREFIX = "diff_"
+    DECORR_DIFF_IMAGE_PREFIX = "decorr_diff_"
     DIFF_SCORE_PREFIX = "score_"
     DIFF_DETECTION_PREFIX = "detection_"
     SCORE_DETECTION_PREFIX = "score_detection_"
@@ -72,11 +74,17 @@ class Detection:
         self,
         image_collection,
         data_records,
+        psf_type="STPSF",
+        psf_size=None,
         reject_known_stars=True,
         cross_convolve=False,
+        backend4subtract=None,
+        save_debug_products=False,
+        save_candidates_to_database=False,
+        threshold=None,
+        threshold_column="peak_value",
         temp_dir=None,
         output_dir=None,
-        backend4subtract=None,
         verbose=False,
     ):
         SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
@@ -98,8 +106,15 @@ class Detection:
 
         self.image_collection = image_collection
         self.data_records = data_records
+        self.psf_type = psf_type
+        self.psf_size = psf_size
         self.reject_known_stars = reject_known_stars
         self.cross_convolve = cross_convolve
+
+        self.save_debug_products = save_debug_products
+        self.save_candidates_to_database = save_candidates_to_database
+        self.threshold = threshold
+        self.threshold_column = threshold_column
 
         if temp_dir is not None:
             self.temp_dir = temp_dir
@@ -273,6 +288,10 @@ class Detection:
             file_path["template_image_path"] = self.image_collection.get_image(**template_id).path
 
         # subtraction
+        file_path["simple_difference_image_path"] = Path(
+            file_path["full_output_dir"],
+            self.SIMPLE_DIFF_IMAGE_PREFIX + diff_pattern + ".fits",
+        )
         file_path["difference_image_path"] = Path(
             file_path["full_output_dir"],
             self.DIFF_IMAGE_PREFIX + diff_pattern + ".fits",
@@ -350,9 +369,11 @@ class Detection:
         template_band,
         template_observation_id,
         template_sca,
-        temp_dir,
         science_image_path=None,
         template_image_path=None,
+        psf_type="STPSF",
+        psf_size=None,
+        temp_dir=None,
         reject_known_stars=True,
         cross_convolve=False,
         backend4subtract="Cupy",
@@ -387,15 +408,18 @@ class Detection:
             science_image_path=science_image_path,
             template_image_path=template_image_path,
             cross_convolve=self.cross_convolve,
+            psf_type=psf_type,
+            psf_size=psf_size,
             temp_dir=temp_dir,
             out_dir=file_path["full_output_dir"],
             backend4subtract=backend4subtract,
+            save_debug_products=self.save_debug_products,
         )
         subtract.run()
 
         SNLogger.info("Processing detection")
         source_detection.detect(
-            file_path["difference_image_path"],
+            file_path["simple_difference_image_path"],
             file_path["difference_detection_path"],
             source_extractor_executable=self.SOURCE_EXTRACTOR_EXECUTABLE,
             detection_config=self.DETECTION_CONFIG,
@@ -408,6 +432,31 @@ class Detection:
             file_path["score_image_path"],
             file_path["score_detection_path"],
         )
+
+        if self.save_candidates_to_database:
+            catalog_path = (
+                file_path["cleaned_score_detection_path"]
+                if reject_known_stars
+                else file_path["score_detection_path"]
+            )
+            if catalog_path.exists():
+                save_dia_objects_from_subtraction(
+                    dia_source_catalog_path=str(catalog_path),
+                    science_observation_id=science_observation_id,
+                    science_sca=science_sca,
+                    science_band=science_band,
+                    image_collection=image_collection,
+                    diaobject_provenance_tag=self.config.value("photometry.sidecar.diaobject_provenance_tag"),
+                    diaobject_process=self.config.value("photometry.sidecar.diaobject_process"),
+                    threshold=self.threshold
+                    if self.threshold is not None
+                    else self.config.value("photometry.sidecar.candidate.threshold"),
+                    threshold_column=self.threshold_column
+                    if self.threshold_column is not None
+                    else self.config.value("photometry.sidecar.candidate.threshold_column"),
+                )
+            else:
+                SNLogger.warning(f"Skipping database save; catalog not found: {catalog_path}")
 
         if reject_known_stars:
             truth = self.__class__.retrieve_truth(
@@ -571,6 +620,8 @@ class Detection:
                 row["template_sca"],
                 science_image_path=row.get("science_image_path") or None,
                 template_image_path=row.get("template_image_path") or None,
+                psf_type=self.psf_type,
+                psf_size=self.psf_size,
                 temp_dir=temp_dir,
                 reject_known_stars=self.reject_known_stars,
                 backend4subtract=self.backend4subtract,
@@ -646,7 +697,7 @@ def main():
             "help to show you all config options that can be passed on the command line."
         )
 
-    parser = argparse.ArgumentParser(description=desc)
+    parser = argparse.ArgumentParser(description=desc, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     # The --config argument will have been consumed by configparser above, and
     #   but include it so it shows up with --help.
@@ -727,6 +778,18 @@ def main():
         help="Specify an image by template band.  This is optional and will default to --science-band",
     )
     parser.add_argument(
+        "--psf-type",
+        type=str,
+        default="STPSF",
+        help="Type of PSF to use.  Name must be known to snappl.psf.",
+    )
+    parser.add_argument(
+        "--psf-size",
+        type=int,
+        default=None,
+        help="Define size of PSF stamp to be psf-size x psf-size.",
+    )
+    parser.add_argument(
         "--reject-known-stars",
         default=True,
         action=argparse.BooleanOptionalAction,
@@ -737,6 +800,12 @@ def main():
     )
     parser.add_argument("-t", "--temp-dir", type=str, default=None, help="Temporary directory.")
     parser.add_argument("-o", "--output-dir", type=str, default=None, help="Output path")
+    parser.add_argument(
+        "--save-debug-products",
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        help="Save intermediate debug FITS products to out_dir",
+    )
     parser.add_argument(
         "--save-candidates-to-database",
         default=False,
@@ -837,11 +906,17 @@ def main():
     detection = Detection(
         image_collection=image_collection,
         data_records=data_records,
+        psf_type=args.psf_type,
+        psf_size=args.psf_size,
         reject_known_stars=args.reject_known_stars,
         temp_dir=args.temp_dir,
         output_dir=args.output_dir,
         backend4subtract=args.backend4subtract,
         cross_convolve=args.cross_convolve,
+        save_debug_products=args.save_debug_products,
+        save_candidates_to_database=args.save_candidates_to_database,
+        threshold=args.threshold,
+        threshold_column=args.threshold_column,
     )
     detection.run_subtractions()
 
