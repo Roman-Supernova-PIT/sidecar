@@ -314,6 +314,20 @@ class Pipeline:
                 **{"band": template_band, "observation_id": template_observation_id, "sca": template_sca},
             )
 
+        # Mild hack/potentially unexpected, if you set observation_id, band, it will overwride
+        if science_band is not None:
+            self.science_image.band = science_band
+        if science_observation_id is not None:
+            self.science_image.observation_id = science_observation_id
+        if science_sca is not None:
+            self.science_image.sca = science_sca
+        if template_band is not None:
+            self.template_image.band = template_band
+        if template_observation_id is not None:
+            self.template_image.observation_id = template_observation_id
+        if template_sca is not None:
+            self.template_image.sca = template_sca
+
         self.diff_pattern = (
             f"{self.science_image.band}_{self.science_image.observation_id}_{self.science_image.sca}"
             f"_-_{self.template_image.band}_{self.template_image.observation_id}_{self.template_image.sca}"
