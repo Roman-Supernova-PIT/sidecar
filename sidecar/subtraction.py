@@ -23,17 +23,17 @@ from snappl.psf import PSF
 bad_pixel_flags = 2 ** len(dqflags.pixel) - 1 - dqflags.pixel.WARM - dqflags.pixel.LOW_QE
 
 
-def interpolate_over_bad_pixels(image, bad_pixel_flags=bad_pixel_flags, fill_value=0):
+def interpolate_over_bad_pixels(data, flags, bad_pixel_flags=bad_pixel_flags):
     """Interpolate over bad pixels in an image.
 
     Parameters
     ----------
-    image : object
-        Input image object containing `data` and `flags` arrays.
+    data : ndarray
+        Input image data.
+    flags : ndarray
+        Image flags indicating bad pixels.
     bad_pixel_flags : int, optional
         Bitwise combination of DQ flags used to identify bad pixels.
-    fill_value : float, optional
-        Value to use for filling bad pixels if interpolation is not possible. Default is 0.
 
     Returns
     -------
@@ -51,16 +51,16 @@ def interpolate_over_bad_pixels(image, bad_pixel_flags=bad_pixel_flags, fill_val
     (e.g., using neighboring pixel values), depending on the implementation.
     """
     # Create a mask of bad pixels based on the flags
-    bad_mask = image.flags & bad_pixel_flags > 0
+    bad_mask = flags & bad_pixel_flags > 0
 
-    interpolated_data = image.data.copy()
+    interpolated_data = data.copy()
     interpolated_data[bad_mask] = np.nan  # Mark bad pixels as NaN for interpolation
 
     # Example interpolation using nearest neighbor
-    x, y = np.indices(image.data.shape)
+    x, y = np.indices(data.shape)
     good_pixels = ~bad_mask
     interpolated_data[bad_mask] = griddata(
-        (x[good_pixels], y[good_pixels]), image.data[good_pixels], (x[bad_mask], y[bad_mask]), method="nearest"
+        (x[good_pixels], y[good_pixels]), data[good_pixels], (x[bad_mask], y[bad_mask]), method="nearest"
     )
 
     return interpolated_data, bad_mask
@@ -204,13 +204,37 @@ def make_minimal_wcs_header(image):
 
 
 def _save_products_as_fits(path, hdr, data, noise, flags, mask):
+    """Save products as a FITS file with multiple HDUs.
+
+    data: 2D ndarray
+        2D array of the image data
+    noise: 2D ndarray
+        2D array of the noise data.
+        Will check to see if this is a 16-bit float array, and if so promote to 32-bit float.
+        Will otherwise leave alone, so 32-bit or 64-bit float arrays will be kept,
+        but also 16-bit int or 32-bit int will be saved as is.
+    flags: 2D ndarray of the flags data
+    mask: 2D ndarray of the detection mask
+        Written as uint8 array
+    """
+
+    # Handle types.  Make copies if we change something, so we don't modify the passed-in array
+    # but views if we don't modify are fine.
+    # Noise array from romancal L2 is 16-bit float so let's check for that and recast to 32-bit float
+    if noise.dtype == np.float16:
+        noise_standardized = noise.astype(np.float32)
+    else:
+        noise_standardized = noise
+    # Make sure the mask is interpreted as an unsigned 8-bit integer array
+    mask_standardized = mask.astype(np.uint8)
+
     hdul = fits.HDUList(
         [
             fits.PrimaryHDU(data=None, header=hdr),
             fits.ImageHDU(data=data, name="DATA", header=hdr),
-            fits.ImageHDU(data=noise, name="NOISE", header=hdr),
+            fits.ImageHDU(data=noise_standardized, name="NOISE", header=hdr),
             fits.ImageHDU(data=flags, name="FLAGS", header=hdr),
-            fits.ImageHDU(data=np.asarray(mask, dtype="uint8"), name="MASK", header=hdr),
+            fits.ImageHDU(data=mask_standardized, name="MASK", header=hdr),
         ]
     )
     hdul.writeto(path, overwrite=True)
@@ -290,6 +314,14 @@ class Pipeline:
                 **{"band": template_band, "observation_id": template_observation_id, "sca": template_sca},
             )
 
+        # Mild hack/potentially unexpected, if you set observation_id, it will override
+        # This is needed because as of 2026-07-23, the sims the SN PIT is generating
+        # don't have an observation_id set.
+        if science_observation_id is not None:
+            self.science_image.observation_id = science_observation_id
+        if template_observation_id is not None:
+            self.template_image.observation_id = template_observation_id
+
         self.diff_pattern = (
             f"{self.science_image.band}_{self.science_image.observation_id}_{self.science_image.sca}"
             f"_-_{self.template_image.band}_{self.template_image.observation_id}_{self.template_image.sca}"
@@ -329,10 +361,16 @@ class Pipeline:
         # Interpolate over bad pixels in the science and template images before sky subtraction and source detection.
         # This is to avoid bad pixels in the images being convolved out to look like sources
         self.science_image._data, science_image_interpolated_mask = interpolate_over_bad_pixels(
-            self.science_image, bad_pixel_flags=bad_pixel_flags
+            self.science_image.data, self.science_image.flags, bad_pixel_flags=bad_pixel_flags
         )
         self.template_image._data, template_image_interpolated_mask = interpolate_over_bad_pixels(
-            self.template_image, bad_pixel_flags=bad_pixel_flags
+            self.template_image.data, self.template_image.flags, bad_pixel_flags=bad_pixel_flags
+        )
+        science_noise, _ = interpolate_over_bad_pixels(
+            self.science_image.noise, self.science_image.flags, bad_pixel_flags=bad_pixel_flags
+        )
+        template_noise, _ = interpolate_over_bad_pixels(
+            self.template_image.noise, self.template_image.flags, bad_pixel_flags=bad_pixel_flags
         )
 
         # sky subtraction and source detection
@@ -348,7 +386,7 @@ class Pipeline:
                 path=self.science_debug_path,
                 hdr=science_hdr,
                 data=science_skysubim_data,
-                noise=self.science_image.noise,
+                noise=science_noise,
                 flags=self.science_image.flags,
                 mask=science_detmask_data,
             )
@@ -356,7 +394,7 @@ class Pipeline:
                 path=self.template_debug_path,
                 hdr=template_hdr,
                 data=template_skysubim_data,
-                noise=self.template_image.noise,
+                noise=template_noise,
                 flags=self.template_image.flags,
                 mask=template_detmask_data,
             )
@@ -368,8 +406,8 @@ class Pipeline:
             template_skyrms,
             science_skysubim_data,
             template_skysubim_data,
-            self.science_image.noise,
-            self.template_image.noise,
+            science_noise,
+            template_noise,
             science_detmask_data,
             template_detmask_data,
             science_psf,
