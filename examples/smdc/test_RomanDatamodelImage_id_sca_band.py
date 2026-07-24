@@ -1,5 +1,4 @@
-"""
-Test that we can read band, observation_id, sca from a particular RomandDatamodelImage
+"""Test that we can read band, observation_id, sca from a particular RomandDatamodelImage
 
 You can check this by using less/more/cat/grep to just read the plain text of the ASDF header.
 """
