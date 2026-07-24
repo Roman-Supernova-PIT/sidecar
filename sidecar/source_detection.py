@@ -1,5 +1,3 @@
-import subprocess
-
 from astropy.table import vstack
 from astropy.wcs.utils import pixel_to_skycoord
 from photutils.centroids import centroid_com
@@ -7,41 +5,6 @@ from photutils.detection import find_peaks
 
 from sidecar.util import load_wcs_from_fits
 from snappl.image import FITSImageOnDisk
-
-
-SOURCE_EXTRACTOR_EXECUTABLE = "source-extractor"
-DETECTION_CONFIG = "default.sex"
-DETECTION_PARA = "default.param"
-DETECTION_FILTER = "default.conv"
-
-
-def detect(
-    difference_path,
-    save_path,
-    source_extractor_executable=None,
-    detection_config=None,
-    detection_para=None,
-    detection_filter=None,
-):
-    source_extractor_executable = source_extractor_executable or SOURCE_EXTRACTOR_EXECUTABLE
-    detection_config = detection_config or DETECTION_CONFIG
-    detection_para = detection_para or DETECTION_PARA
-    detection_filter = detection_filter or DETECTION_FILTER
-    detection_cmd = [
-        source_extractor_executable,
-        difference_path,
-        "-c",
-        detection_config,
-        "-PARAMETERS_NAME",
-        detection_para,
-        "-FILTER_NAME",
-        detection_filter,
-        "-CATALOG_NAME",
-        save_path,
-    ]
-    result = subprocess.run(detection_cmd, capture_output=True, text=True)
-
-    return result
 
 
 def score_image_detect(
@@ -56,8 +19,10 @@ def score_image_detect(
 
     Parameters
     ----------
-    score_image_path : str
+    image_path : str
         Path to score image
+    catalog_save_path : str, optional
+        Path to save the detection catalog
     threshold : float
         Signal-to-noise ratio threshold.
     box_size : int
@@ -75,7 +40,7 @@ def score_image_detect(
     -----
     The score image for a subtraction is the equivalent of cross-correlating a
     direct image with its PSF and dividing by the variance.  We then look for
-    for significant peaks to identiy sources.
+    for significant peaks to identify sources.
 
     The searches for positive and negative sources run separately,
     and thus a positive source and a negative source can be found within the

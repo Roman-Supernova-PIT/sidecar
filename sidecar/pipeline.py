@@ -418,13 +418,9 @@ class Detection:
         subtract.run()
 
         SNLogger.info("Processing detection")
-        source_detection.detect(
+        source_detection.score_image_detect(
             file_path["simple_difference_image_path"],
             file_path["difference_detection_path"],
-            source_extractor_executable=self.SOURCE_EXTRACTOR_EXECUTABLE,
-            detection_config=self.DETECTION_CONFIG,
-            detection_para=self.DETECTION_PARA,
-            detection_filter=self.DETECTION_FILTER,
         )
 
         SNLogger.info("Processing score image detection")
