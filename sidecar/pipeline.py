@@ -11,10 +11,10 @@ from astropy.wcs.utils import pixel_to_skycoord
 import astropy.units as u
 
 from sidecar import subtraction
-from sidecar import source_detection
 from sidecar import truth_matching
 from sidecar import truth_retrieval
 from sidecar.database import save_dia_objects_from_subtraction
+from sidecar.source_detection import detect_sources
 from sidecar.util import (
     find_templates_for_observation_ids,
     make_data_records_from_observation_id,
@@ -417,14 +417,14 @@ class Detection:
         )
         subtract.run()
 
-        SNLogger.info("Processing detection")
-        source_detection.score_image_detect(
+        SNLogger.info("Processing diffim detection")
+        detect_sources(
             file_path["simple_difference_image_path"],
             file_path["difference_detection_path"],
         )
 
         SNLogger.info("Processing score image detection")
-        source_detection.score_image_detect(
+        detect_sources(
             file_path["score_image_path"],
             file_path["score_detection_path"],
         )
@@ -470,8 +470,8 @@ class Detection:
                 file_path["difference_detection_path"],
                 self.REJECT_MATCH_RADIUS,
                 file_path["cleaned_difference_detection_path"],
-                x_col="X_IMAGE",
-                y_col="Y_IMAGE",
+                x_col="x_peak",
+                y_col="y_peak",
             )
 
             SNLogger.info("Removing known stars from score image detection")
@@ -546,9 +546,9 @@ class Detection:
             self.MATCH_RADIUS,
             file_path["transients_to_detection_path"],
             file_path["detection_to_transients_path"],
-            x_col="X_IMAGE",
-            y_col="Y_IMAGE",
-            id_col="NUMBER",
+            x_col="x_centroid",
+            y_col="y_centroid",
+            id_col="id",
         )
 
         SNLogger.info("Processing score image detection truth matching")
@@ -573,9 +573,9 @@ class Detection:
                 self.MATCH_RADIUS,
                 file_path["transients_to_cleaned_detection_path"],
                 file_path["cleaned_detection_to_transients_path"],
-                x_col="X_IMAGE",
-                y_col="Y_IMAGE",
-                id_col="NUMBER",
+                x_col="x_centroid",
+                y_col="y_centroid",
+                id_col="id",
             )
 
             SNLogger.info("Processing cleaned score image detection truth matching")

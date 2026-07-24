@@ -7,7 +7,7 @@ from sidecar.util import load_wcs_from_fits
 from snappl.image import FITSImageOnDisk
 
 
-def score_image_detect(
+def detect_sources(
     image_path,
     catalog_save_path=None,
     threshold=10,
@@ -15,12 +15,12 @@ def score_image_detect(
     negative=True,
     overwrite=True,
 ):
-    """Detect based on the peak pixels in the score image.
+    """Detect based on the peak pixels in an image.
 
     Parameters
     ----------
     image_path : str
-        Path to score image
+        Path to the image
     catalog_save_path : str, optional
         Path to save the detection catalog
     threshold : float
@@ -38,10 +38,6 @@ def score_image_detect(
 
     Notes
     -----
-    The score image for a subtraction is the equivalent of cross-correlating a
-    direct image with its PSF and dividing by the variance.  We then look for
-    for significant peaks to identify sources.
-
     The searches for positive and negative sources run separately,
     and thus a positive source and a negative source can be found within the
     same box_size region.
