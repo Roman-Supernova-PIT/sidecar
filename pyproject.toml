@@ -26,7 +26,6 @@ dependencies = [
   "photutils",
   "roman_snpit_snappl>=0.39",
   "sfft-romansnpit>=1.6.4.dev14",
-  "sep",
 ]
 
 license-files = ["LICENSE"]
