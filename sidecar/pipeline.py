@@ -431,9 +431,7 @@ class Detection:
 
         if self.save_candidates_to_database:
             catalog_path = (
-                file_path["cleaned_score_detection_path"]
-                if reject_known_stars
-                else file_path["score_detection_path"]
+                file_path["cleaned_score_detection_path"] if reject_known_stars else file_path["score_detection_path"]
             )
             if catalog_path.exists():
                 save_dia_objects_from_subtraction(
@@ -444,12 +442,16 @@ class Detection:
                     image_collection=image_collection,
                     diaobject_provenance_tag=self.config.value("photometry.sidecar.diaobject_provenance_tag"),
                     diaobject_process=self.config.value("photometry.sidecar.diaobject_process"),
-                    threshold=self.threshold
-                    if self.threshold is not None
-                    else self.config.value("photometry.sidecar.candidate.threshold"),
-                    threshold_column=self.threshold_column
-                    if self.threshold_column is not None
-                    else self.config.value("photometry.sidecar.candidate.threshold_column"),
+                    threshold=(
+                        self.threshold
+                        if self.threshold is not None
+                        else self.config.value("photometry.sidecar.candidate.threshold")
+                    ),
+                    threshold_column=(
+                        self.threshold_column
+                        if self.threshold_column is not None
+                        else self.config.value("photometry.sidecar.candidate.threshold_column")
+                    ),
                 )
             else:
                 SNLogger.warning(f"Skipping database save; catalog not found: {catalog_path}")
@@ -639,12 +641,12 @@ class Detection:
 
     def save_candidates_to_database(self):
         for _, row in self.data_records.iterrows():
-            science_band = row["science_band"],
-            science_observation_id = row["science_observation_id"],
-            science_sca = row["science_sca"],
-            template_band = row["template_band"],
-            template_observation_id = row["template_observation_id"],
-            template_sca = row["template_sca"],
+            science_band = row["science_band"]
+            science_observation_id = row["science_observation_id"]
+            science_sca = row["science_sca"]
+            template_band = row["template_band"]
+            template_observation_id = row["template_observation_id"]
+            template_sca = row["template_sca"]
             science_id = {
                 "band": science_band,
                 "observation_id": science_observation_id,
@@ -824,7 +826,7 @@ def main():
         "--cross-convolve",
         default=False,
         action=argparse.BooleanOptionalAction,
-        help="Whether to cross convolve each image with the other's PSF before subtraction.  Default %(default)."
+        help="Whether to cross convolve each image with the other's PSF before subtraction.  Default %(default).",
     )
     parser.add_argument(
         "--backend4subtract",
