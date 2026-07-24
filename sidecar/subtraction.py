@@ -366,8 +366,12 @@ class Pipeline:
         self.template_image._data, template_image_interpolated_mask = interpolate_over_bad_pixels(
             self.template_image.data, self.template_image.flags, bad_pixel_flags=bad_pixel_flags
         )
-        science_noise, _ = interpolate_over_bad_pixels(self.science_image.noise, self.science_image.flags, bad_pixel_flags=bad_pixel_flags)
-        template_noise, _ = interpolate_over_bad_pixels(self.template_image.noise, self.template_image.flags, bad_pixel_flags=bad_pixel_flags)
+        science_noise, _ = interpolate_over_bad_pixels(
+            self.science_image.noise, self.science_image.flags, bad_pixel_flags=bad_pixel_flags
+        )
+        template_noise, _ = interpolate_over_bad_pixels(
+            self.template_image.noise, self.template_image.flags, bad_pixel_flags=bad_pixel_flags
+        )
 
         # sky subtraction and source detection
         science_skysubim_data, science_detmask_data, science_skyrms = sky_subtract_and_detect(self.science_image)
