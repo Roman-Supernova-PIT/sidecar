@@ -298,7 +298,7 @@ class Detection:
         )
         file_path["difference_detection_path"] = Path(
             file_path["full_output_dir"],
-            self.DIFF_DETECTION_PREFIX + diff_pattern + ".cat",
+            self.DIFF_DETECTION_PREFIX + diff_pattern + ".ecsv",
         )
         file_path["score_image_path"] = Path(
             file_path["full_output_dir"],
