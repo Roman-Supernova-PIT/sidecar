@@ -11,10 +11,10 @@ from astropy.wcs.utils import pixel_to_skycoord
 import astropy.units as u
 
 from sidecar import subtraction
-from sidecar import source_detection
 from sidecar import truth_matching
 from sidecar import truth_retrieval
 from sidecar.database import save_dia_objects_from_subtraction
+from sidecar.source_detection import detect_sources
 from sidecar.util import (
     find_templates_for_observation_ids,
     make_data_records_from_observation_id,
@@ -298,7 +298,7 @@ class Detection:
         )
         file_path["difference_detection_path"] = Path(
             file_path["full_output_dir"],
-            self.DIFF_DETECTION_PREFIX + diff_pattern + ".cat",
+            self.DIFF_DETECTION_PREFIX + diff_pattern + ".ecsv",
         )
         file_path["score_image_path"] = Path(
             file_path["full_output_dir"],
@@ -417,27 +417,21 @@ class Detection:
         )
         subtract.run()
 
-        SNLogger.info("Processing detection")
-        source_detection.detect(
+        SNLogger.info("Processing diffim detection")
+        detect_sources(
             file_path["simple_difference_image_path"],
             file_path["difference_detection_path"],
-            source_extractor_executable=self.SOURCE_EXTRACTOR_EXECUTABLE,
-            detection_config=self.DETECTION_CONFIG,
-            detection_para=self.DETECTION_PARA,
-            detection_filter=self.DETECTION_FILTER,
         )
 
         SNLogger.info("Processing score image detection")
-        source_detection.score_image_detect(
+        detect_sources(
             file_path["score_image_path"],
             file_path["score_detection_path"],
         )
 
         if self.save_candidates_to_database:
             catalog_path = (
-                file_path["cleaned_score_detection_path"]
-                if reject_known_stars
-                else file_path["score_detection_path"]
+                file_path["cleaned_score_detection_path"] if reject_known_stars else file_path["score_detection_path"]
             )
             if catalog_path.exists():
                 save_dia_objects_from_subtraction(
@@ -448,12 +442,16 @@ class Detection:
                     image_collection=image_collection,
                     diaobject_provenance_tag=self.config.value("photometry.sidecar.diaobject_provenance_tag"),
                     diaobject_process=self.config.value("photometry.sidecar.diaobject_process"),
-                    threshold=self.threshold
-                    if self.threshold is not None
-                    else self.config.value("photometry.sidecar.candidate.threshold"),
-                    threshold_column=self.threshold_column
-                    if self.threshold_column is not None
-                    else self.config.value("photometry.sidecar.candidate.threshold_column"),
+                    threshold=(
+                        self.threshold
+                        if self.threshold is not None
+                        else self.config.value("photometry.sidecar.candidate.threshold")
+                    ),
+                    threshold_column=(
+                        self.threshold_column
+                        if self.threshold_column is not None
+                        else self.config.value("photometry.sidecar.candidate.threshold_column")
+                    ),
                 )
             else:
                 SNLogger.warning(f"Skipping database save; catalog not found: {catalog_path}")
@@ -474,8 +472,8 @@ class Detection:
                 file_path["difference_detection_path"],
                 self.REJECT_MATCH_RADIUS,
                 file_path["cleaned_difference_detection_path"],
-                x_col="X_IMAGE",
-                y_col="Y_IMAGE",
+                x_col="x_peak",
+                y_col="y_peak",
             )
 
             SNLogger.info("Removing known stars from score image detection")
@@ -550,9 +548,9 @@ class Detection:
             self.MATCH_RADIUS,
             file_path["transients_to_detection_path"],
             file_path["detection_to_transients_path"],
-            x_col="X_IMAGE",
-            y_col="Y_IMAGE",
-            id_col="NUMBER",
+            x_col="x_centroid",
+            y_col="y_centroid",
+            id_col="id",
         )
 
         SNLogger.info("Processing score image detection truth matching")
@@ -577,9 +575,9 @@ class Detection:
                 self.MATCH_RADIUS,
                 file_path["transients_to_cleaned_detection_path"],
                 file_path["cleaned_detection_to_transients_path"],
-                x_col="X_IMAGE",
-                y_col="Y_IMAGE",
-                id_col="NUMBER",
+                x_col="x_centroid",
+                y_col="y_centroid",
+                id_col="id",
             )
 
             SNLogger.info("Processing cleaned score image detection truth matching")
@@ -643,12 +641,12 @@ class Detection:
 
     def save_candidates_to_database(self):
         for _, row in self.data_records.iterrows():
-            science_band = row["science_band"],
-            science_observation_id = row["science_observation_id"],
-            science_sca = row["science_sca"],
-            template_band = row["template_band"],
-            template_observation_id = row["template_observation_id"],
-            template_sca = row["template_sca"],
+            science_band = row["science_band"]
+            science_observation_id = row["science_observation_id"]
+            science_sca = row["science_sca"]
+            template_band = row["template_band"]
+            template_observation_id = row["template_observation_id"]
+            template_sca = row["template_sca"]
             science_id = {
                 "band": science_band,
                 "observation_id": science_observation_id,
@@ -828,7 +826,7 @@ def main():
         "--cross-convolve",
         default=False,
         action=argparse.BooleanOptionalAction,
-        help="Whether to cross convolve each image with the other's PSF before subtraction.  Default %(default)."
+        help="Whether to cross convolve each image with the other's PSF before subtraction.  Default %(default).",
     )
     parser.add_argument(
         "--backend4subtract",
