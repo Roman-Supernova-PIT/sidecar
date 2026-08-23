@@ -8,13 +8,9 @@ The name "sidecar" (which we could pretend is an acronym for "Supernova Ia DEteC
 
 ## Step 1: Setup Container Environment
 
-This package is compatible with the Roman Supernova PIT environment used to run `phrosty`:
+This package is meant to be run within the Roman Supernova PIT environment.  Follow the appropriate directions on the following page to set up your environment on the system you are running on:
 
-https://github.com/Roman-Supernova-PIT/phrosty/tree/main/examples/perlmutter
-
-Before using `sidecar`, first follow the `phrosty` Perlmutter setup instructions and ensure that you can run `phrosty` interactively. You can stop following `phrosty` instructions at the "Running with the Nsight Profiler" section.
-
-Once `phrosty` is working, return to the same directory where you setup the `phrosty` environment and proceed with Step 2. 
+https://roman-supernova-pit.github.io/snappl/environment.html
 
 ## Step 2: Clone `sidecar`
 
@@ -31,41 +27,102 @@ Once cloning is complete, navigate to the 'sidecar' directory.
 To run the detection pipeline, run the following code in `sidecar` repo of the terminal.
 
 ```
-python sidecar/pipeline.py -d [path of the input file] -o [output directory]
+python sidecar/pipeline.py --image-collection [image collection] --data-records [path of the input file] --output-dir [output directory]
 ```
 
 E.g.,
 
 ```
-python sidecar/pipeline.py -d tests/test_one_data_record.csv -o /dia_out_dir
+python sidecar/pipeline.py --image-collection ou2024 --data-records tests/test_one_data_record.csv --output-dir /dia_out_dir
 ```
+
+Image collection is a string specifying an image collection that snappl knows about.
+E.g., "ou2024", "manual_fits".  This will be used to generate paths for image info (observation_id, sca, band), get the correct objects that know how to load WCS and PSF information.
 
 Note the `/dia_out_dir` only makes sense because we're running in the podman container, where we have bound /dia_out_dir to an output directory.
 
 Can run by specifying the values on the command line
 ```
-python sidecar/pipeline.py --pointing 53526 --sca 1 --band R062 --template-pointing 5044 --template-sca 8 --template-band R062 -o /dia_out_dir
+python sidecar/pipeline.py --image-collection ou2024 --observation-id 53526 --sca 1 --band R062 --template-observation-id 5044 --template-sca 8 --template-band R062 --output-dir /dia_out_dir
 ```
 
-Can also run by just specifying the pointing, sca, band of the science image
+Can also run by just specifying the observation_id, sca, band of the science image
 
 ```
-python sidecar/pipeline.py --pointing 53526 --sca 1 --band R062 -o /dia_out_dir
+python sidecar/pipeline.py --image-collection ou2024 --observation-id 53526 --sca 1 --band R062 --output-dir /dia_out_dir
 ```
 
 or just by passing the image path
 
 ```
 image_path=/dvs_ro/cfs/cdirs/lsst/shared/external/roman-desc-sims/Roman_data/RomanTDS/images/simple_model/R062/53526/Roman_TDS_simple_model_R062_53526_1.fits.gz
-python sidecar/pipeline.py --science-path ${image_path} -o /dia_out_dir
+python sidecar/pipeline.py --image-collection ou2024 --science-path ${image_path} --output-dir /dia_out_dir
 ```
+
+Nov 2025 example
+```
+python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2024 --image-process load_ou2024_image --observation-id 36846 --sca 15 --band H158 --output-dir /dia_out_dir
+```
+
+```
+python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2024 --image-process load_ou2024_image --science-observation-id 35303 --science-sca 8 --science-band H158 --template-observation-id 39140 --template-sca 3 --template-band H158 --output-dir /dia_out_dir
+```
+
+## ASDF The 49 example
+
+After git cloning `sidecar` as above, see `sidecar/examples/perlmutter/asdf49_wfi01_run_one.sh` for an example of running
+
+We need to run on a compute note to make sure we can use all of the GPU memory:
+
+```
+salloc --nodes 1 --qos interactive --time 01:00:00 --constraint gpu --account m4385
+```
+
+Once you get your allocation and have a terminal on the node.
+
+```
+WHICHROMANENV=cuda-dev bash /global/cfs/cdirs/m4385/env/interactive-podman-rknop-dev.sh
+cd /home/sidecar; pip install -e . --no-deps
+cd /home
+```
+
+Then run the subtraction with:
+
+```
+obsid=99999010010010010010002
+band=F106
+python \
+    sidecar/sidecar/pipeline.py  \
+    --image-collection snpitdb \
+    --image-provenance-tag asdf_functional_test \
+    --image-process load_rdm_image \
+    --science-observation-id ${obsid} \
+    --science-band ${band} \
+    --science-sca 1 \
+    --template-observation-id 99999010010010010010001 \
+    --template-band ${band} \
+    --template-sca 1 \
+    --no-reject-known-stars \
+    --output-dir /snpit_temp/dia_out_dir/test_snappl \
+    --temp-dir /snpit_temp
+```
+
+Running simple tests w/o database
+
+For iterative CI testing or just ensuring basic functionality, there are two test scripts that are runnable on NERSC that subtract (1) two FITS files from OU224, and (2) two ASDF files "The 49" set of simulations.
+
+```
+sidecar/examples/perlmutter/test_sidecar_fits_manualou2024.sh
+sidecar/examples/perlmutter/test_sidecar_asdf_manualrdm.sh
+```
+
 
 ## sidecar Workflow
 <img src="workflow.png" alt="Workflow of the detection pipeline." style="width:800px; height:auto;">
 
 - Input: The pipeline takes a `csv` file with 6 required columns. They will be used as data ids to identify science and template images. During running, the pipeline will loop over each row to perform image difference, source detection, truth retrieval, and truth matching.
   ```
-  | science_band | science_pointing | science_sca | template_band | template_pointing | template_sca |
+  | science_band | science_observation_id | science_sca | template_band | template_observation_id | template_sca |
   ```
 - Subtraction: Perform image difference using [SFFT](https://github.com/thomasvrussell/sfft) algorithm.
 - Detection: Perform source detection using [Source-Extractor](https://sextractor.readthedocs.io/en/latest/Introduction.html).

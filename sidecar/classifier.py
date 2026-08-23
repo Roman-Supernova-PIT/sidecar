@@ -21,6 +21,8 @@ Output:
     Added metadata: cnn_threshold, cnn_model, cnn_cutout_size
 """
 
+import glob
+import os
 import numpy as np
 import torch
 import torch.nn as nn
@@ -561,6 +563,293 @@ def process_ecsv_with_predictions(dia_out_dir='../dia_out_dir',
     print(f"Total predictions: {total_processed:,}")
     print(f"Total skipped: {total_skipped:,}")
     print(f"{'='*70}")
+
+
+# ============================================================================
+# ENSEMBLE (Roman-Supernova-PIT/transient-real-bogus on Hugging Face)
+# 6 architecture families x 4 members = 24 models.
+#
+# IMPORTANT: this ensemble was trained with sub-pixel bilinear cutouts and a
+# DOUBLE z-scale normalization (full image, then cutout again) -- see
+# normalize_with_zscale/create_cutout below. Do NOT swap these for
+# normalize_cutout_0_1/extract_cutout_with_padding above; those use plain
+# min-max on an integer-pixel cutout, which is a different convention the
+# ensemble was not trained on and will silently degrade predictions.
+# ============================================================================
+
+REPO_ID = "Roman-Supernova-PIT/transient-real-bogus"
+ALL_FAMILIES = ["DenseNet169", "ResNeXt50", "RegNetY016",
+                 "EfficientNetB0", "ConvNeXtTiny", "DeiTTiny"]
+TIMM_NAMES = {
+    "ResNeXt50": "resnext50_32x4d",
+    "RegNetY016": "regnety_016",
+    "EfficientNetB0": "efficientnet_b0",
+    "ConvNeXtTiny": "convnext_tiny",
+}
+
+
+def normalize_with_zscale(data):
+    """ZScale then min-max to [0, 1]. Matches training_script.py exactly."""
+    from astropy.visualization import ZScaleInterval
+
+    valid_mask = np.isfinite(data)
+    if not np.any(valid_mask):
+        return np.zeros_like(data)
+    zscale = ZScaleInterval()
+    try:
+        vmin, vmax = zscale.get_limits(data[valid_mask])
+        if vmax > vmin:
+            normalized = np.clip((data - vmin) / (vmax - vmin), 0, 1)
+        else:
+            normalized = np.zeros_like(data)
+        normalized[~valid_mask] = 0
+    except Exception:
+        if data.max() > data.min():
+            normalized = (data - data.min()) / (data.max() - data.min())
+        else:
+            normalized = np.zeros_like(data)
+    return normalized.astype(np.float32)
+
+
+def create_cutout(data, center_y, center_x, cutout_size=64):
+    """Square cutout centered at (center_y, center_x), sub-pixel-aware
+    (bilinear interpolation), zero-padded at edges."""
+    half_size = cutout_size // 2
+    y_start = center_y - half_size
+    x_start = center_x - half_size
+    y_coords = np.arange(cutout_size) + y_start
+    x_coords = np.arange(cutout_size) + x_start
+
+    cutout = np.zeros((cutout_size, cutout_size), dtype=data.dtype)
+    max_y, max_x = data.shape[0] - 1, data.shape[1] - 1
+
+    for i in range(cutout_size):
+        for j in range(cutout_size):
+            y_pos, x_pos = y_coords[i], x_coords[j]
+            if 0 <= y_pos <= max_y - 1 and 0 <= x_pos <= max_x - 1:
+                y_floor, x_floor = int(np.floor(y_pos)), int(np.floor(x_pos))
+                y_ceil, x_ceil = min(max_y, y_floor + 1), min(max_x, x_floor + 1)
+                y_floor, x_floor = max(0, min(max_y, y_floor)), max(0, min(max_x, x_floor))
+                dy, dx = y_pos - y_floor, x_pos - x_floor
+                try:
+                    cutout[i, j] = (data[y_floor, x_floor] * (1 - dy) * (1 - dx) +
+                                     data[y_ceil, x_floor] * dy * (1 - dx) +
+                                     data[y_floor, x_ceil] * (1 - dy) * dx +
+                                     data[y_ceil, x_ceil] * dy * dx)
+                except IndexError:
+                    safe_y = max(0, min(max_y, int(round(y_pos))))
+                    safe_x = max(0, min(max_x, int(round(x_pos))))
+                    cutout[i, j] = data[safe_y, safe_x]
+            elif 0 <= y_pos <= max_y and 0 <= x_pos <= max_x:
+                safe_y = max(0, min(max_y, int(round(y_pos))))
+                safe_x = max(0, min(max_x, int(round(x_pos))))
+                cutout[i, j] = data[safe_y, safe_x]
+
+    return cutout
+
+
+def load_fits_2d_ensemble(fits_path):
+    """Read a 2D image from a FITS file, preferring the DATA/SCI extension
+    (decorr_diff_*.fits keeps the image there, not in PRIMARY -- hdul[0].data
+    is None for these files, unlike the plain hdul[0].data reads above)."""
+    with fits.open(fits_path) as hdul:
+        data = None
+        for ext_name in ("DATA", "SCI"):
+            if ext_name in hdul:
+                data = hdul[ext_name].data
+                break
+        if data is None:
+            for hdu in hdul:
+                if hdu.data is not None:
+                    data = hdu.data
+                    break
+        if data is None:
+            raise ValueError(f"No image data found in {fits_path}")
+        data = np.asarray(data, dtype=np.float64).copy()
+    if data.ndim > 2:
+        data = data[0] if data.ndim == 3 else data.squeeze()
+    return np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+def to_model_input(cutout_2d):
+    return torch.from_numpy(cutout_2d).float().unsqueeze(0).repeat(3, 1, 1)
+
+
+class TimmClassifier(nn.Module):
+    def __init__(self, model_name, num_classes=1, dropout=0.3):
+        super().__init__()
+        import timm
+        self.backbone = timm.create_model(model_name, pretrained=False,
+                                           num_classes=0, global_pool="avg")
+        nf = self.backbone.num_features
+        self.classifier = nn.Sequential(
+            nn.Linear(nf, 256), nn.ReLU(), nn.Dropout(dropout), nn.Linear(256, num_classes))
+
+    def forward(self, x):
+        return torch.sigmoid(self.classifier(self.backbone(x))).squeeze(1)
+
+
+class DeiTClassifier(nn.Module):
+    def __init__(self, num_classes=1):
+        super().__init__()
+        import timm
+        self.deit = timm.create_model("deit_tiny_patch16_224", pretrained=False,
+                                       num_classes=0, img_size=64)
+        nf = self.deit.num_features
+        self.classifier = nn.Sequential(
+            nn.Linear(nf, 256), nn.ReLU(), nn.Dropout(0.3), nn.Linear(256, num_classes))
+
+    def forward(self, x):
+        return torch.sigmoid(self.classifier(self.deit(x))).squeeze(1)
+
+
+def build_ensemble_model(family):
+    if family == "DenseNet169":
+        return densenet169(num_classes=1)  # reuses this file's existing DenseNet
+    if family == "DeiTTiny":
+        return DeiTClassifier()
+    return TimmClassifier(TIMM_NAMES[family])
+
+
+def family_is_cached(model_dir, family):
+    return len(glob.glob(os.path.join(model_dir, family, f"{family}_Ensemble_Model*_best.pth"))) == 4
+
+
+def ensure_models_downloaded(model_dir, families):
+    missing = [fam for fam in families if not family_is_cached(model_dir, fam)]
+    if not missing:
+        return model_dir
+    from huggingface_hub import snapshot_download
+    patterns = ["README.md"] + [p for fam in missing for p in (f"{fam}/*.pth", f"{fam}/README.md")]
+    return snapshot_download(repo_id=REPO_ID, local_dir=model_dir, allow_patterns=patterns)
+
+
+def load_ensemble(model_dir, families, device):
+    """Download (if needed) + load every requested family.
+    Returns dict {family_name: [models]}."""
+    model_dir = ensure_models_downloaded(model_dir, families)
+    family_models = {}
+    for fam in families:
+        models = []
+        for path in sorted(glob.glob(os.path.join(model_dir, fam, f"{fam}_Ensemble_Model*_best.pth"))):
+            model = build_ensemble_model(fam).to(device)
+            ckpt = torch.load(path, map_location=device)
+            model.load_state_dict(ckpt["model_state_dict"])
+            model.eval()
+            models.append(model)
+        if models:
+            family_models[fam] = models
+    if not family_models:
+        raise RuntimeError("No models loaded -- check model_dir / families")
+    return family_models
+
+
+def predict_ensemble(family_models, cutout_2d_normalized, device):
+    """"Ensemble of ensembles": each family's members are averaged into one
+    per-family score, then the final score is the mean of those per-family
+    scores. Returns (per_family_mean: dict, overall_mean: float, overall_std: float).
+    overall_std is the spread across ALL individual model outputs."""
+    x = to_model_input(cutout_2d_normalized).unsqueeze(0).to(device)
+    per_family_mean = {}
+    all_raw = []
+    with torch.no_grad():
+        for fam, models in family_models.items():
+            probs = [m(x).item() for m in models]
+            per_family_mean[fam] = float(np.mean(probs))
+            all_raw.extend(probs)
+    overall_mean = float(np.mean(list(per_family_mean.values())))
+    overall_std = float(np.std(all_raw))
+    return per_family_mean, overall_mean, overall_std
+
+
+def process_single_catalog_ensemble(catalog_path, fits_path, output_path,
+                                     model_dir=None, families=None,
+                                     cutout_size=64, threshold=0.5):
+    """Ensemble equivalent of process_single_catalog: makes cutouts on-the-fly
+    (no cutout files saved) and adds real/bogus ensemble predictions to the
+    ECSV catalog, using the 24-model Roman-Supernova-PIT/transient-real-bogus
+    ensemble instead of the single local DenseNet169.
+
+    Parameters
+    ----------
+    catalog_path : str or Path
+        Path to the input ECSV catalog file
+    fits_path : str or Path
+        Path to the corresponding FITS difference image
+    output_path : str or Path
+        Path where the output ECSV with predictions should be saved
+    model_dir : str or Path
+        Where the ensemble weights live (downloaded from Hugging Face on
+        first use, cached and skipped on later calls). Defaults to
+        ~/roman_sn_pit_models.
+    families : list of str
+        Subset of ALL_FAMILIES to use. Defaults to all 6.
+    cutout_size : int
+        Size of cutouts to extract
+    threshold : float
+        Decision threshold on the overall real_bogus_score
+    """
+    if model_dir is None:
+        model_dir = os.path.expanduser("~/roman_sn_pit_models")
+    if families is None:
+        families = ALL_FAMILIES
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    family_models = load_ensemble(model_dir, families, device)
+    families_order = [f for f in families if f in family_models]
+    total_models = sum(len(v) for v in family_models.values())
+
+    data = ascii.read(str(catalog_path), format='ecsv')
+    catalog_type, x_col, y_col, id_col = detect_catalog_type(data)
+
+    normalized_full = normalize_with_zscale(load_fits_2d_ensemble(fits_path))
+    half_size = cutout_size // 2
+
+    per_family_cols = {fam: [] for fam in families_order}
+    scores, stds, preds = [], [], []
+
+    for idx in tqdm(range(len(data)), desc="Scoring (ensemble)"):
+        row = data[idx]
+        try:
+            x_image = float(row[x_col])
+            y_image = float(row[y_col])
+            if x_col in ('X_IMAGE', 'Y_IMAGE'):
+                x_center, y_center = x_image - 1.0, y_image - 1.0
+            else:
+                x_center, y_center = x_image, y_image
+
+            if (x_center < -half_size or x_center >= normalized_full.shape[1] + half_size or
+                    y_center < -half_size or y_center >= normalized_full.shape[0] + half_size):
+                raise ValueError("center outside image bounds")
+
+            cutout = create_cutout(normalized_full, y_center, x_center, cutout_size)
+            cutout = normalize_with_zscale(cutout.astype(np.float32))
+            per_family_mean, overall_mean, overall_std = predict_ensemble(family_models, cutout, device)
+
+            for fam in families_order:
+                per_family_cols[fam].append(per_family_mean[fam])
+            scores.append(overall_mean)
+            stds.append(overall_std)
+            preds.append("real" if overall_mean >= threshold else "bogus")
+
+        except Exception:
+            for fam in families_order:
+                per_family_cols[fam].append(np.nan)
+            scores.append(np.nan)
+            stds.append(np.nan)
+            preds.append("invalid")
+
+    for fam in families_order:
+        data[f"rb_{fam}"] = per_family_cols[fam]
+    data["real_bogus_score"] = scores
+    data["real_bogus_score_std"] = stds
+    data["prediction"] = preds
+    data.meta["real_bogus_threshold"] = threshold
+    data.meta["real_bogus_model_dir"] = str(model_dir)
+    data.meta["real_bogus_n_models"] = total_models
+    data.meta["real_bogus_cutout_size"] = cutout_size
+
+    ascii.write(data, output_path, format='ecsv', overwrite=True)
 
 
 if __name__ == "__main__":

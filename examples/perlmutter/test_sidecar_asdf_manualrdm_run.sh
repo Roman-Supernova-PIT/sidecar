@@ -1,0 +1,16 @@
+cd /home/sfft; pip install -e .
+cd /home/sidecar; pip install -e . --no-deps
+cd /home
+
+base_path=/home/photometry_test_data/asdf_the_49
+template_path=r9999901001001001001_0001_wfi01_f158_cal.asdf
+science_path=r9999901001001001001_0002_wfi01_f158_cal.asdf
+python \
+    sidecar/sidecar/pipeline.py \
+    --image-collection manual_rdm \
+    --base-path ${base_path} \
+    --template-path ${template_path} \
+    --science-path ${science_path} \
+    --no-reject-known-stars \
+    --output-dir ./ \
+    --backend4subtract numpy

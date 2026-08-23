@@ -1,0 +1,1 @@
+Remove source-extractor in favor of photutils.

@@ -19,9 +19,7 @@ def crop_image(image, cr, cc, half_r=50, half_c=50, fill_edge=True, fill_value=n
     c_left = min(half_c, cc)
     c_right = min(half_c, image.shape[1] - 1 - cc)
 
-    image_slice = image[
-        cr - r_left : cr + r_right + 1, cc - c_left : cc + c_right + 1
-    ].copy()
+    image_slice = image[cr - r_left : cr + r_right + 1, cc - c_left : cc + c_right + 1].copy()
 
     if fill_edge:
         cutout = np.full((2 * half_r + 1, 2 * half_c + 1), fill_value)

@@ -24,10 +24,8 @@ dependencies = [
   "numpy",
   "astropy>=3.2",
   "photutils",
-  "roman_snpit_snappl",
-  "snpit_utils",
-  "sfft-romansnpit>=1.6.4.dev6",
-  "sep",
+  "roman_snpit_snappl>=0.39",
+  "sfft-romansnpit>=1.6.4.dev14",
   "tqdm",
   "torch",
 ]

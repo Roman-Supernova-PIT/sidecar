@@ -32,12 +32,7 @@ def radec_to_xy(ra, dec, wcs, frame="fk5"):
 
 
 def xy_in_image(x, y, width, height, offset=0):
-    return (
-        (0 + offset <= x)
-        & (x < width - offset)
-        & (0 + offset <= y)
-        & (y < height - offset)
-    )
+    return (0 + offset <= x) & (x < width - offset) & (0 + offset <= y) & (y < height - offset)
 
 
 def radec_in_image(ra, dec, wcs, width, height, offset=0):
