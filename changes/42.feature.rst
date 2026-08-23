@@ -1,3 +1,5 @@
 Added CNN detection pipeline with ECSV cutout generator and DenseNet inference for transient detection, including comprehensive test suite. In this commit, everything is linter proof.
 
 Everything is now added as one code to sidecar/classifier.py. It will be executed as one package under pipeline.py.
+
+Add real/bogus classification to sidecar/classifier.py, called on-the-fly from pipeline.py's truth-matching step. Uses the 6-architecture, 24-model ensemble from Roman-Supernova-PIT/transient-real-bogus on Hugging Face (downloaded and cached locally) instead of a single local DenseNet169 checkpoint. Removes the standalone CNN_detection_pipeline/, which this supersedes.
