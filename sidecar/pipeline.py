@@ -663,6 +663,15 @@ class Detection:
     def run_match_truth(self):
         os.makedirs(self.output_dir, exist_ok=True)
 
+        # create temporary directory
+        if self.temp_dir is None:
+            temp_dir_obj = tempfile.TemporaryDirectory()
+            temp_dir = Path(temp_dir_obj.name)
+            atexit.register(temp_dir_obj.cleanup)
+        else:
+            temp_dir = Path(self.temp_dir)
+            os.makedirs(temp_dir, exist_ok=True)
+
         for _, row in self.data_records.iterrows():
             self.run_one_match_truth(
                 self.image_collection,
@@ -672,6 +681,8 @@ class Detection:
                 row["template_band"],
                 row["template_observation_id"],
                 row["template_sca"],
+                temp_dir,
+                reject_known_stars=self.reject_known_stars,
             )
 
     def save_candidates_to_database(self):
