@@ -500,6 +500,8 @@ class Detection:
         template_observation_id,
         template_sca,
         temp_dir,
+        science_image_path=None,
+        template_image_path=None,
         reject_known_stars=True,
     ):
         science_id = {
@@ -512,7 +514,9 @@ class Detection:
             "observation_id": template_observation_id,
             "sca": template_sca,
         }
-        file_path = self.path_helper(science_id, template_id)
+        file_path = self.path_helper(
+            science_id, template_id, science_image_path=science_image_path, template_image_path=template_image_path
+        )
 
         SNLogger.info(
             "Processing match truth started for data records "
@@ -682,6 +686,8 @@ class Detection:
                 row["template_observation_id"],
                 row["template_sca"],
                 temp_dir,
+                science_image_path=row.get("science_image_path") or None,
+                template_image_path=row.get("template_image_path") or None,
                 reject_known_stars=self.reject_known_stars,
             )
 
