@@ -28,6 +28,8 @@ dependencies = [
   "sfft-romansnpit>=1.6.4.dev14",
   "tqdm",
   "torch",
+  "huggingface_hub",
+  "timm>=1.0.22",
 ]
 
 license-files = ["LICENSE"]
