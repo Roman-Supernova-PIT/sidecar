@@ -13,6 +13,7 @@ import astropy.units as u
 from sidecar import subtraction
 from sidecar import truth_matching
 from sidecar import truth_retrieval
+from sidecar import classifier
 from sidecar.database import save_dia_objects_from_subtraction
 from sidecar.source_detection import detect_sources
 from sidecar.util import (
@@ -499,6 +500,8 @@ class Detection:
         template_observation_id,
         template_sca,
         temp_dir,
+        science_image_path=None,
+        template_image_path=None,
         reject_known_stars=True,
     ):
         science_id = {
@@ -511,7 +514,9 @@ class Detection:
             "observation_id": template_observation_id,
             "sca": template_sca,
         }
-        file_path = self.path_helper(science_id, template_id)
+        file_path = self.path_helper(
+            science_id, template_id, science_image_path=science_image_path, template_image_path=template_image_path
+        )
 
         SNLogger.info(
             "Processing match truth started for data records "
@@ -519,12 +524,19 @@ class Detection:
             f"| Template ID {template_id} "
         )
 
-        science_image = image_collection.get_image(
-            **{"band": science_band, "observation_id": science_observation_id, "sca": science_sca},
-        )
-        template_image = image_collection.get_image(
-            **{"band": template_band, "observation_id": template_observation_id, "sca": template_sca},
-        )
+        if science_image_path is not None:
+            science_image = image_collection.get_image(path=science_image_path)
+        else:
+            science_image = image_collection.get_image(
+                **{"band": science_band, "observation_id": science_observation_id, "sca": science_sca},
+            )
+
+        if template_image_path is not None:
+            template_image = image_collection.get_image(path=template_image_path)
+        else:
+            template_image = image_collection.get_image(
+                **{"band": template_band, "observation_id": template_observation_id, "sca": template_sca},
+            )
 
         SNLogger.info("Processing truth retrieval")
         try:
@@ -538,6 +550,19 @@ class Detection:
         except FileNotFoundError as e:
             SNLogger.info("Unable to retrieve truth catalog.  No star rejection or matching performed.")
             print(e)
+
+            # TEMPORARY: bypass star rejection (requires truth) and run the classifier
+            # directly on the raw score detections. Revert this block once truth
+            # catalogs are available / no longer needed for this run.
+            SNLogger.info("Adding ML classifier predictions to score detection catalog (no truth available)")
+            classifier.process_single_catalog_ensemble(
+                catalog_path=file_path["score_detection_path"],
+                fits_path=file_path["difference_image_path"],
+                output_path=file_path["score_detection_path"].parent /
+                            f"{file_path['score_detection_path'].stem}_with_predictions.ecsv",
+                cutout_size=64,
+                threshold=0.5,
+            )
             return
 
         SNLogger.info("Processing diffim detection truth matching")
@@ -551,6 +576,40 @@ class Detection:
             x_col="x_centroid",
             y_col="y_centroid",
             id_col="id",
+        )
+
+        SNLogger.info("Processing cleaned diffim detection truth matching")
+        _, _ = self.__class__.match_transients(
+            truth,
+            file_path["difference_image_path"],
+            file_path["cleaned_difference_detection_path"],
+            self.MATCH_RADIUS,
+            file_path["transients_to_cleaned_detection_path"],
+            file_path["cleaned_detection_to_transients_path"],
+            x_col="X_IMAGE",
+            y_col="Y_IMAGE",
+            id_col="NUMBER",
+        )
+
+        SNLogger.info("Removing known stars from score image detection")
+        _ = self.__class__.reject_stars(
+            truth,
+            file_path["difference_image_path"],
+            file_path["score_detection_path"],
+            self.REJECT_MATCH_RADIUS,
+            file_path["cleaned_score_detection_path"],
+            x_col="x_peak",
+            y_col="y_peak",
+        )
+
+        SNLogger.info("Adding ML classifier predictions to cleaned score detection catalog")
+        classifier.process_single_catalog_ensemble(
+            catalog_path=file_path["cleaned_score_detection_path"],
+            fits_path=file_path["difference_image_path"],
+            output_path=file_path["cleaned_score_detection_path"].parent /
+                        f"{file_path['cleaned_score_detection_path'].stem}_with_predictions.ecsv",
+            cutout_size=64,
+            threshold=0.5,
         )
 
         SNLogger.info("Processing score image detection truth matching")
@@ -628,6 +687,15 @@ class Detection:
     def run_match_truth(self):
         os.makedirs(self.output_dir, exist_ok=True)
 
+        # create temporary directory
+        if self.temp_dir is None:
+            temp_dir_obj = tempfile.TemporaryDirectory()
+            temp_dir = Path(temp_dir_obj.name)
+            atexit.register(temp_dir_obj.cleanup)
+        else:
+            temp_dir = Path(self.temp_dir)
+            os.makedirs(temp_dir, exist_ok=True)
+
         for _, row in self.data_records.iterrows():
             self.run_one_match_truth(
                 self.image_collection,
@@ -637,6 +705,10 @@ class Detection:
                 row["template_band"],
                 row["template_observation_id"],
                 row["template_sca"],
+                temp_dir,
+                science_image_path=row.get("science_image_path") or None,
+                template_image_path=row.get("template_image_path") or None,
+                reject_known_stars=self.reject_known_stars,
             )
 
     def save_candidates_to_database(self):
