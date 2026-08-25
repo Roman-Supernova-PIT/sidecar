@@ -694,7 +694,7 @@ class DeiTClassifier(nn.Module):
         super().__init__()
         import timm
         self.deit = timm.create_model("deit_tiny_patch16_224", pretrained=False,
-                                       num_classes=0, img_size=64)
+                                       num_classes=0, global_pool="avg", img_size=64)
         nf = self.deit.num_features
         self.classifier = nn.Sequential(
             nn.Linear(nf, 256), nn.ReLU(), nn.Dropout(0.3), nn.Linear(256, num_classes))
