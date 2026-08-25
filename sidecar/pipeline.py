@@ -524,12 +524,19 @@ class Detection:
             f"| Template ID {template_id} "
         )
 
-        science_image = image_collection.get_image(
-            **{"band": science_band, "observation_id": science_observation_id, "sca": science_sca},
-        )
-        template_image = image_collection.get_image(
-            **{"band": template_band, "observation_id": template_observation_id, "sca": template_sca},
-        )
+        if science_image_path is not None:
+            science_image = image_collection.get_image(path=science_image_path)
+        else:
+            science_image = image_collection.get_image(
+                **{"band": science_band, "observation_id": science_observation_id, "sca": science_sca},
+            )
+
+        if template_image_path is not None:
+            template_image = image_collection.get_image(path=template_image_path)
+        else:
+            template_image = image_collection.get_image(
+                **{"band": template_band, "observation_id": template_observation_id, "sca": template_sca},
+            )
 
         SNLogger.info("Processing truth retrieval")
         try:
@@ -543,6 +550,19 @@ class Detection:
         except FileNotFoundError as e:
             SNLogger.info("Unable to retrieve truth catalog.  No star rejection or matching performed.")
             print(e)
+
+            # TEMPORARY: bypass star rejection (requires truth) and run the classifier
+            # directly on the raw score detections. Revert this block once truth
+            # catalogs are available / no longer needed for this run.
+            SNLogger.info("Adding ML classifier predictions to score detection catalog (no truth available)")
+            classifier.process_single_catalog_ensemble(
+                catalog_path=file_path["score_detection_path"],
+                fits_path=file_path["difference_image_path"],
+                output_path=file_path["score_detection_path"].parent /
+                            f"{file_path['score_detection_path'].stem}_with_predictions.ecsv",
+                cutout_size=64,
+                threshold=0.5,
+            )
             return
 
         SNLogger.info("Processing diffim detection truth matching")
