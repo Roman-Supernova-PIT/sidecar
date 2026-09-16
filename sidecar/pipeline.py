@@ -826,7 +826,7 @@ def main():
         "--cross-convolve",
         default=False,
         action=argparse.BooleanOptionalAction,
-        help="Whether to cross convolve each image with the other's PSF before subtraction.  Default %(default).",
+        help="Whether to cross convolve each image with the other's PSF before subtraction.  Default %(default)s.",
     )
     parser.add_argument(
         "--backend4subtract",
