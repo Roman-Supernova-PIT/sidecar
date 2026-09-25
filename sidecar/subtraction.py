@@ -531,9 +531,10 @@ class Pipeline:
                 )
 
             fits.writeto(self.simple_diff_path, simple_diff, header=sfftifier.hdr_target, overwrite=True)
-            fits.writeto(
-                self.diff_path,
-                sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_DIFF)),
-                header=sfftifier.hdr_target,
-                overwrite=True,
-            )
+
+        fits.writeto(
+            self.diff_path,
+            sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_DIFF)),
+            header=sfftifier.hdr_target,
+            overwrite=True,
+        )

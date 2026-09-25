@@ -1,4 +1,4 @@
-template_band,template_pointing,template_sca,science_band,science_pointing,science_sca
+template_band,template_observation_id,template_sca,science_band,science_observation_id,science_sca
 R062,8,8,R062,50470,17
 R062,8,8,R062,51610,17
 R062,8,8,R062,52756,18
