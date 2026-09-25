@@ -1,0 +1,1 @@
+Fix up tests and help message.
