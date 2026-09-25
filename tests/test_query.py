@@ -17,6 +17,7 @@ from sidecar.util import (
 
 _rundir =  Path(__file__).parent.resolve()
 
+
 def test_ra_dec_query():
     ra, dec = 7.55, -44.8
     collection = "snpitdb"

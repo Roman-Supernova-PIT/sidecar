@@ -23,7 +23,7 @@ SNPIT_PHOTOMETRY_TEST_DATA_DIR = os.getenv("SNPIT_PHOTOMETRY_TEST_DATA_DIR")
 
 @pytest.mark.parametrize("psf_type,psf_size", testdata)
 @pytest.mark.skipif(
-    SNPIT_PHOTOMETRY_TEST_DATA_DIR == None,
+    SNPIT_PHOTOMETRY_TEST_DATA_DIR is None,
     reason="Test relies on photometry_test_data",
 )
 def test_get_psf_kernel(psf_type, psf_size):
