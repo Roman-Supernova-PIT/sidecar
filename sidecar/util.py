@@ -349,6 +349,8 @@ def get_observation_id_sca_band_from_image_path(image_path):
     ('52395', 3, 'R062')
     >>> get_observation_id_sca_band_from_image_path("r9999901001001001001_0001_wfi01_f158_cal.asdf")
     ('99999010010010010010001', 1, 'F158')
+    >>> get_observation_id_sca_band_from_image_path("r9999901001001001001_0001_wfi01_f158_cal_tweak.asdf")
+    ('99999010010010010010001', 1, 'F158')
     >>> get_observation_id_sca_band_from_image_path("SNPIT_VISIT602000033_WFI01_F106_L2.asdf")
     ('602000033', 1, 'F106')
 
@@ -365,8 +367,10 @@ def get_observation_id_sca_band_from_image_path(image_path):
             re.IGNORECASE,
         ),
         # RomanTDS simulated catalog / ASDF naming convention.
+        # This also describes the filenames from the Commissioning data
+        # The '.\+' after cal is to allow processing for post-processed images that got extra suffixes added to the filename.
         re.compile(
-            r"[rR]?(?P<observation_id>\d+)_(?P<observation_id_suffix>\d+)_wfi(?P<sca>\d+)_(?P<band>[A-Za-z0-9]+)_cal\.asdf",
+            r"[rR]?(?P<observation_id>\d+)_(?P<observation_id_suffix>\d+)_wfi(?P<sca>\d+)_(?P<band>[A-Za-z0-9]+)_cal.*\.asdf",
             re.IGNORECASE,
         ),
         # RickSims ASDF naming convention.
