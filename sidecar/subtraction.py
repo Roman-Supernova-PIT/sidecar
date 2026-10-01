@@ -20,7 +20,9 @@ from snappl.psf import PSF
 # Data quality flags
 # Set all bits in enum
 # (could just use 2**32 - 1, but using len of dqflags.pixel is in principle more flexible):
-bad_pixel_flags = 2 ** len(dqflags.pixel) - 1 - dqflags.pixel.WARM - dqflags.pixel.LOW_QE
+bad_pixel_flags = (
+    2 ** len(dqflags.pixel) - 1 - dqflags.pixel.WARM - dqflags.pixel.LOW_QE - dqflags.pixel.PERSISTENCE
+)
 
 
 def interpolate_over_bad_pixels(data, flags, bad_pixel_flags=bad_pixel_flags):
