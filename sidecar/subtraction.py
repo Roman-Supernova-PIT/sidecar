@@ -102,6 +102,8 @@ def sky_subtract_and_detect(
         Boolean source detection mask with bad pixels excluded.
     rms : float
         Median background RMS estimated by Background2D.
+    convolved_bad_mask : ndarray
+        Bad pixel mask dilated by bad_mask_radius, as passed to detect_sources.
 
     Notes
     -----
@@ -135,7 +137,7 @@ def sky_subtract_and_detect(
     segment_img = detect_sources(sky_subtracted_data, threshold, npixels=footprint_radius, mask=convolved_bad_mask)
     detmask_data = segment_img.make_source_mask(footprint=detection_footprint)
 
-    return sky_subtracted_data, detmask_data, rms
+    return sky_subtracted_data, detmask_data, rms, convolved_bad_mask
 
 
 def get_psf_kernel(image, psf_type="STPSF", psf_size=None, **kwargs):
@@ -376,8 +378,10 @@ class Pipeline:
         )
 
         # sky subtraction and source detection
-        science_skysubim_data, science_detmask_data, science_skyrms = sky_subtract_and_detect(self.science_image)
-        template_skysubim_data, template_detmask_data, template_skyrms = sky_subtract_and_detect(self.template_image)
+        science_skysubim_data, science_detmask_data, science_skyrms, _ = sky_subtract_and_detect(self.science_image)
+        template_skysubim_data, template_detmask_data, template_skyrms, _ = sky_subtract_and_detect(
+            self.template_image
+        )
 
         # SFFT needs FITS headers with a WCS and with NAXIS[12]
         science_hdr = make_minimal_wcs_header(self.science_image)
