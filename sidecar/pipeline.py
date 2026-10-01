@@ -340,7 +340,7 @@ class Detection:
             file_path["full_output_dir"],
             self.CLEANED_DETECTION_TO_TRANSIENTS_PREFIX + diff_pattern + ".ecsv",
         )
-         file_path["cleaned_simple_difference_detection_path"] = Path(
+        file_path["cleaned_simple_difference_detection_path"] = Path(
             file_path["full_output_dir"],
             self.CLEANED_SIMPLE_DIFF_DETECTION_PREFIX + diff_pattern + ".cat",
         )
