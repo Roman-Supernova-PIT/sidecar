@@ -506,13 +506,13 @@ class Pipeline:
 
             fits.writeto(
                 self.mask_cresamp_template_path,
-                sfftifier.op.asnumpy(PixA_mCresamp_object),
+                sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(PixA_mCresamp_object)),
                 header=sfftifier.hdr_target,
                 overwrite=True,
             )
             fits.writeto(
                 self.mask_ctarget_science_path,
-                sfftifier.op.asnumpy(PixA_mCtarget),
+                sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(PixA_mCtarget)),
                 header=sfftifier.hdr_target,
                 overwrite=True,
             )
