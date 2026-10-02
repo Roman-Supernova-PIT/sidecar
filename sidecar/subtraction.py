@@ -453,10 +453,14 @@ class Pipeline:
         fits.writeto(self.score_image_path, score_image, header=sfftifier.hdr_target, overwrite=True)
         fits.writeto(self.decorr_psf_path, decorr_psf, header=None, overwrite=True)
 
+        fits.writeto(
+            self.diff_path,
+            sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_DIFF)),
+            header=sfftifier.hdr_target,
+            overwrite=True,
+        )
+
         if self.save_debug_products:
-            fits.writeto(
-                self.diff_path, sfftifier.op.asnumpy(sfftifier.PixA_DIFF), header=sfftifier.hdr_target, overwrite=True
-            )
             fits.writeto(
                 self.resamp_template_path,
                 sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_resamp_object)),
@@ -531,10 +535,3 @@ class Pipeline:
                 )
 
             fits.writeto(self.simple_diff_path, simple_diff, header=sfftifier.hdr_target, overwrite=True)
-
-        fits.writeto(
-            self.diff_path,
-            sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_DIFF)),
-            header=sfftifier.hdr_target,
-            overwrite=True,
-        )

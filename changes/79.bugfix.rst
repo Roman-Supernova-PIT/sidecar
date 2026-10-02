@@ -1,0 +1,1 @@
+Fix simple-diff vs diff detection to be consistent with --save-debug-products option.

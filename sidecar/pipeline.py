@@ -56,8 +56,10 @@ class Detection:
     DIFF_IMAGE_PREFIX = "diff_"
     DECORR_DIFF_IMAGE_PREFIX = "decorr_diff_"
     DIFF_SCORE_PREFIX = "score_"
+    SIMPLE_DIFF_DETECTION_PREFIX = "simple_detection_"
     DIFF_DETECTION_PREFIX = "detection_"
     SCORE_DETECTION_PREFIX = "score_detection_"
+    CLEANED_SIMPLE_DIFF_DETECTION_PREFIX = "cleaned_" + SIMPLE_DIFF_DETECTION_PREFIX
     CLEANED_DIFF_DETECTION_PREFIX = "cleaned_" + DIFF_DETECTION_PREFIX
     CLEANED_SCORE_DETECTION_PREFIX = "cleaned_" + SCORE_DETECTION_PREFIX
     DIFF_TRUTH_PREFIX = "truth_"
@@ -292,6 +294,10 @@ class Detection:
             file_path["full_output_dir"],
             self.SIMPLE_DIFF_IMAGE_PREFIX + diff_pattern + ".fits",
         )
+        file_path["simple_difference_detection_path"] = Path(
+            file_path["full_output_dir"],
+            self.SIMPLE_DIFF_DETECTION_PREFIX + diff_pattern + ".ecsv",
+        )
         file_path["difference_image_path"] = Path(
             file_path["full_output_dir"],
             self.DIFF_IMAGE_PREFIX + diff_pattern + ".fits",
@@ -333,6 +339,10 @@ class Detection:
         file_path["cleaned_detection_to_transients_path"] = Path(
             file_path["full_output_dir"],
             self.CLEANED_DETECTION_TO_TRANSIENTS_PREFIX + diff_pattern + ".ecsv",
+        )
+        file_path["cleaned_simple_difference_detection_path"] = Path(
+            file_path["full_output_dir"],
+            self.CLEANED_SIMPLE_DIFF_DETECTION_PREFIX + diff_pattern + ".cat",
         )
         file_path["cleaned_difference_detection_path"] = Path(
             file_path["full_output_dir"],
@@ -417,9 +427,16 @@ class Detection:
         )
         subtract.run()
 
+        if self.save_debug_products:
+            SNLogger.info("Processing simple diffim detection")
+            detect_sources(
+                file_path["simple_difference_image_path"],
+                file_path["simple_difference_detection_path"],
+            )
+
         SNLogger.info("Processing diffim detection")
         detect_sources(
-            file_path["simple_difference_image_path"],
+            file_path["difference_image_path"],
             file_path["difference_detection_path"],
         )
 
@@ -464,6 +481,18 @@ class Detection:
                 file_path["template_truth_path"],
                 file_path["difference_truth_path"],
             )
+
+            if self.save_debug_products:
+                SNLogger.info("Removing known stars from simple diffim image detection")
+                _ = self.__class__.reject_stars(
+                    truth,
+                    file_path["simple_difference_image_path"],
+                    file_path["simple_difference_detection_path"],
+                    self.REJECT_MATCH_RADIUS,
+                    file_path["cleaned_simple_difference_detection_path"],
+                    x_col="x_peak",
+                    y_col="y_peak",
+                )
 
             SNLogger.info("Removing known stars from diffim image detection")
             _ = self.__class__.reject_stars(
