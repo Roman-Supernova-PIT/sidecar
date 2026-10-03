@@ -23,6 +23,7 @@ dependencies = [
   "coverage",
   "numpy",
   "astropy>=3.2",
+  "astroquery",
   "photutils",
   "roman_snpit_snappl>=0.39",
   "sfft-romansnpit>=1.6.4.dev14",

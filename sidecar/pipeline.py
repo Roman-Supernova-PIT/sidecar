@@ -10,6 +10,7 @@ from astropy.table import Table
 from astropy.wcs.utils import pixel_to_skycoord
 import astropy.units as u
 
+from sidecar import star_retrieval
 from sidecar import subtraction
 from sidecar import truth_matching
 from sidecar import truth_retrieval
@@ -63,6 +64,7 @@ class Detection:
     CLEANED_DIFF_DETECTION_PREFIX = "cleaned_" + DIFF_DETECTION_PREFIX
     CLEANED_SCORE_DETECTION_PREFIX = "cleaned_" + SCORE_DETECTION_PREFIX
     DIFF_TRUTH_PREFIX = "truth_"
+    STAR_CATALOG_PREFIX = "gaia_stars_"
     TRANSIENTS_TO_DETECTION_PREFIX = "transients_to_detection_"
     DETECTION_TO_TRANSIENTS_PREFIX = "detection_to_transients_"
     TRANSIENTS_TO_CLEANED_DETECTION_PREFIX = "transients_to_cleaned_detection_"
@@ -208,56 +210,56 @@ class Detection:
         return transients_to_detection, detection_to_transients
 
     @staticmethod
+    def retrieve_stars(science_image, star_catalog_path, max_mag=None):
+        """Retrieve Gaia DR3 stars covering the science image and save them to star_catalog_path."""
+        stars = star_retrieval.retrieve_gaia_stars_for_image(science_image, max_mag=max_mag)
+        stars.write(star_catalog_path, overwrite=True, format="ascii.ecsv")
+        return stars
+
+    @staticmethod
     def reject_stars(
-        truth,
+        stars,
         difference_image_path,
         difference_detection_path,
         match_radius,
         cleaned_difference_detection_path,
-        frame="fk5",
+        frame="icrs",
         x_col="X_IMAGE",
         y_col="Y_IMAGE",
-        bright=10,
     ):
         """Reject stars from subtraction detection catalogs
 
         Parameter
         ---------
-        truth : astropy.table.Table
+        stars : astropy.table.Table
+            Star catalog with 'ra' and 'dec' columns in degrees, e.g., from star_retrieval.
         difference_image_path : str
         difference_detection_path : str
         match_radius : float
             Match radius in arcseconds
         cleaned_difference_detection_path : str
         frame : str
-            astropy.wcs coordinate frame.  E.g., "icrs" or "fk5"
+            astropy.wcs coordinate frame of the star catalog.  E.g., "icrs" or "fk5"
         x_col : str
             Name of column in detection table for x coordinate
         y_col : str
             Name of column in detection table for y coordinate
-        bright : float
-            Minim counts for a star to be considered bright
 
         Return
         ------
         astropy.table.Table :
-            cleaned catalog with matches to bright stars removed.
+            cleaned catalog with matches to stars removed.
         """
         difference_wcs = load_wcs_from_fits(difference_image_path, hdu_id=0)
 
         detection = Table.read(difference_detection_path, format="ascii")
-        star = truth[truth["object_type"] == "star"]
-        bright_star_idx = star["realized_flux"] > bright
-        if sum(bright_star_idx) < 1:
+        if len(stars) < 1:
             cleaned_detection = detection.copy()
         else:
-            bright_star = star[bright_star_idx]
-            bright_star_skycoord = SkyCoord(
-                bright_star["object_ra"], bright_star["object_dec"], frame=frame, unit="deg"
-            )
+            star_skycoord = SkyCoord(stars["ra"], stars["dec"], frame=frame, unit="deg")
             detection_skycoord = pixel_to_skycoord(detection[x_col], detection[y_col], difference_wcs)
             cleaned_detection = truth_matching.skymatch_and_reject(
-                detection, bright_star, detection_skycoord, bright_star_skycoord, match_radius=match_radius
+                detection, stars, detection_skycoord, star_skycoord, match_radius=match_radius
             )
 
         cleaned_detection.write(cleaned_difference_detection_path, overwrite=True, format="ascii.ecsv")
@@ -314,7 +316,12 @@ class Detection:
             file_path["full_output_dir"],
             self.SCORE_DETECTION_PREFIX + diff_pattern + ".ecsv",
         )
-        # truth retrieval
+        # star retrieval
+        file_path["star_catalog_path"] = Path(
+            file_path["full_output_dir"],
+            self.STAR_CATALOG_PREFIX + diff_pattern + ".ecsv",
+        )
+        # truth retrieval (only used for matching to simulated transients)
         file_path["science_truth_path"] = self.INPUT_TRUTH_PATTERN.format(**science_id)
         file_path["template_truth_path"] = self.INPUT_TRUTH_PATTERN.format(**template_id)
         file_path["difference_truth_path"] = Path(
@@ -342,11 +349,11 @@ class Detection:
         )
         file_path["cleaned_simple_difference_detection_path"] = Path(
             file_path["full_output_dir"],
-            self.CLEANED_SIMPLE_DIFF_DETECTION_PREFIX + diff_pattern + ".cat",
+            self.CLEANED_SIMPLE_DIFF_DETECTION_PREFIX + diff_pattern + ".ecsv",
         )
         file_path["cleaned_difference_detection_path"] = Path(
             file_path["full_output_dir"],
-            self.CLEANED_DIFF_DETECTION_PREFIX + diff_pattern + ".cat",
+            self.CLEANED_DIFF_DETECTION_PREFIX + diff_pattern + ".ecsv",
         )
         file_path["cleaned_score_detection_path"] = Path(
             file_path["full_output_dir"],
@@ -446,6 +453,44 @@ class Detection:
             file_path["score_detection_path"],
         )
 
+        if reject_known_stars:
+            SNLogger.info("Retrieving Gaia DR3 stars")
+            stars = self.__class__.retrieve_stars(subtract.science_image, file_path["star_catalog_path"])
+
+            if self.save_debug_products:
+                SNLogger.info("Removing known stars from simple diffim image detection")
+                _ = self.__class__.reject_stars(
+                    stars,
+                    file_path["simple_difference_image_path"],
+                    file_path["simple_difference_detection_path"],
+                    self.REJECT_MATCH_RADIUS,
+                    file_path["cleaned_simple_difference_detection_path"],
+                    x_col="x_peak",
+                    y_col="y_peak",
+                )
+
+            SNLogger.info("Removing known stars from diffim image detection")
+            _ = self.__class__.reject_stars(
+                stars,
+                file_path["difference_image_path"],
+                file_path["difference_detection_path"],
+                self.REJECT_MATCH_RADIUS,
+                file_path["cleaned_difference_detection_path"],
+                x_col="x_peak",
+                y_col="y_peak",
+            )
+
+            SNLogger.info("Removing known stars from score image detection")
+            _ = self.__class__.reject_stars(
+                stars,
+                file_path["difference_image_path"],
+                file_path["score_detection_path"],
+                self.REJECT_MATCH_RADIUS,
+                file_path["cleaned_score_detection_path"],
+                x_col="x_peak",
+                y_col="y_peak",
+            )
+
         if self.save_candidates_to_database:
             catalog_path = (
                 file_path["cleaned_score_detection_path"] if reject_known_stars else file_path["score_detection_path"]
@@ -472,49 +517,6 @@ class Detection:
                 )
             else:
                 SNLogger.warning(f"Skipping database save; catalog not found: {catalog_path}")
-
-        if reject_known_stars:
-            truth = self.__class__.retrieve_truth(
-                subtract.science_image,
-                subtract.template_image,
-                file_path["science_truth_path"],
-                file_path["template_truth_path"],
-                file_path["difference_truth_path"],
-            )
-
-            if self.save_debug_products:
-                SNLogger.info("Removing known stars from simple diffim image detection")
-                _ = self.__class__.reject_stars(
-                    truth,
-                    file_path["simple_difference_image_path"],
-                    file_path["simple_difference_detection_path"],
-                    self.REJECT_MATCH_RADIUS,
-                    file_path["cleaned_simple_difference_detection_path"],
-                    x_col="x_peak",
-                    y_col="y_peak",
-                )
-
-            SNLogger.info("Removing known stars from diffim image detection")
-            _ = self.__class__.reject_stars(
-                truth,
-                file_path["difference_image_path"],
-                file_path["difference_detection_path"],
-                self.REJECT_MATCH_RADIUS,
-                file_path["cleaned_difference_detection_path"],
-                x_col="x_peak",
-                y_col="y_peak",
-            )
-
-            SNLogger.info("Removing known stars from score image detection")
-            _ = self.__class__.reject_stars(
-                truth,
-                file_path["difference_image_path"],
-                file_path["score_detection_path"],
-                self.REJECT_MATCH_RADIUS,
-                file_path["cleaned_score_detection_path"],
-                x_col="x_peak",
-                y_col="y_peak",
-            )
 
         SNLogger.info("Processing subtraction finished.")
 
