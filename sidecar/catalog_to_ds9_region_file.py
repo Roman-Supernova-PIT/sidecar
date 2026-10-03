@@ -6,14 +6,14 @@ from sidecar.util import write_ds9_regions_from_ecsv
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("ecsv_catalog_path", type=str)
-    parser.add_argument("--ds9_region_path", type=str, default=None)
-    parser.add_argument("--peak_value_threshold", type=float, default=100)
-    parser.add_argument("--ra_column", type=str, default="ra")
-    parser.add_argument("--dec_column", type=str, default="dec")
-    parser.add_argument("--peak_value_column", type=str, default="peak_value")
-    parser.add_argument("--radius_arcsec", type=float, default=1.0)
-    parser.add_argument("--coord_system", type=str, default="fk5")
-    parser.add_argument("--region_color", type=str, default="green")
+    parser.add_argument("--ds9-region-path", type=str, default=None)
+    parser.add_argument("--peak-value-threshold", type=float, default=100)
+    parser.add_argument("--ra-column", type=str, default="ra")
+    parser.add_argument("--dec-column", type=str, default="dec")
+    parser.add_argument("--peak-value-column", type=str, default="peak_value")
+    parser.add_argument("--radius-arcsec", type=float, default=1.0)
+    parser.add_argument("--coord-system", type=str, default="fk5")
+    parser.add_argument("--region-color", type=str, default="green")
     args = parser.parse_args()
 
     ds9_region_path = args.ds9_region_path
