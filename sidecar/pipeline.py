@@ -87,6 +87,8 @@ class Detection:
         save_candidates_to_database=False,
         threshold=None,
         threshold_column="peak_value",
+        detection_kwargs=None,
+        input_star_catalog_path=None,
         temp_dir=None,
         output_dir=None,
         verbose=False,
@@ -119,6 +121,10 @@ class Detection:
         self.save_candidates_to_database = save_candidates_to_database
         self.threshold = threshold
         self.threshold_column = threshold_column
+        # Source selection cuts passed to subtraction.sky_subtract_and_detect
+        self.detection_kwargs = detection_kwargs or {}
+        # Text file of Gaia stars to use instead of querying Gaia
+        self.input_star_catalog_path = input_star_catalog_path
 
         if temp_dir is not None:
             self.temp_dir = temp_dir
@@ -431,7 +437,20 @@ class Detection:
             out_dir=file_path["full_output_dir"],
             backend4subtract=backend4subtract,
             save_debug_products=self.save_debug_products,
+            detection_kwargs=self.detection_kwargs,
         )
+
+        # One star catalog serves both source selection for SFFT and rejecting candidates.
+        gaia_mag_limit = self.detection_kwargs.get("gaia_mag_limit", subtraction.DEFAULT_GAIA_MAG_LIMIT)
+        stars = None
+        if reject_known_stars or gaia_mag_limit is not None:
+            if self.input_star_catalog_path is not None:
+                SNLogger.info(f"Reading stars from {self.input_star_catalog_path}")
+                stars = star_retrieval.read_star_catalog(self.input_star_catalog_path)
+            else:
+                SNLogger.info("Retrieving Gaia DR3 stars")
+                stars = self.__class__.retrieve_stars(subtract.science_image, file_path["star_catalog_path"])
+            subtract.detection_kwargs = {**subtract.detection_kwargs, "star_catalog": stars}
         subtract.run()
 
         if self.save_debug_products:
@@ -454,9 +473,6 @@ class Detection:
         )
 
         if reject_known_stars:
-            SNLogger.info("Retrieving Gaia DR3 stars")
-            stars = self.__class__.retrieve_stars(subtract.science_image, file_path["star_catalog_path"])
-
             if self.save_debug_products:
                 SNLogger.info("Removing known stars from simple diffim image detection")
                 _ = self.__class__.reject_stars(
@@ -866,6 +882,63 @@ def main():
         choices=["Cupy", "Numpy", "cupy", "numpy"],
         help="Which backend to use for subtraction",
     )
+    parser.add_argument(
+        "--max-peak",
+        type=float,
+        default=None,
+        help="Exclude sources with peak sky-subtracted pixel value above this from the SFFT matching sources.",
+    )
+    parser.add_argument(
+        "--size-clip-sigma",
+        type=float,
+        default=None,
+        help="Exclude sources whose FWHM differs from the median by more than this many MAD-based sigma.",
+    )
+    parser.add_argument(
+        "--max-ellipticity",
+        type=float,
+        default=None,
+        help="Exclude sources with ellipticity above this.",
+    )
+    parser.add_argument(
+        "--min-separation",
+        type=float,
+        default=None,
+        help="Exclude sources with another detection closer than this many pixels.",
+    )
+    parser.add_argument(
+        "--edge-buffer",
+        type=float,
+        default=None,
+        help="Exclude sources with centroids within this many pixels of the image edge.",
+    )
+    parser.add_argument(
+        "--min-bad-distance",
+        type=float,
+        default=None,
+        help="Exclude sources with any pixel within this many pixels of a bad pixel.",
+    )
+    parser.add_argument(
+        "--gaia-mag-limit",
+        type=lambda s: None if s.lower() == "none" else float(s),
+        default=17.0,
+        help="Exclude sources matching Gaia DR3 stars brighter than this G magnitude from the SFFT matching "
+        "sources.  Use 'none' to disable.",
+    )
+    parser.add_argument(
+        "--gaia-match-radius",
+        type=float,
+        default=5.0,
+        help="Match radius in pixels for --gaia-mag-limit.",
+    )
+    parser.add_argument(
+        "--star-catalog",
+        type=str,
+        default=None,
+        help="Text file (ECSV with ra, dec, phot_g_mean_mag columns) of stars to use for source selection and "
+        "candidate rejection instead of querying Gaia, so no network is needed.  May be empty.  "
+        "Generate with 'python -m sidecar.star_retrieval <image.asdf>'.",
+    )
 
     cfg.augment_argparse(parser)
     args = parser.parse_args(leftovers)
@@ -932,6 +1005,14 @@ def main():
         SNLogger.warning("Stopping.")
         return
 
+    detection_kwargs = {
+        name: getattr(args, name)
+        for name in ("max_peak", "size_clip_sigma", "max_ellipticity", "min_separation", "edge_buffer", "min_bad_distance")
+        if getattr(args, name) is not None
+    }
+    detection_kwargs["gaia_mag_limit"] = args.gaia_mag_limit
+    detection_kwargs["gaia_match_radius"] = args.gaia_match_radius
+
     detection = Detection(
         image_collection=image_collection,
         data_records=data_records,
@@ -946,6 +1027,8 @@ def main():
         save_candidates_to_database=args.save_candidates_to_database,
         threshold=args.threshold,
         threshold_column=args.threshold_column,
+        detection_kwargs=detection_kwargs,
+        input_star_catalog_path=args.star_catalog,
     )
     detection.run_subtractions()
 
