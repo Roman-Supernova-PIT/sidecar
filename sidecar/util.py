@@ -480,13 +480,30 @@ def write_ds9_regions_from_ecsv(
         Filtered `astropy.table.Table` containing only rows with
         `peak_value` greater than `peak_value_threshold`. The returned table
         preserves the original catalog columns in the `ecsv_catalog_path` file.
+
+    Notes
+    -----
+    If peak_value_column is None, "none", or "None";
+    or if peak_value_threshold is None,
+    then all sources are written to the DS9 region file.
     """
     catalog = Table.read(ecsv_catalog_path, format="ascii.ecsv")
-    missing_columns = {ra_column, dec_column, peak_value_column} - set(catalog.colnames)
+
+    # Normalize the CLI-style "none" string once so the rest only checks for None.
+    # if peak_value_column is already None, then this preserves that (by doing nothing).
+    if isinstance(peak_value_column, str) and peak_value_column.lower() == "none":
+        peak_value_column = None
+
+    required_columns = {ra_column, dec_column}
+    if peak_value_column is not None:
+        required_columns.add(peak_value_column)
+    missing_columns = required_columns - set(catalog.colnames)
     if len(missing_columns) > 0:
         raise ValueError(f"Catalog is missing required columns: {sorted(missing_columns)}")
 
-    mask = np.abs(catalog[peak_value_column]) > peak_value_threshold
+    mask = np.ones(len(catalog), dtype=bool)
+    if peak_value_column is not None and peak_value_threshold is not None:
+        mask = np.abs(catalog[peak_value_column]) > peak_value_threshold
 
     with open(ds9_region_path, "w") as region_file:
         region_file.write("# Region file format: DS9 version 4.1\n")
@@ -498,8 +515,11 @@ def write_ds9_regions_from_ecsv(
         for row in catalog[mask]:
             ra = float(row[ra_column])
             dec = float(row[dec_column])
-            peak_value = float(row[peak_value_column])
-            region_file.write(f"circle({ra:.8f}, {dec:.8f}, {radius_arcsec:.3f}\")  # text={{{peak_value:.0f}}}\n")
+            line = f"circle({ra:.8f}, {dec:.8f}, {radius_arcsec:.3f}\")"
+            if peak_value_column is not None:
+                peak_value = float(row[peak_value_column])
+                line += f"  # text={{{peak_value:.0f}}}"
+            region_file.write(line + "\n")
 
     return catalog[mask]
 
