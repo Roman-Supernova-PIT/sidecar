@@ -89,6 +89,9 @@ class Detection:
         threshold_column="peak_value",
         detection_kwargs=None,
         input_star_catalog_path=None,
+        resample_method="bilinear",
+        sfft_kwargs=None,
+        pre_smooth_sigma=None,
         temp_dir=None,
         output_dir=None,
         verbose=False,
@@ -125,6 +128,9 @@ class Detection:
         self.detection_kwargs = detection_kwargs or {}
         # Text file of Gaia stars to use instead of querying Gaia
         self.input_star_catalog_path = input_star_catalog_path
+        self.resample_method = resample_method
+        self.sfft_kwargs = sfft_kwargs or {}
+        self.pre_smooth_sigma = pre_smooth_sigma
 
         if temp_dir is not None:
             self.temp_dir = temp_dir
@@ -434,6 +440,9 @@ class Detection:
             backend4subtract=backend4subtract,
             save_debug_products=self.save_debug_products,
             detection_kwargs=self.detection_kwargs,
+            resample_method=self.resample_method,
+            sfft_kwargs=self.sfft_kwargs,
+            pre_smooth_sigma=self.pre_smooth_sigma,
         )
 
         # One star catalog serves both source selection for SFFT and rejecting candidates.
@@ -927,6 +936,31 @@ def main():
         "Generate with 'python -m sidecar.star_retrieval <image.asdf>'.",
     )
 
+    parser.add_argument(
+        "--resample-method",
+        type=str,
+        default="bilinear",
+        choices=["bilinear", "spline3", "spline5"],
+        help="Interpolation used to warp the template image onto the science grid.  bilinear blurs undersampled "
+        "images, so the SFFT kernel has to sharpen the template; spline3/spline5 preserve sharpness.",
+    )
+    parser.add_argument(
+        "--pre-smooth-sigma",
+        type=float,
+        default=None,
+        help="Gaussian sigma (pixels) to smooth both images and PSFs with before SFFT, to suppress "
+        "sub-pixel-phase mismatches of undersampled stars.",
+    )
+    parser.add_argument("--ker-hw", type=int, default=None, help="SFFT kernel half-width (GKerHW).")
+    parser.add_argument("--ker-poly-order", type=int, default=None, help="SFFT spatial kernel polynomial order.")
+    parser.add_argument("--bg-poly-order", type=int, default=None, help="SFFT spatial background polynomial order.")
+    parser.add_argument(
+        "--const-phot-ratio",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="SFFT: assume a constant photometric ratio across the image.",
+    )
+
     cfg.augment_argparse(parser)
     args = parser.parse_args(leftovers)
     cfg.parse_args(args)
@@ -1016,6 +1050,18 @@ def main():
         threshold_column=args.threshold_column,
         detection_kwargs=detection_kwargs,
         input_star_catalog_path=args.star_catalog,
+        resample_method=args.resample_method,
+        pre_smooth_sigma=args.pre_smooth_sigma,
+        sfft_kwargs={
+            key: value
+            for key, value in (
+                ("GKerHW", args.ker_hw),
+                ("KerPolyOrder", args.ker_poly_order),
+                ("BGPolyOrder", args.bg_poly_order),
+                ("ConstPhotRatio", args.const_phot_ratio),
+            )
+            if value is not None
+        },
     )
     detection.run_subtractions()
 

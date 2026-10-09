@@ -476,6 +476,9 @@ class Pipeline:
         temp_dir=None,
         save_debug_products=False,
         detection_kwargs=None,
+        resample_method="bilinear",
+        sfft_kwargs=None,
+        pre_smooth_sigma=None,
     ):
         """Subtraction pipeline object.  Initialize and then run to produce subtracted image.
 
@@ -504,7 +507,23 @@ class Pipeline:
         detection_kwargs: dict or None
             Extra keyword arguments passed to sky_subtract_and_detect for both images,
             e.g., source selection cuts like {"size_clip_sigma": 3, "max_peak": 1e3}.
+        resample_method: str
+            "bilinear" (SFFT default), "spline3" or "spline5".  SFFT's bilinear warp of the template blurs
+            undersampled images, so the matching kernel then has to sharpen the template (noisy, ringing kernel).
+            The spline options replace the resampled template image (not its variance or mask) with a
+            scipy.ndimage spline interpolation of that order.
+        sfft_kwargs: dict or None
+            Extra keyword arguments for SpaceSFFT_Flow, e.g. {"GKerHW": 9, "KerPolyOrder": 2}.
+        pre_smooth_sigma: float or None
+            If set, convolve both sky-subtracted images and both PSFs with a Gaussian of this sigma (pixels)
+            just before SFFT.  The PSF is undersampled (FWHM < 2 pixels), so stars observed at different sub-pixel
+            phases differ at the pixel level in a way no single convolution kernel can model; smoothing removes
+            this.  The noise and sky rms are rescaled assuming white input noise (the noise correlation introduced
+            is not modelled by the SFFT decorrelation).
         """
+        self.pre_smooth_sigma = pre_smooth_sigma
+        self.resample_method = resample_method
+        self.sfft_kwargs = sfft_kwargs or {}
         self.detection_kwargs = detection_kwargs or {}
         self.cross_convolve = cross_convolve
         self.backend4subtract = backend4subtract
@@ -567,6 +586,23 @@ class Pipeline:
         self.decorr_diff_path = self.out_dir / f"decorr_diff_{self.diff_pattern}.fits"
         self.decorr_psf_path = self.out_dir / f"decorr_psf_{self.diff_pattern}.fits"
 
+    def _spline_resample_template(self, sfftifier, science_hdr, template_hdr, template_data):
+        """Replace sfftifier.PixA_resamp_object with a spline-interpolated warp of the template image."""
+        order = {"spline3": 3, "spline5": 5}[self.resample_method]
+        # SFFT arrays are indexed [x, y] and its projected coordinates are 1-based
+        XX_proj, YY_proj = sfftifier.op.Resampling(RESAMP_METHOD="BILINEAR", VERBOSE_LEVEL=1).resamp_projection_astropy(
+            hdr_obj=template_hdr, hdr_targ=science_hdr
+        )
+        resampled = ndimage.map_coordinates(
+            np.ascontiguousarray(template_data.T, dtype=np.float64),
+            [XX_proj - 1.0, YY_proj - 1.0],
+            order=order,
+            mode="constant",
+            cval=0.0,
+        )
+        sfftifier.PixA_resamp_object = resampled
+        sfftifier.BlankMask = resampled == 0.0
+
     def run(self):
         os.makedirs(self.out_dir, exist_ok=True)
 
@@ -622,6 +658,21 @@ class Pipeline:
                 mask=template_detmask_data,
             )
 
+        if self.pre_smooth_sigma:
+            sigma = self.pre_smooth_sigma
+            # Variance reduction of white noise convolved with a unit-sum Gaussian
+            noise_scale = 1.0 / (2.0 * np.sqrt(np.pi) * sigma)
+            science_skysubim_data = ndimage.gaussian_filter(science_skysubim_data, sigma)
+            template_skysubim_data = ndimage.gaussian_filter(template_skysubim_data, sigma)
+            science_psf = ndimage.gaussian_filter(science_psf, sigma)
+            template_psf = ndimage.gaussian_filter(template_psf, sigma)
+            science_psf = science_psf / science_psf.sum()
+            template_psf = template_psf / template_psf.sum()
+            science_noise = science_noise * noise_scale
+            template_noise = template_noise * noise_scale
+            science_skyrms = science_skyrms * noise_scale
+            template_skyrms = template_skyrms * noise_scale
+
         sfftifier = SpaceSFFT_Flow(
             science_hdr,
             template_hdr,
@@ -638,9 +689,12 @@ class Pipeline:
             transpose=True,
             BACKEND_4SUBTRACT=self.backend4subtract,
             CUDA_COMPILER=self.cuda_compiler,
+            **self.sfft_kwargs,
         )
 
         sfftifier.resample_image_mask_psf()
+        if self.resample_method != "bilinear":
+            self._spline_resample_template(sfftifier, science_hdr, template_hdr, template_skysubim_data)
         if self.cross_convolve:
             sfftifier.cross_convolve()
 
