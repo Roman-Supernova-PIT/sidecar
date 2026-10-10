@@ -61,7 +61,7 @@ def interpolate_over_bad_pixels(data, flags, bad_pixel_flags=bad_pixel_flags):
     (e.g., using neighboring pixel values), depending on the implementation.
     """
     # Create a mask of bad pixels based on the flags
-    bad_mask = flags & bad_pixel_flags > 0
+    bad_mask = (flags & bad_pixel_flags) != 0
 
     interpolated_data = data.copy()
     interpolated_data[bad_mask] = np.nan  # Mark bad pixels as NaN for interpolation
