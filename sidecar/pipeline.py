@@ -448,7 +448,7 @@ class Detection:
         # One star catalog serves both source selection for SFFT and rejecting candidates.
         gaia_mag_limit = self.detection_kwargs.get("gaia_mag_limit", subtraction.DEFAULT_GAIA_MAG_LIMIT)
         stars = None
-        if reject_known_stars or gaia_mag_limit is not None:
+        if reject_known_stars or gaia_mag_limit is not None or "bright_star_mag" in self.detection_kwargs:
             if self.input_star_catalog_path is not None:
                 SNLogger.info(f"Reading stars from {self.input_star_catalog_path}")
                 stars = star_retrieval.read_star_catalog(self.input_star_catalog_path)
@@ -928,6 +928,30 @@ def main():
         help="Match radius in pixels for --gaia-mag-limit.",
     )
     parser.add_argument(
+        "--bright-star-mag",
+        type=float,
+        default=17,
+        help="Mask halos around Gaia stars brighter than this G mag out of the SFFT detection mask.",
+    )
+    parser.add_argument(
+        "--bright-star-radius",
+        type=float,
+        default=30.0,
+        help="Halo radius in pixels at --bright-star-mag; grows as 10**(scale*(bright_star_mag-mag)).",
+    )
+    parser.add_argument(
+        "--bright-star-scale",
+        type=float,
+        default=0.2,
+        help="Exponent scale of halo radius with magnitude (0.2 = radius ~ sqrt(flux)).",
+    )
+    parser.add_argument(
+        "--bright-star-max-radius",
+        type=float,
+        default=150,
+        help="Cap on halo radius in pixels.",
+    )
+    parser.add_argument(
         "--star-catalog",
         type=str,
         default=None,
@@ -1033,6 +1057,11 @@ def main():
     }
     detection_kwargs["gaia_mag_limit"] = args.gaia_mag_limit
     detection_kwargs["gaia_match_radius"] = args.gaia_match_radius
+    if args.bright_star_mag is not None:
+        detection_kwargs["bright_star_mag"] = args.bright_star_mag
+        detection_kwargs["bright_star_radius"] = args.bright_star_radius
+        detection_kwargs["bright_star_scale"] = args.bright_star_scale
+        detection_kwargs["bright_star_max_radius"] = args.bright_star_max_radius
 
     detection = Detection(
         image_collection=image_collection,

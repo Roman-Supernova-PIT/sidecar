@@ -131,6 +131,44 @@ def get_gaia_pixel_positions(image, max_mag, stars=None):
     return np.column_stack([x, y])
 
 
+def get_gaia_pixel_positions_and_mags(image, max_mag, stars=None):
+    """Return (x, y, mag) arrays for Gaia stars brighter than max_mag, with 0-based pixel positions."""
+    if stars is None:
+        stars = retrieve_gaia_stars_for_image(image, max_mag=max_mag)
+    if len(stars) == 0:
+        return np.empty(0), np.empty(0), np.empty(0)
+    mags = np.ma.filled(stars["phot_g_mean_mag"], np.nan).astype(float)
+    keep = mags < max_mag
+    stars, mags = stars[keep], mags[keep]
+    if len(stars) == 0:
+        return np.empty(0), np.empty(0), np.empty(0)
+    coords = SkyCoord(np.asarray(stars["ra"], dtype=float), np.asarray(stars["dec"], dtype=float), unit="deg")
+    x, y = image.get_wcs().get_astropy_wcs().world_to_pixel(coords)
+    return np.asarray(x), np.asarray(y), mags
+
+
+def make_bright_star_mask(shape, x, y, mags, ref_mag, ref_radius, scale=0.2, max_radius=None):
+    """Boolean mask, True within a magnitude-dependent radius of each star brighter than ref_mag.
+
+    radius = ref_radius * 10**(scale * (ref_mag - mag)); scale=0.2 means radius grows as flux**0.5.
+    """
+    mask = np.zeros(shape, dtype=bool)
+    ny, nx = shape
+    for xi, yi, m in zip(x, y, mags):
+        if not (m < ref_mag):
+            continue
+        r = ref_radius * 10 ** (scale * (ref_mag - m))
+        if max_radius is not None:
+            r = min(r, max_radius)
+        x0, x1 = int(max(0, np.floor(xi - r))), int(min(nx, np.ceil(xi + r) + 1))
+        y0, y1 = int(max(0, np.floor(yi - r))), int(min(ny, np.ceil(yi + r) + 1))
+        if x0 >= x1 or y0 >= y1:
+            continue
+        yy, xx = np.mgrid[y0:y1, x0:x1]
+        mask[y0:y1, x0:x1] |= (xx - xi) ** 2 + (yy - yi) ** 2 <= r**2
+    return mask
+
+
 def select_matching_sources(
     segment_img,
     data,
@@ -143,6 +181,7 @@ def select_matching_sources(
     min_bad_distance=None,
     gaia_xy=None,
     gaia_match_radius=5.0,
+    exclusion_mask=None,
 ):
     """Measure detected sources and flag which are good enough to constrain the SFFT matching kernel.
 
@@ -173,6 +212,8 @@ def select_matching_sources(
         Pixel (x, y) positions of bright Gaia stars.  Sources within `gaia_match_radius` of one are rejected.
     gaia_match_radius : float
         Match radius in pixels for `gaia_xy`.
+    exclusion_mask : ndarray of bool, optional
+        Sources whose centroid lies in True pixels (e.g. halos of very bright stars) are rejected.
 
     Returns
     -------
@@ -222,6 +263,12 @@ def select_matching_sources(
         else:
             passes["gaia"] = np.ones(n_sources, dtype=bool)
 
+    if exclusion_mask is not None:
+        ny, nx = exclusion_mask.shape
+        xi = np.clip(np.rint(x), 0, nx - 1).astype(int)
+        yi = np.clip(np.rint(y), 0, ny - 1).astype(int)
+        passes["bright_halo"] = ~exclusion_mask[yi, xi]
+
     selected = np.ones(n_sources, dtype=bool)
     for name, passed in passes.items():
         catalog[f"pass_{name}"] = passed
@@ -248,8 +295,17 @@ def sky_subtract_and_detect(
     gaia_mag_limit=DEFAULT_GAIA_MAG_LIMIT,
     gaia_match_radius=5.0,
     star_catalog=None,
+    bright_star_mag=None,
+    bright_star_radius=30.0,
+    bright_star_scale=0.2,
+    bright_star_max_radius=None,
 ):
     """Perform sky subtraction and create a detection mask for an image.
+
+    Optionally reject stars from a Gaia catalogs.  Can query or take pass-in catalog.
+
+    Optional blank out areas around bright stars based on a magnitude cut.
+    Need to figure out the pixel radius scaling as a function of magnitude.
 
     Parameters
     ----------
@@ -276,6 +332,12 @@ def sky_subtract_and_detect(
     star_catalog : astropy.table.Table or None, optional
         Pre-retrieved stars with ra, dec (degrees, ICRS) and phot_g_mean_mag columns, used for the Gaia cut
         instead of querying Gaia.  May have zero rows, in which case no sources are rejected.
+
+    bright_star_mag : float or None, optional
+        Gaia stars brighter than this G mag get an exclusion zone, removed from the detection mask, and
+        sources centred inside a zone are not selected.  Radius in pixels is
+        `bright_star_radius` * 10**(`bright_star_scale` * (bright_star_mag - mag)), capped at
+        `bright_star_max_radius`.  None disables.  Uses the same catalog as the Gaia cut.
 
     Returns
     -------
@@ -307,7 +369,7 @@ def sky_subtract_and_detect(
     threshold = detect_threshold(sky_subtracted_data, **{_N_SIGMA_KWARG: nsigma}, sigma_clip=sigma_clip)
 
     # Mask pixels that are flagged as bad in the input image
-    bad_mask = image.flags & bad_pixel_flags > 0
+    bad_mask = (image.flags & bad_pixel_flags) != 0
 
     # Build a mask of pixels that are in the non-linear regime
     if too_bright_threshold is not None:
@@ -326,10 +388,24 @@ def sky_subtract_and_detect(
     gaia_xy = (
         get_gaia_pixel_positions(image, gaia_mag_limit, stars=star_catalog) if gaia_mag_limit is not None else None
     )
+    bright_star_mask = None
+    if bright_star_mag is not None:
+        bx, by, bmags = get_gaia_pixel_positions_and_mags(image, bright_star_mag, stars=star_catalog)
+        bright_star_mask = make_bright_star_mask(
+            sky_subtracted_data.shape,
+            bx,
+            by,
+            bmags,
+            bright_star_mag,
+            bright_star_radius,
+            scale=bright_star_scale,
+            max_radius=bright_star_max_radius,
+        )
     catalog = select_matching_sources(
         segment_img,
         sky_subtracted_data,
         bad_mask,
+        exclusion_mask=bright_star_mask,
         max_peak=max_peak,
         size_clip_sigma=size_clip_sigma,
         max_ellipticity=max_ellipticity,
@@ -346,6 +422,8 @@ def sky_subtract_and_detect(
     else:
         segment_img.keep_labels(selected_labels)
         detmask_data = segment_img.make_source_mask(footprint=detection_footprint)
+    if bright_star_mask is not None:
+        detmask_data = detmask_data & ~bright_star_mask
 
     return sky_subtracted_data, detmask_data, rms, convolved_bad_mask, catalog
 
