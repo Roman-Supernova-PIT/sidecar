@@ -7,7 +7,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("ecsv_catalog_path", type=str)
     parser.add_argument("--ds9-region-path", type=str, default=None)
-    parser.add_argument("--peak-value-threshold", type=float, default=100)
+    parser.add_argument("--peak-value-threshold", type=float, default=25)
     parser.add_argument("--ra-column", type=str, default="ra")
     parser.add_argument("--dec-column", type=str, default="dec")
     parser.add_argument("--peak-value-column", type=str, default="peak_value")
