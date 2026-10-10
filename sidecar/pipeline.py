@@ -931,13 +931,13 @@ def main():
         "--bright-star-mag",
         type=float,
         default=17,
-        help="Mask halos around Gaia stars brighter than this G mag out of the SFFT detection mask.",
+        help="Mask pixels around Gaia stars brighter than this G mag from the SFFT kernel sources.  Mask in a circle of radius of 'bright-star-radius'.",
     )
     parser.add_argument(
         "--bright-star-radius",
         type=float,
         default=30.0,
-        help="Halo radius in pixels at --bright-star-mag; grows as 10**(scale*(bright_star_mag-mag)).",
+        help="Radius of pixels masked at --bright-star-mag; grows as 10**('bright-star-scale'*(bright_star_mag-mag)).",
     )
     parser.add_argument(
         "--bright-star-scale",
@@ -949,7 +949,8 @@ def main():
         "--bright-star-max-radius",
         type=float,
         default=150,
-        help="Cap on halo radius in pixels.",
+        help="Cap on halo radius in pixels.  At bright-star-mag=10, radius = 150 pixels was determined to be appropriate in early testing but this could use more investigation. "
+        "The idea of this cap is that once masks get this big, the amount of area loss may exceed the gain in the subtraction quality.",
     )
     parser.add_argument(
         "--star-catalog",
@@ -959,7 +960,6 @@ def main():
         "candidate rejection instead of querying Gaia, so no network is needed.  May be empty.  "
         "Generate with 'python -m sidecar.star_retrieval <image.asdf>'.",
     )
-
     parser.add_argument(
         "--resample-method",
         type=str,
@@ -975,11 +975,13 @@ def main():
         help="Gaussian sigma (pixels) to smooth both images and PSFs with before SFFT, to suppress "
         "sub-pixel-phase mismatches of undersampled stars.",
     )
-    parser.add_argument("--ker-hw", type=int, default=None, help="SFFT kernel half-width (GKerHW).")
-    parser.add_argument("--ker-poly-order", type=int, default=None, help="SFFT spatial kernel polynomial order.")
-    parser.add_argument("--bg-poly-order", type=int, default=None, help="SFFT spatial background polynomial order.")
+    # The default values for these --sfft... options is None, so that we can detect if they are specified.
+    # If unspecified, the SFFT defaults will be used.
+    parser.add_argument("--sfft-ker-hw", type=int, default=None, help="SFFT kernel half-width (GKerHW).")
+    parser.add_argument("--sfft-ker-poly-order", type=int, default=None, help="SFFT spatial kernel polynomial order.")
+    parser.add_argument("--sfft-bg-poly-order", type=int, default=None, help="SFFT spatial background polynomial order.")
     parser.add_argument(
-        "--const-phot-ratio",
+        "--sfft-const-phot-ratio",
         default=None,
         action=argparse.BooleanOptionalAction,
         help="SFFT: assume a constant photometric ratio across the image.",
@@ -1084,10 +1086,10 @@ def main():
         sfft_kwargs={
             key: value
             for key, value in (
-                ("GKerHW", args.ker_hw),
-                ("KerPolyOrder", args.ker_poly_order),
-                ("BGPolyOrder", args.bg_poly_order),
-                ("ConstPhotRatio", args.const_phot_ratio),
+                ("GKerHW", args.sfft_ker_hw),
+                ("KerPolyOrder", args.sfft_ker_poly_order),
+                ("BGPolyOrder", args.sfft_bg_poly_order),
+                ("ConstPhotRatio", args.sfft_const_phot_ratio),
             )
             if value is not None
         },
