@@ -61,7 +61,7 @@ def interpolate_over_bad_pixels(data, flags, bad_pixel_flags=bad_pixel_flags):
     (e.g., using neighboring pixel values), depending on the implementation.
     """
     # Create a mask of bad pixels based on the flags
-    bad_mask = (flags & bad_pixel_flags) != 0
+    bad_mask = (flags & bad_pixel_flags) > 0
 
     interpolated_data = data.copy()
     interpolated_data[bad_mask] = np.nan  # Mark bad pixels as NaN for interpolation
@@ -369,7 +369,7 @@ def sky_subtract_and_detect(
     threshold = detect_threshold(sky_subtracted_data, **{_N_SIGMA_KWARG: nsigma}, sigma_clip=sigma_clip)
 
     # Mask pixels that are flagged as bad in the input image
-    bad_mask = (image.flags & bad_pixel_flags) != 0
+    bad_mask = (image.flags & bad_pixel_flags) > 0
 
     # Build a mask of pixels that are in the non-linear regime
     if too_bright_threshold is not None:
