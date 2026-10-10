@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 from roman_datamodels import dqflags  # noqa: E402
+from scipy import ndimage  # noqa: E402
 
 from sidecar.display import add_circles, show_image  # noqa: E402
 from sidecar.star_retrieval import read_star_catalog  # noqa: E402
@@ -70,6 +71,29 @@ def _quantify_source_distribution(centroids, image_shape, n_bins=4):
     return counts, chi_square, coeff_variation
 
 
+def _summarize_binary_mask(mask):
+    """Print connected-component and hole statistics for a boolean mask."""
+    mask = np.asarray(mask, dtype=bool)
+    labels, n_components = ndimage.label(mask)
+    filled = ndimage.binary_fill_holes(mask)
+    hole_mask = filled & ~mask
+    hole_labels, n_holes = ndimage.label(hole_mask)
+
+    print(f"Mask summary: {n_components} connected component(s), {n_holes} hole(s)")
+    if n_components:
+        comp_sizes = ndimage.sum(mask, labels, range(1, n_components + 1))
+        print(
+            "  component size pctl (10/50/90/max): "
+            f"{np.percentile(comp_sizes, [10, 50, 90, 100])}"
+        )
+    if n_holes:
+        hole_sizes = ndimage.sum(hole_mask, hole_labels, range(1, n_holes + 1))
+        print(
+            "  hole size pctl (10/50/90/max): "
+            f"{np.percentile(hole_sizes, [10, 50, 90, 100])}"
+        )
+
+
 SELECTION_CUTS = ("max_peak", "size_clip_sigma", "max_ellipticity", "min_separation", "edge_buffer", "min_bad_distance")
 
 
@@ -93,6 +117,9 @@ def test_sky_subtract_and_detect(request):
         value = request.config.getoption("--" + name.replace("_", "-"))
         if value is not None:
             cuts[name] = value
+    if request.config.getoption("--bright-star-mag") is not None:
+        for name in ("mag", "radius", "scale", "max_radius"):
+            cuts[f"bright_star_{name}"] = request.config.getoption(f"--bright-star-{name.replace('_', '-')}")
     star_catalog_path = request.config.getoption("--star-catalog")
     if star_catalog_path:
         cuts["star_catalog"] = read_star_catalog(star_catalog_path)
@@ -106,7 +133,7 @@ def test_sky_subtract_and_detect(request):
     print(f"Background RMS: {rms:g}")
 
     # Reproduces the bad-pixel mask sky_subtract_and_detect builds internally (before dilation).
-    bad_mask = image.flags & subtraction.bad_pixel_flags > 0
+    bad_mask = (image.flags & subtraction.bad_pixel_flags) != 0
     print(f"Bad pixels: {bad_mask.sum()}/{bad_mask.size} ({bad_mask.mean():.2%})")
     _report_bad_pixel_flags(image.flags, bad_mask)
 
@@ -136,6 +163,26 @@ def test_sky_subtract_and_detect(request):
     fig.savefig(convolved_bad_mask_path, dpi=150)
     plt.close(fig)
     print(f"Wrote dilated bad pixel mask visualization to {convolved_bad_mask_path}")
+
+    detmask_bool = np.asarray(detmask_data, dtype=bool)
+    _summarize_binary_mask(detmask_bool)
+
+    fig, (ax_overlay, ax_mask) = plt.subplots(1, 2, figsize=(16, 8))
+    show_image(ax_overlay, sky_subtracted_data, title="Final detmask over sky-subtracted data")
+    ax_overlay.imshow(
+        np.ma.masked_where(~detmask_bool, detmask_bool),
+        origin="lower",
+        cmap="winter",
+        alpha=0.45,
+    )
+    ax_mask.imshow(detmask_bool, origin="lower", cmap="gray_r")
+    ax_mask.set_title("Final detmask only")
+    ax_mask.set_xlabel("x")
+    ax_mask.set_ylabel("y")
+    detmask_path = outdir / f"{stem}_detmask.png"
+    fig.savefig(detmask_path, dpi=150)
+    plt.close(fig)
+    print(f"Wrote final detmask visualization to {detmask_path}")
 
     selected = np.asarray(catalog["selected"], dtype=bool)
     x = np.asarray(catalog["x_centroid"], dtype=float)
