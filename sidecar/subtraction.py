@@ -793,7 +793,7 @@ class Pipeline:
         score_image = sfftifier.create_score_image()
 
         diff_noise = np.sqrt(sfftifier.create_variance_image())
-        diff_flags = self.template_image.flags + self.science_image.flags
+        diff_flags = self.template_image.flags | self.science_image.flags
         diff_interpolated_mask = template_image_interpolated_mask | science_image_interpolated_mask
 
         _save_products_as_fits(
