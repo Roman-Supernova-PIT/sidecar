@@ -792,6 +792,7 @@ class Pipeline:
         # and saved as an attribute of instance
         score_image = sfftifier.create_score_image()
 
+        diff = sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_DIFF))
         diff_noise = np.sqrt(sfftifier.create_variance_image())
         diff_flags = self.template_image.flags | self.science_image.flags
         diff_interpolated_mask = template_image_interpolated_mask | science_image_interpolated_mask
@@ -805,22 +806,34 @@ class Pipeline:
             mask=diff_interpolated_mask,
         )
 
-        fits.writeto(self.score_image_path, score_image, header=sfftifier.hdr_target, overwrite=True)
+        _save_products_as_fits(
+            path=self.score_image_path,
+            hdr=sfftifier.hdr_target,
+            data=score_image,
+            noise=diff_noise,
+            flags=diff_flags,
+            mask=diff_interpolated_mask,
+        )
         fits.writeto(self.decorr_psf_path, decorr_psf, header=None, overwrite=True)
 
-        fits.writeto(
-            self.diff_path,
-            sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_DIFF)),
-            header=sfftifier.hdr_target,
-            overwrite=True,
+        _save_products_as_fits(
+            path=self.diff_path,
+            hdr=sfftifier.hdr_target,
+            data=diff,
+            noise=diff_noise,
+            flags=diff_flags,
+            mask=diff_interpolated_mask,
         )
 
         if self.save_debug_products:
-            fits.writeto(
-                self.resamp_template_path,
-                sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_resamp_object)),
-                header=sfftifier.hdr_target,
-                overwrite=True,
+            # I might be saving the Variance instead of the noise.  Check later.
+            # We don't have resampled flags because we haven't defined what that means.
+            _save_products_as_fits(
+                path=self.resamp_template_path,
+                hdr=sfftifier.hdr_target,
+                data=sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_resamp_object)),
+                noise=sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_resamp_objectVar)),
+                mask=template_detmask_data,
             )
 
         # Write out masked aray to check if we're passing good stamps to SFFT.
