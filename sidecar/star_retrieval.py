@@ -2,7 +2,6 @@ import argparse
 from pathlib import Path
 
 import astropy.units as u
-from astropy.coordinates import SkyCoord
 from astropy.table import Table
 from astroquery.gaia import Gaia
 
