@@ -500,7 +500,7 @@ def make_minimal_wcs_header(image):
     return hdr
 
 
-def _save_products_as_fits(path, hdr, data, noise, flags, mask):
+def _save_products_as_fits(path, hdr, data, noise, flags=None, mask=None):
     """Save products as a FITS file with multiple HDUs.
 
     data: 2D ndarray
@@ -510,20 +510,30 @@ def _save_products_as_fits(path, hdr, data, noise, flags, mask):
         Will check to see if this is a 16-bit float array, and if so promote to 32-bit float.
         Will otherwise leave alone, so 32-bit or 64-bit float arrays will be kept,
         but also 16-bit int or 32-bit int will be saved as is.
-    flags: 2D ndarray of the flags data
+    flags: 2D ndarray of the flags data, optional
+        If None (e.g. the flags are not defined for resampled images), a FLAGS plane of zeros is written
+        so that the HDU layout is the same for all products.
     mask: 2D ndarray of the detection mask
+        If None, a MASK plane of zeros is written so that the HDU layout is the same for all products.
         Written as uint8 array
     """
 
     # Handle types.  Make copies if we change something, so we don't modify the passed-in array
     # but views if we don't modify are fine.
     # Noise array from romancal L2 is 16-bit float so let's check for that and recast to 32-bit float
+    # because FITS doesn't recognize 16-bit floats as a valid type.
     if noise.dtype == np.float16:
         noise_standardized = noise.astype(np.float32)
     else:
         noise_standardized = noise
     # Make sure the mask is interpreted as an unsigned 8-bit integer array
-    mask_standardized = mask.astype(np.uint8)
+    if mask is None:
+        mask_standardized = np.zeros(np.shape(data), dtype=np.uint8)
+    else:
+        mask_standardized = mask.astype(np.uint8)
+
+    if flags is None:
+        flags = np.zeros(np.shape(data), dtype=np.uint32)
 
     hdul = fits.HDUList(
         [
