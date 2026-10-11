@@ -889,4 +889,11 @@ class Pipeline:
                     sfftifier.op.transpose_if_needed(sfftifier.PixA_target - sfftifier.PixA_resamp_object)
                 )
 
-            fits.writeto(self.simple_diff_path, simple_diff, header=sfftifier.hdr_target, overwrite=True)
+            _save_products_as_fits(
+                path=self.simple_diff_path,
+                hdr=sfftifier.hdr_target,
+                data=simple_diff,
+                noise=diff_noise,
+                flags=diff_flags,
+                mask=diff_interpolated_mask,
+            )

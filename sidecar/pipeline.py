@@ -15,7 +15,7 @@ from sidecar import subtraction
 from sidecar import truth_matching
 from sidecar import truth_retrieval
 from sidecar.database import save_dia_objects_from_subtraction
-from sidecar.source_detection import detect_sources_in_subtraction
+from sidecar.source_detection import detect_and_measure_sources
 from sidecar.util import (
     find_templates_for_observation_ids,
     make_data_records_from_observation_id,
@@ -460,21 +460,27 @@ class Detection:
 
         if self.save_debug_products:
             SNLogger.info("Processing simple diffim detection")
-            detect_sources_in_subtraction(
-                file_path["simple_difference_image_path"],
-                file_path["simple_difference_detection_path"],
+            detect_and_measure_sources(
+                diff_image_path=file_path["simple_difference_image_path"],
+                catalog_save_path=file_path["simple_difference_detection_path"],
+                template_path=file_path["template_image_path"],
+                science_path=file_path["science_image_path"],
             )
 
         SNLogger.info("Processing diffim detection")
-        detect_sources_in_subtraction(
+        detect_and_measure_sources(
             file_path["difference_image_path"],
             file_path["difference_detection_path"],
+            file_path["template_image_path"],
+            file_path["science_image_path"],
         )
 
         SNLogger.info("Processing score image detection")
-        detect_sources_in_subtraction(
+        detect_and_measure_sources(
             file_path["score_image_path"],
             file_path["score_detection_path"],
+            file_path["template_image_path"],
+            file_path["science_image_path"],
         )
 
         if reject_known_stars:

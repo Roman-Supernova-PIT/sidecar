@@ -7,7 +7,7 @@ from sidecar.util import load_wcs_from_fits
 from snappl.image import FITSImageOnDisk
 
 
-def detect_sources_in_subtraction(
+def detect_and_sources(
     image_path,
     catalog_save_path=None,
     threshold=10,
@@ -72,8 +72,5 @@ def detect_sources_in_subtraction(
     detection_skycoord = pixel_to_skycoord(obj["x_centroid"], obj["y_centroid"], wcs)
     obj["ra"] = detection_skycoord.ra
     obj["dec"] = detection_skycoord.dec
-
-    if catalog_save_path is not None:
-        obj.write(catalog_save_path, overwrite=overwrite)
 
     return obj
