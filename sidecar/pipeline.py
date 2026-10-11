@@ -25,6 +25,7 @@ from sidecar.util import (
 )
 
 from snappl.config import Config
+from snappl.image import FITSImage
 from snappl.imagecollection import ImageCollection
 from snappl.logger import SNLogger
 
@@ -85,6 +86,7 @@ class Detection:
         backend4subtract=None,
         save_debug_products=False,
         save_candidates_to_database=False,
+        assume_subtraction_has_been_run=False,
         threshold=None,
         threshold_column="peak_value",
         detection_kwargs=None,
@@ -119,6 +121,7 @@ class Detection:
         self.psf_size = psf_size
         self.reject_known_stars = reject_known_stars
         self.cross_convolve = cross_convolve
+        self.assume_subtraction_has_been_run = assume_subtraction_has_been_run
 
         self.save_debug_products = save_debug_products
         self.save_candidates_to_database = save_candidates_to_database
@@ -385,6 +388,11 @@ class Detection:
         )
         return file_path
 
+    @staticmethod
+    def load_product_image(path):
+        """Load a subtraction product (DATA, NOISE, FLAGS in HDUs 1-3) as a snappl FITSImage."""
+        return FITSImage(path, imagehdu=1, noisehdu=2, flagshdu=3, no_base_path=True)
+
     def run_one_subtraction(
         self,
         image_collection,
@@ -456,31 +464,64 @@ class Detection:
                 SNLogger.info("Retrieving Gaia DR3 stars")
                 stars = self.__class__.retrieve_stars(subtract.science_image, file_path["star_catalog_path"])
             subtract.detection_kwargs = {**subtract.detection_kwargs, "star_catalog": stars}
-        subtract.run()
+
+        if not assume_subtraction_has_been_run:
+            subtract.run()
+
+            # Define some alias for the images
+            # so that we could also load them from disk (see 'else' block)
+            # if we wanted to skip the subtraction.
+            science_image = subtract.science_image
+            template_image = subtract.template_image
+            difference_image = subtract.difference_image
+            score_image = subtract.score_image
+
+        else:
+            # Load files from disk.
+            science_image = self.__class__.load_product_image(file_path["science_image_path"])
+            template_image = self.__class__.load_product_image(file_path["template_image_path"])
+            difference_image = self.__class__.load_product_image(file_path["difference_image_path"])
+            score_image = self.__class__.load_product_image(file_path["score_image_path"])
 
         if self.save_debug_products:
-            SNLogger.info("Processing simple diffim detection")
-            detect_and_measure_sources(
-                diff_image_path=file_path["simple_difference_image_path"],
-                catalog_save_path=file_path["simple_difference_detection_path"],
-                template_path=file_path["template_image_path"],
-                science_path=file_path["science_image_path"],
-            )
+            # We wait to load this here because the subtraction may not have been run with `save_debug_products`
+            # and thus the simple diff image may not exist.
+            if not os.path.exists(file_path["simple_difference_image_path"]):
+                SNLogger.info("Simple difference image not found; skipping simple diffim detection")
+            else:
+                simple_difference_image = self.__class__.load_product_image(file_path["simple_difference_image_path"])
+
+                SNLogger.info("Processing simple diffim detection")
+                detect_and_measure_sources(
+                    detection_image=simple_difference_image,
+                    measurement_images={
+                        "simple_diff": simple_difference_image,
+                        "template": template_image,
+                        "science": science_image,
+                    },
+                    catalog_save_path=file_path["simple_difference_detection_path"],
+                )
 
         SNLogger.info("Processing diffim detection")
         detect_and_measure_sources(
-            file_path["difference_image_path"],
-            file_path["difference_detection_path"],
-            file_path["template_image_path"],
-            file_path["science_image_path"],
+            detection_image=difference_image,
+            measurement_images={
+                "diff": difference_image,
+                "template": template_image,
+                "science": science_image,
+            },
+            catalog_save_path=file_path["difference_detection_path"],
         )
 
         SNLogger.info("Processing score image detection")
         detect_and_measure_sources(
-            file_path["score_image_path"],
-            file_path["score_detection_path"],
-            file_path["template_image_path"],
-            file_path["science_image_path"],
+            detection_image=score_image,
+            measurement_images={
+                "score": score_image,
+                "template": template_image,
+                "science": science_image,
+            },
+            catalog_save_path=file_path["score_detection_path"],
         )
 
         if reject_known_stars:
@@ -672,6 +713,7 @@ class Detection:
                 temp_dir=temp_dir,
                 reject_known_stars=self.reject_known_stars,
                 backend4subtract=self.backend4subtract,
+                assume_subtraction_has_been_run=self.assume_subtraction_has_been_run
             )
 
     def run_match_truth(self):
