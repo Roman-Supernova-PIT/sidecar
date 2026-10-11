@@ -7,7 +7,7 @@ from sidecar.util import load_wcs_from_fits
 from snappl.image import FITSImageOnDisk
 
 
-def detect_sources(
+def detect_sources_in_subtraction(
     image_path,
     catalog_save_path=None,
     threshold=10,
