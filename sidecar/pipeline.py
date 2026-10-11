@@ -937,7 +937,8 @@ def main():
         "--bright-star-mag",
         type=float,
         default=17,
-        help="Mask pixels around Gaia stars brighter than this G mag from the SFFT kernel sources.  Mask in a circle of radius of 'bright-star-radius'.",
+        help="Mask pixels around Gaia stars brighter than this G mag from the SFFT kernel sources."
+        "Mask in a circle of radius of 'bright-star-radius'.",
     )
     parser.add_argument(
         "--bright-star-radius",
@@ -955,8 +956,11 @@ def main():
         "--bright-star-max-radius",
         type=float,
         default=150,
-        help="Cap on halo radius in pixels.  At bright-star-mag=10, radius = 150 pixels was determined to be appropriate in early testing but this could use more investigation. "
-        "The idea of this cap is that once masks get this big, the amount of area loss may exceed the gain in the subtraction quality.",
+        help="Cap on halo radius in pixels."
+        "At bright-star-mag=10 a bright-star-max-radius = 150 pixels was determined to be appropriate "
+        "in early testing but this could use more investigation. "
+        "The idea of this cap is that once masks get too big, "
+        "the amount of area loss may exceed the gain in the subtraction quality.",
     )
     parser.add_argument(
         "--star-catalog",
@@ -985,7 +989,9 @@ def main():
     # If unspecified, the SFFT defaults will be used.
     parser.add_argument("--sfft-ker-hw", type=int, default=None, help="SFFT kernel half-width (GKerHW).")
     parser.add_argument("--sfft-ker-poly-order", type=int, default=None, help="SFFT spatial kernel polynomial order.")
-    parser.add_argument("--sfft-bg-poly-order", type=int, default=None, help="SFFT spatial background polynomial order.")
+    parser.add_argument(
+        "--sfft-bg-poly-order", type=int, default=None, help="SFFT spatial background polynomial order."
+    )
     parser.add_argument(
         "--sfft-const-phot-ratio",
         default=None,
@@ -1060,7 +1066,14 @@ def main():
 
     detection_kwargs = {
         name: getattr(args, name)
-        for name in ("max_peak", "size_clip_sigma", "max_ellipticity", "min_separation", "edge_buffer", "min_bad_distance")
+        for name in (
+            "max_peak",
+            "size_clip_sigma",
+            "max_ellipticity",
+            "min_separation",
+            "edge_buffer",
+            "min_bad_distance",
+        )
         if getattr(args, name) is not None
     }
     detection_kwargs["gaia_mag_limit"] = args.gaia_mag_limit

@@ -29,7 +29,12 @@ from snappl.psf import PSF
 # (could just use 2**32 - 1, but using len of dqflags.pixel is in principle more flexible):
 # 20261003 - Ignore JUMP_DET, but revisit this.
 bad_pixel_flags = (
-    2 ** len(dqflags.pixel) - 1 - dqflags.pixel.WARM - dqflags.pixel.LOW_QE - dqflags.pixel.PERSISTENCE - dqflags.pixel.JUMP_DET
+    2 ** len(dqflags.pixel)
+    - 1
+    - dqflags.pixel.WARM
+    - dqflags.pixel.LOW_QE
+    - dqflags.pixel.PERSISTENCE
+    - dqflags.pixel.JUMP_DET
 )
 
 
