@@ -410,7 +410,52 @@ class Detection:
         reject_known_stars=True,
         cross_convolve=False,
         backend4subtract="Cupy",
+        assume_subtraction_has_been_run=False,
     ):
+        """Subtract one template from one science image, detect and measure sources, and optionally save candidates.
+
+        Steps:
+          1. Build the output paths (`path_helper`) and the `subtraction.Pipeline`.
+          2. If needed, load a star catalog (from `--star-catalog` or by querying Gaia).  It is used to select SFFT
+             matching sources (`gaia_mag_limit`, `bright_star_mag`) and to reject known stars from detections.
+          3. Run the subtraction, writing the diff, decorrelated diff, score and (with `save_debug_products`)
+             simple diff images.  Skipped if `assume_subtraction_has_been_run`.
+          4. Detect sources in the diff and score images (and the simple diff if `save_debug_products`) and measure
+             them on the subtraction, template and science images with `detect_and_measure_sources`.  Catalogs are
+             written to the `*_detection_path` files.
+          5. If `reject_known_stars`, write `cleaned_*` catalogs with sources matching known stars removed.
+          6. If `self.save_candidates_to_database`, save DiaObjects from the (cleaned, if made) score catalog.
+
+        Uses instance settings for everything not passed as an argument: `cross_convolve`, `save_debug_products`,
+        `detection_kwargs`, `resample_method`, `sfft_kwargs`, `pre_smooth_sigma`, `input_star_catalog_path`,
+        `threshold`, `threshold_column`, and `save_candidates_to_database`.
+
+        Parameters
+        ----------
+        image_collection : snappl image collection
+            Used to find the science and template images and to save DiaObjects.
+        science_band, science_observation_id, science_sca : str, int, int
+            Identify the science image.
+        template_band, template_observation_id, template_sca : str, int, int
+            Identify the template image.
+        science_image_path, template_image_path : str or Path, optional
+            Explicit image paths.  If None, they are looked up from `image_collection`.
+        psf_type : str
+            PSF type known to `snappl.psf`.
+        psf_size : int, optional
+            PSF stamp size in pixels.  None uses the size the PSF model returns.
+        temp_dir : str or Path, optional
+            Directory for intermediate products.  None uses the output directory.
+        reject_known_stars : bool
+            Remove detections matching known stars and write the `cleaned_*` catalogs.
+        cross_convolve : bool
+            Accepted for compatibility; the instance's `self.cross_convolve` is what is passed to the subtraction.
+        backend4subtract : str
+            SFFT backend, e.g. "Cupy" or "numpy".
+        assume_subtraction_has_been_run : bool
+            Skip the subtraction and use the products already in the output directory.
+            This is intended for debugging, particularly of the source detection and measurement stage.
+        """
         science_id = {
             "band": science_band,
             "observation_id": science_observation_id,
