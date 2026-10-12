@@ -513,20 +513,13 @@ class Detection:
         if not assume_subtraction_has_been_run:
             subtract.run()
 
-            # Define some alias for the images
-            # so that we could also load them from disk (see 'else' block)
-            # if we wanted to skip the subtraction.
-            science_image = subtract.science_image
-            template_image = subtract.template_image
-            difference_image = subtract.difference_image
-            score_image = subtract.score_image
-
-        else:
-            # Load files from disk.
-            science_image = self.__class__.load_product_image(file_path["science_image_path"])
-            template_image = self.__class__.load_product_image(file_path["template_image_path"])
-            difference_image = self.__class__.load_product_image(file_path["difference_image_path"])
-            score_image = self.__class__.load_product_image(file_path["score_image_path"])
+        # Load files
+        # Load from image collection
+        science_image = self.science_image = image_collection.get_image(path=science_image_path)
+        template_image = self.template_image = image_collection.get_image(path=template_image_path)
+        # Load from file.  The difference and score images are stored as full paths
+        difference_image = self.__class__.load_product_image(file_path["difference_image_path"])
+        score_image = self.__class__.load_product_image(file_path["score_image_path"])
 
         if self.save_debug_products:
             # We wait to load this here because the subtraction may not have been run with `save_debug_products`
@@ -1085,6 +1078,13 @@ def main():
         action=argparse.BooleanOptionalAction,
         help="SFFT: assume a constant photometric ratio across the image.",
     )
+    parser.add_argument(
+        "--assume-subtraction-has-been-run",
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        help="Skip the subtraction and use the products already in the output directory.  This is intended for "
+        "debugging, particularly of the source detection and measurement stage.",
+    )
 
     cfg.augment_argparse(parser)
     args = parser.parse_args(leftovers)
@@ -1183,6 +1183,7 @@ def main():
         cross_convolve=args.cross_convolve,
         save_debug_products=args.save_debug_products,
         save_candidates_to_database=args.save_candidates_to_database,
+        assume_subtraction_has_been_run=args.assume_subtraction_has_been_run,
         threshold=args.threshold,
         threshold_column=args.threshold_column,
         detection_kwargs=detection_kwargs,
