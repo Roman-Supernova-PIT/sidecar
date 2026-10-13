@@ -129,3 +129,41 @@ sidecar/examples/perlmutter/test_sidecar_asdf_manualrdm.sh
 - Truth Retrieval: Retrieve truth tables of the science image and template image.
 - Truth Matching: Match the truth information to the detected sources for evaluating efficiency. Match the detected sources to truth for evaluating purity.
 - Evaluation: Evaluate efficiency and purity.
+
+## Matching Catalogs Across Observations
+
+To cross-match sources across detection catalogs on `ra` and `dec`, use `sidecar.match_catalogs`.
+Entries must satisfy `template_in_bounds == True` by default. Additional boolean and numeric comparison cuts (`==`, `!=`, `>`, `<`, `>=`, `<=`) can be supplied with `--row-filter`.
+
+### Example: Multi-Filter Matching
+
+```bash
+python -m sidecar.match_catalogs \
+    /rrn-ops/wmwv/subtractions/F*01062*_15_-_F*_15/cleaned_score_*.ecsv \
+    --min-matches 3 \
+    --radius 1.0 \
+    --row-filter "score_in_bounds,==,True" \
+    --row-filter "score_peak_snr,>,10" \
+    --row-filter "score_flags_npix_bad,<=,0" \
+    --output matched_01062_cleaned_score_15.ecsv
+```
+
+In Python:
+
+```python
+from astropy.table import Table
+import astropy.units as u
+from sidecar.match_catalogs import match_catalogs
+
+tables = [Table.read("cat1.ecsv"), Table.read("cat2.ecsv")]
+matched = match_catalogs(
+    tables,
+    radius=1.0 * u.arcsec,
+    min_matches=2,
+    row_filters=[
+        ("score_in_bounds", "==", True),
+        ("score_peak_snr", ">", 10.0),
+        ("score_flags_npix_bad", "<=", 0),
+    ],
+)
+```
