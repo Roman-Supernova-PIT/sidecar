@@ -909,15 +909,12 @@ class Pipeline:
             )
 
             if sfftifier.CROSS_CONVOLVED:
-                simple_diff = sfftifier.op.asnumpy(
-                    sfftifier.op.transpose_if_needed(sfftifier.PixA_Ctarget - sfftifier.PixA_Cresamp_object)
-                )
+                simple_diff = sfftifier.PixA_Ctarget - sfftifier.PixA_Cresamp_object
             else:
-                simple_diff = sfftifier.op.asnumpy(
-                    sfftifier.op.transpose_if_needed(sfftifier.PixA_target - sfftifier.PixA_resamp_object)
-                )
+                simple_diff = sfftifier.PixA_target - sfftifier.PixA_resamp_object
             # Blank out regions that the template didn't cover
             simple_diff[sfftifier.BlankMask] = 0.0
+            simple_diff = sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(simple_diff))
 
             _save_products_as_fits(
                 path=self.simple_diff_path,
