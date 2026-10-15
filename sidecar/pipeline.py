@@ -264,7 +264,7 @@ class Detection:
             cleaned catalog with matches to stars removed.
         """
         detection = Table.read(difference_detection_path, format="ascii")
-        if len(stars) < 1:
+        if len(stars) < 1 or len(detection) < 1:
             cleaned_detection = detection.copy()
         else:
             star_skycoord = SkyCoord(stars["ra"], stars["dec"], frame=frame, unit="deg")

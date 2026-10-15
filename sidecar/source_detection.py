@@ -50,21 +50,26 @@ def detect_sources_in_subtraction(
     find_peaks_kwargs = {"threshold": threshold, "box_size": box_size, "centroid_func": centroid_com}
     pos_obj = find_peaks(data, **find_peaks_kwargs)
     neg_obj = find_peaks(-data, **find_peaks_kwargs)
-    neg_obj["peak_value"] = -neg_obj["peak_value"]
 
-    # Adjust obj_id values so that they are continuous
-    # The negative object detection will generate its own list, starting at 1
-    # Take the largest id from the positive detection and add that to the negative detection ids
-    # (which are all positive integers) to get a non-conflicting list of ids in the merged catalog.
-    id_offset = pos_obj["id"].max()
-    neg_obj["id"] += id_offset
+    if neg_obj is not None:
+        neg_obj["peak_value"] = -neg_obj["peak_value"]
 
-    obj = vstack([pos_obj, neg_obj])
+        # Adjust obj_id values so that they are continuous
+        # The negative object detection will generate its own list, starting at 1
+        # Take the largest id from the positive detection and add that to the negative detection ids
+        # (which are all positive integers) to get a non-conflicting list of ids in the merged catalog.
+        id_offset = pos_obj["id"].max()
+        neg_obj["id"] += id_offset
 
-    # snappl's pixel_to_world returns (ra, dec) in degrees
-    ra, dec = image.get_wcs().pixel_to_world(np.asarray(obj["x_centroid"], dtype=float), np.asarray(obj["y_centroid"], dtype=float))
-    obj["ra"] = np.atleast_1d(ra)
-    obj["dec"] = np.atleast_1d(dec)
+        obj = vstack([pos_obj, neg_obj])
+    else:
+        obj = pos_obj
+
+    if obj is not None:
+        # snappl's pixel_to_world returns (ra, dec) in degrees
+        ra, dec = image.get_wcs().pixel_to_world(np.asarray(obj["x_centroid"], dtype=float), np.asarray(obj["y_centroid"], dtype=float))
+        obj["ra"] = np.atleast_1d(ra)
+        obj["dec"] = np.atleast_1d(dec)
 
     return obj
 
@@ -327,7 +332,10 @@ def detect_and_measure_sources(
     astropy.table.Table
     """
     detections = detect_sources_in_subtraction(detection_image, **(detect_kwargs or {}))
-    catalog = measure_sources(detections, measurement_images, **measure_kwargs)
+    if detections is None:
+        catalog = Table()
+    else:
+        catalog = measure_sources(detections, measurement_images, **measure_kwargs)
     if catalog_save_path is not None:
         catalog.write(catalog_save_path, overwrite=overwrite)
     return catalog
