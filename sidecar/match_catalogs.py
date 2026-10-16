@@ -31,7 +31,7 @@ COMPARISON_OPERATORS = {
     ">=": operator.ge,
     "<=": operator.le,
 }
-
+DEFAULT_MIN_PIXEL_SEPARATION = 10.0
 
 def _to_deg(col):
     return u.Quantity(col, u.deg).to_value(u.deg)
@@ -93,7 +93,20 @@ def _parse_filter_expression(expression):
     return column, op, _parse_filter_value(raw_value)
 
 
-def match_catalogs(tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=None):
+def _count_detector_separated(xy, cat_index, min_separation):
+    """Greedily count detections from distinct catalogs that are >= min_separation pixels apart pairwise."""
+    kept_xy = []
+    used_cats = set()
+    for pos, cat in zip(xy, cat_index):
+        if cat in used_cats:
+            continue
+        if all(np.hypot(*(pos - other)) >= min_separation for other in kept_xy):
+            kept_xy.append(pos)
+            used_cats.add(cat)
+    return len(kept_xy)
+
+
+def match_catalogs(tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=None, min_pixel_separation=None):
     """Cross-match catalogs on ra, dec and keep objects found in enough of them.
 
     Sources within `radius` of each other, directly or through a chain of
@@ -115,6 +128,13 @@ def match_catalogs(tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=Non
         with logical AND. Supported operators are ``==``, ``!=``, ``>``, ``<``,
         ``>=``, and ``<=``. The default ``template_in_bounds == True`` cut is
         always applied.
+    min_pixel_separation : float | None
+        If given (pixels), only count detections whose ('x_peak', 'y_peak') are
+        at least this far from every other counted detection in the object, so
+        that matches are consistent on the sky but come from different detector
+        positions (unlikely to be a fixed detector artifact).  Each catalog
+        contributes at most one detection.  Requires 'x_peak' and 'y_peak'
+        columns.  None (default) disables the check.
 
     Returns
     -------
@@ -131,6 +151,18 @@ def match_catalogs(tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=Non
         np.concatenate([np.full(len(t), i) for i, t in enumerate(filtered_tables)]) if filtered_tables else np.array([], int)
     )
 
+    if min_pixel_separation is not None:
+        for t in filtered_tables:
+            for col in ("x_peak", "y_peak"):
+                if col not in t.colnames:
+                    raise KeyError(f"Column {col!r} required for min_pixel_separation not found in {t.colnames}")
+        xy = np.column_stack(
+            [
+                np.concatenate([np.asarray(t["x_peak"], float) for t in filtered_tables]),
+                np.concatenate([np.asarray(t["y_peak"], float) for t in filtered_tables]),
+            ]
+        ) if filtered_tables else np.empty((0, 2))
+
     n = len(ra)
     if n == 0:
         return Table({"ra": [], "dec": [], "n_match": []}, dtype=[float, float, int])
@@ -143,7 +175,10 @@ def match_catalogs(tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=Non
     rows = []
     for g in range(n_groups):
         members = labels == g
-        n_match = len(np.unique(cat_index[members]))
+        if min_pixel_separation is None:
+            n_match = len(np.unique(cat_index[members]))
+        else:
+            n_match = _count_detector_separated(xy[members], cat_index[members], min_pixel_separation)
         if n_match < min_matches:
             continue
         # Average on the unit sphere to avoid ra wrap problems.
@@ -163,11 +198,15 @@ def match_catalog_files(
     radius=1.0 * u.arcsec,
     min_matches=2,
     row_filters=None,
+    min_pixel_separation=None,
     overwrite=True,
 ):
     """Read .ecsv catalogs, match them with `match_catalogs`, and write the result."""
     tables = [Table.read(p, format="ascii.ecsv") for p in input_paths]
-    matched = match_catalogs(tables, radius=radius, min_matches=min_matches, row_filters=row_filters)
+    matched = match_catalogs(tables, radius=radius, min_matches=min_matches,
+        row_filters=row_filters,
+        min_pixel_separation=min_pixel_separation,
+    )
     matched.write(output_path, format="ascii.ecsv", overwrite=overwrite)
     return matched
 
@@ -204,6 +243,18 @@ examples:
             "Default template_in_bounds==True is always applied."
         ),
     )
+    parser.add_argument(
+        "--min-pixel-separation",
+        nargs="?",
+        const=DEFAULT_MIN_PIXEL_SEPARATION,
+        default=None,
+        type=float,
+        metavar="PIXELS",
+        help=(
+            "Require matched detections to have (x_peak, y_peak) at least PIXELS apart "
+            f"(default {DEFAULT_MIN_PIXEL_SEPARATION:g} if flag given without a value). Disabled if omitted."
+        ),
+    )
     args = parser.parse_args()
     row_filters = [_parse_filter_expression(expr) for expr in args.row_filter]
 
@@ -213,6 +264,7 @@ examples:
         radius=args.radius * u.arcsec,
         min_matches=args.min_matches,
         row_filters=row_filters,
+        min_pixel_separation=args.min_pixel_separation,
     )
     print(f"Wrote {len(matched)} objects to {args.output}")
 
