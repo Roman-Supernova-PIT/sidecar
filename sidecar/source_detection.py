@@ -4,6 +4,7 @@ import numpy as np
 from astropy.stats import SigmaClip
 from astropy.table import Table, vstack
 from photutils.aperture import ApertureStats, CircularAnnulus, CircularAperture, aperture_photometry
+from photutils.background import Background2D
 from photutils.centroids import centroid_com
 from photutils.detection import find_peaks
 
@@ -13,9 +14,11 @@ DEFAULT_BACKGROUND_RADII = (8.0, 12.0)
 
 def detect_sources_in_subtraction(
     image,
-    threshold=10,
+    nsigma=5,
     box_size=11,
+    background_box_size=64,
     negative=True,
+    verbose=True,
 ):
     """Detect based on the peak pixels in an image.
 
@@ -23,10 +26,12 @@ def detect_sources_in_subtraction(
     ----------
     image : snappl.image.Image
         Image to search for sources, using `image.data` and `image.get_wcs()`.
-    threshold : float
-        Signal-to-noise ratio threshold.
+    nsigma : float
+        SNR to use for the detection threshold.
     box_size : int
         Size of box in which to look for unique peaks.  Passed to photutils.find_peaks.
+    background_box_size : int
+        Size of box in which to estimate the background.  Passed to photutils.Background2D
     negative : bool
         Search for negative sources as well as positive sources.
 
@@ -46,6 +51,25 @@ def detect_sources_in_subtraction(
     https://photutils.readthedocs.io/en/stable/user_guide/detection.html
     """
     data = np.asarray(image.data, dtype=float)
+
+    bkg = Background2D(image.data, box_size=background_box_size)
+
+    sky_subtracted_data = image.data - bkg.background
+    rms = bkg.background_rms_median
+
+    # Based on the photutils.background documentation
+    sigma_clip = SigmaClip(sigma=2.0, maxiters=10)
+    # threshold_map = detect_threshold(sky_subtracted_data, nsigma=nsigma, sigma_clip=sigma_clip)
+
+    threshold = nsigma * rms  # Override the threshold to be based on the background RMS
+
+    if verbose:
+        print(f"Median background: {bkg.background_median}")
+        print(f"Background RMS: {rms}")
+        print(f"sigma_clip: {sigma_clip}")
+        print(f"Detection threshold: {threshold}")
+
+    threshold = 0.1
 
     find_peaks_kwargs = {"threshold": threshold, "box_size": box_size, "centroid_func": centroid_com}
     pos_obj = find_peaks(data, **find_peaks_kwargs)

@@ -518,7 +518,7 @@ def write_ds9_regions_from_ecsv(
             line = f"circle({ra:.8f}, {dec:.8f}, {radius_arcsec:.3f}\")"
             if peak_value_column is not None:
                 peak_value = float(row[peak_value_column])
-                line += f"  # text={{{peak_value:.0f}}}"
+                line += f"  # text={{{peak_value:.2f}}}"
             region_file.write(line + "\n")
 
     return catalog[mask]
