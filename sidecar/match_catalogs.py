@@ -108,17 +108,20 @@ def _table_detector(table):
     return np.full(len(table), int(table.meta.get("detector", -1)), dtype=int)
 
 
-def _count_distinct_positions(xy, detector, tolerance):
+def _count_distinct_positions(xy, detector, tolerance, stop_at=None):
     """Count distinct (detector, x, y) positions.
 
     Detections on the same detector within `tolerance` pixels of an already-seen
     position belong to that position, so repeats at the same position (e.g.
-    other filters) count once.
+    other filters) count once.  If `stop_at` is given, counting stops early
+    once that many positions are found.
     """
     centers = []
     for pos, det in zip(xy, detector):
         if not any(det == d and np.hypot(*(pos - c)) < tolerance for d, c in centers):
             centers.append((det, pos))
+            if stop_at is not None and len(centers) >= stop_at:
+                break
     return len(centers)
 
 
@@ -196,21 +199,33 @@ def match_catalogs(tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=Non
     graph = coo_matrix((np.ones(len(idx1)), (idx1, idx2)), shape=(n, n))
     n_groups, labels = connected_components(graph, directed=False)
 
-    rows = []
-    for g in range(n_groups):
-        members = labels == g
-        n_match = len(np.unique(cat_index[members]))
-        if n_match < min_matches:
-            continue
-        if (
-            min_pixel_separation is not None
-            and _count_distinct_positions(xy[members], detector[members], min_pixel_separation) < min_distinct_positions
-        ):
-            continue
-        # Average on the unit sphere to avoid ra wrap problems.
-        mean = SkyCoord(ra[members], dec[members], unit="deg").cartesian.mean()
-        mean = SkyCoord(mean, representation_type="cartesian").spherical
-        rows.append((mean.lon.deg, mean.lat.deg, n_match))
+    # Group detections by sorting once rather than scanning all rows per group.
+    order = np.argsort(labels, kind="stable")
+    group_starts = np.searchsorted(labels[order], np.arange(n_groups + 1))
+
+    n_cat = int(cat_index.max()) + 1
+    distinct_group_cat = np.unique(labels * n_cat + cat_index)
+    n_match_all = np.bincount(distinct_group_cat // n_cat, minlength=n_groups)
+
+    keep = n_match_all >= min_matches
+    if min_pixel_separation is not None:
+        for g in np.flatnonzero(keep):
+            members = order[group_starts[g] : group_starts[g + 1]]
+            n_positions = _count_distinct_positions(
+                xy[members], detector[members], min_pixel_separation, min_distinct_positions
+            )
+            if n_positions < min_distinct_positions:
+                keep[g] = False
+    kept_groups = np.flatnonzero(keep)
+
+    # Average unit vectors per group to avoid ra wrap problems.
+    ra_rad, dec_rad = np.deg2rad(ra), np.deg2rad(dec)
+    cos_dec = np.cos(dec_rad)
+    sums = [np.bincount(labels, weights=w, minlength=n_groups)[kept_groups]
+            for w in (cos_dec * np.cos(ra_rad), cos_dec * np.sin(ra_rad), np.sin(dec_rad))]
+    mean_ra = np.rad2deg(np.arctan2(sums[1], sums[0])) % 360.0
+    mean_dec = np.rad2deg(np.arctan2(sums[2], np.hypot(sums[0], sums[1])))
+    rows = list(zip(mean_ra, mean_dec, n_match_all[kept_groups]))
 
     out = Table(rows=rows, names=("ra", "dec", "n_match"), dtype=(float, float, int))
     out["ra"].unit = u.deg
