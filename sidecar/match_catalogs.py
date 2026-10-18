@@ -14,6 +14,8 @@ By default, the cut ``template_in_bounds == True`` is always applied.
 
 import argparse
 import operator
+import os
+import re
 
 import astropy.units as u
 import numpy as np
@@ -93,20 +95,35 @@ def _parse_filter_expression(expression):
     return column, op, _parse_filter_value(raw_value)
 
 
-def _count_detector_separated(xy, cat_index, min_separation):
-    """Greedily count detections from distinct catalogs that are >= min_separation pixels apart pairwise."""
-    kept_xy = []
-    used_cats = set()
-    for pos, cat in zip(xy, cat_index):
-        if cat in used_cats:
-            continue
-        if all(np.hypot(*(pos - other)) >= min_separation for other in kept_xy):
-            kept_xy.append(pos)
-            used_cats.add(cat)
-    return len(kept_xy)
+def _detector_from_path(path):
+    """Extract the detector number from a subtraction filename, e.g. 'F087_<id>_14_-_F087_<id>_14' -> 14."""
+    match = re.search(r"_(\d+)_-_", os.path.basename(str(path)))
+    return int(match.group(1)) if match else None
 
 
-def match_catalogs(tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=None, min_pixel_separation=None):
+def _table_detector(table):
+    """Per-row detector IDs from a 'detector' column or table.meta['detector'] (-1 if unknown)."""
+    if "detector" in table.colnames:
+        return np.asarray(table["detector"], int)
+    return np.full(len(table), int(table.meta.get("detector", -1)), dtype=int)
+
+
+def _count_distinct_positions(xy, detector, tolerance):
+    """Count distinct (detector, x, y) positions.
+
+    Detections on the same detector within `tolerance` pixels of an already-seen
+    position belong to that position, so repeats at the same position (e.g.
+    other filters) count once.
+    """
+    centers = []
+    for pos, det in zip(xy, detector):
+        if not any(det == d and np.hypot(*(pos - c)) < tolerance for d, c in centers):
+            centers.append((det, pos))
+    return len(centers)
+
+
+def match_catalogs(tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=None, min_pixel_separation=None,
+                  min_distinct_positions=2):
     """Cross-match catalogs on ra, dec and keep objects found in enough of them.
 
     Sources within `radius` of each other, directly or through a chain of
@@ -129,12 +146,18 @@ def match_catalogs(tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=Non
         ``>=``, and ``<=``. The default ``template_in_bounds == True`` cut is
         always applied.
     min_pixel_separation : float | None
-        If given (pixels), only count detections whose ('x_peak', 'y_peak') are
-        at least this far from every other counted detection in the object, so
-        that matches are consistent on the sky but come from different detector
-        positions (unlikely to be a fixed detector artifact).  Each catalog
-        contributes at most one detection.  Requires 'x_peak' and 'y_peak'
-        columns.  None (default) disables the check.
+        If given (pixels), detections of an object whose ('x_peak', 'y_peak')
+        are within this distance of each other are treated as the same
+        detector position.  The object must then be seen at at least
+        `min_distinct_positions` distinct positions (unlikely to be a fixed
+        detector artifact).  Multiple detections at one position (e.g. in
+        different filters) all count toward `min_matches`.  Positions on
+        different detectors are always distinct; the detector comes from a
+        'detector' column or ``table.meta['detector']`` (all one detector if
+        absent).  Requires 'x_peak' and 'y_peak' columns.  None (default) disables the check.
+    min_distinct_positions : int
+        Minimum number of distinct detector positions; only used when
+        `min_pixel_separation` is given.
 
     Returns
     -------
@@ -162,6 +185,7 @@ def match_catalogs(tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=Non
                 np.concatenate([np.asarray(t["y_peak"], float) for t in filtered_tables]),
             ]
         ) if filtered_tables else np.empty((0, 2))
+        detector = np.concatenate([_table_detector(t) for t in filtered_tables]) if filtered_tables else np.array([], int)
 
     n = len(ra)
     if n == 0:
@@ -175,11 +199,13 @@ def match_catalogs(tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=Non
     rows = []
     for g in range(n_groups):
         members = labels == g
-        if min_pixel_separation is None:
-            n_match = len(np.unique(cat_index[members]))
-        else:
-            n_match = _count_detector_separated(xy[members], cat_index[members], min_pixel_separation)
+        n_match = len(np.unique(cat_index[members]))
         if n_match < min_matches:
+            continue
+        if (
+            min_pixel_separation is not None
+            and _count_distinct_positions(xy[members], detector[members], min_pixel_separation) < min_distinct_positions
+        ):
             continue
         # Average on the unit sphere to avoid ra wrap problems.
         mean = SkyCoord(ra[members], dec[members], unit="deg").cartesian.mean()
@@ -199,13 +225,21 @@ def match_catalog_files(
     min_matches=2,
     row_filters=None,
     min_pixel_separation=None,
+    min_distinct_positions=2,
     overwrite=True,
 ):
     """Read .ecsv catalogs, match them with `match_catalogs`, and write the result."""
-    tables = [Table.read(p, format="ascii.ecsv") for p in input_paths]
+    tables = []
+    for p in input_paths:
+        table = Table.read(p, format="ascii.ecsv")
+        detector = _detector_from_path(p)
+        if detector is not None:
+            table.meta["detector"] = detector
+        tables.append(table)
     matched = match_catalogs(tables, radius=radius, min_matches=min_matches,
         row_filters=row_filters,
         min_pixel_separation=min_pixel_separation,
+        min_distinct_positions=min_distinct_positions,
     )
     matched.write(output_path, format="ascii.ecsv", overwrite=overwrite)
     return matched
@@ -255,6 +289,12 @@ examples:
             f"(default {DEFAULT_MIN_PIXEL_SEPARATION:g} if flag given without a value). Disabled if omitted."
         ),
     )
+    parser.add_argument(
+        "--min-distinct-positions",
+        type=int,
+        default=2,
+        help="With --min-pixel-separation, minimum number of distinct detector positions per object (default 2).",
+    )
     args = parser.parse_args()
     row_filters = [_parse_filter_expression(expr) for expr in args.row_filter]
 
@@ -265,6 +305,7 @@ examples:
         min_matches=args.min_matches,
         row_filters=row_filters,
         min_pixel_separation=args.min_pixel_separation,
+        min_distinct_positions=args.min_distinct_positions,
     )
     print(f"Wrote {len(matched)} objects to {args.output}")
 
