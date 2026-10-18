@@ -16,6 +16,7 @@ from sidecar import truth_matching
 from sidecar import truth_retrieval
 from sidecar.database import save_dia_objects_from_subtraction
 from sidecar.source_detection import detect_and_measure_sources
+from sidecar import util
 from sidecar.util import (
     find_templates_for_observation_ids,
     make_data_records_from_observation_id,
@@ -240,6 +241,7 @@ class Detection:
         frame="icrs",
         ra_col="ra",
         dec_col="dec",
+        **radius_kwargs,
     ):
         """Reject stars from subtraction detection catalogs
 
@@ -257,6 +259,8 @@ class Detection:
             Name of column in detection table for right ascension in degrees
         dec_col : str
             Name of column in detection table for declination in degrees
+        radius_kwargs :
+            ref_mag, scale, max_radius, mag_col for a magnitude-dependent radius; see util.reject_stars
 
         Return
         ------
@@ -264,14 +268,9 @@ class Detection:
             cleaned catalog with matches to stars removed.
         """
         detection = Table.read(difference_detection_path, format="ascii")
-        if len(stars) < 1 or len(detection) < 1:
-            cleaned_detection = detection.copy()
-        else:
-            star_skycoord = SkyCoord(stars["ra"], stars["dec"], frame=frame, unit="deg")
-            detection_skycoord = SkyCoord(detection[ra_col], detection[dec_col], frame=frame, unit="deg")
-            cleaned_detection = truth_matching.skymatch_and_reject(
-                detection, stars, detection_skycoord, star_skycoord, match_radius=match_radius
-            )
+        cleaned_detection = util.reject_stars(
+            detection, stars, match_radius, frame=frame, ra_col=ra_col, dec_col=dec_col, **radius_kwargs
+        )
 
         cleaned_detection.write(cleaned_difference_detection_path, overwrite=True, format="ascii.ecsv")
 

@@ -3,12 +3,107 @@ import re
 import numpy as np
 import pandas as pd
 
+import astropy.units as u
+from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.table import Table
 from astropy.wcs import WCS
 
 from snappl.dbclient import SNPITDBClient
 from snappl.imagecollection import ImageCollection
+
+DEFAULT_STAR_MAG_COL = "phot_g_mean_mag"
+
+
+def star_rejection_radii(mags, match_radius, ref_mag=None, scale=0.2, max_radius=None):
+    """Rejection radius for each star as a function of magnitude.
+
+    Without `ref_mag` every star gets `match_radius`.  With it, a star brighter than `ref_mag`
+    gets match_radius * 10**(scale * (ref_mag - mag)), capped at `max_radius` (scale=0.2 grows as
+    flux**0.5, as in subtraction.make_bright_star_mask).  Stars fainter than `ref_mag`, or with an
+    undefined magnitude, get `match_radius`.
+
+    Parameters
+    ----------
+    mags : array-like of float
+    match_radius : astropy.units.Quantity or float
+        Base radius; a bare float is in arcsec.
+    ref_mag : float, optional
+    scale : float
+    max_radius : astropy.units.Quantity or float, optional
+        A bare float is in arcsec.
+
+    Returns
+    -------
+    astropy.units.Quantity
+        Radius per star, in arcsec.
+    """
+    base = u.Quantity(match_radius, u.arcsec).to(u.arcsec)
+    mags = np.ma.filled(np.ma.asarray(mags), np.nan).astype(float)
+    radii = np.full(mags.shape, base.value)
+    if ref_mag is not None:
+        bright = mags < ref_mag
+        radii[bright] = base.value * 10 ** (scale * (ref_mag - mags[bright]))
+    if max_radius is not None:
+        radii = np.minimum(radii, u.Quantity(max_radius, u.arcsec).to_value(u.arcsec))
+    return radii * u.arcsec
+
+
+def reject_stars(
+    detection,
+    stars,
+    match_radius,
+    frame="icrs",
+    ra_col="ra",
+    dec_col="dec",
+    star_ra_col="ra",
+    star_dec_col="dec",
+    mag_col=DEFAULT_STAR_MAG_COL,
+    ref_mag=None,
+    scale=0.2,
+    max_radius=None,
+):
+    """Remove detections lying within a (magnitude-dependent) radius of a reference star.
+
+    Parameters
+    ----------
+    detection : astropy.table.Table
+        Detections with `ra_col`, `dec_col` in degrees.
+    stars : astropy.table.Table
+        Reference stars (e.g., Gaia) with `star_ra_col`, `star_dec_col` in degrees,
+        and `mag_col` if `ref_mag` is given.
+    match_radius : astropy.units.Quantity or float
+        Rejection radius for stars no brighter than `ref_mag` (all stars if `ref_mag` is None).
+        A bare float is in arcsec.
+    frame : str
+        astropy coordinate frame of both catalogs, e.g., "icrs" or "fk5".
+    ref_mag, scale, max_radius :
+        Magnitude-dependent radius; see `star_rejection_radii`.
+
+    Returns
+    -------
+    astropy.table.Table
+        Copy of `detection` without the rejected rows.
+    """
+    if len(stars) < 1 or len(detection) < 1:
+        return detection.copy()
+
+    if ref_mag is not None and mag_col not in stars.colnames:
+        raise ValueError(f"Star catalog needs a '{mag_col}' column to use a magnitude-dependent radius")
+    mags = stars[mag_col] if ref_mag is not None else np.zeros(len(stars))
+    radii = star_rejection_radii(mags, match_radius, ref_mag=ref_mag, scale=scale, max_radius=max_radius)
+
+    def to_skycoord(table, ra, dec):
+        ra_deg, dec_deg = (np.asarray(table[c], dtype=float) for c in (ra, dec))
+        return SkyCoord(ra_deg, dec_deg, frame=frame, unit="deg")
+
+    star_skycoord = to_skycoord(stars, star_ra_col, star_dec_col)
+    detection_skycoord = to_skycoord(detection, ra_col, dec_col)
+    idx_det, idx_star, sep, _ = star_skycoord.search_around_sky(detection_skycoord, radii.max())
+    close = sep <= radii[idx_star]
+    rejected = np.zeros(len(detection), dtype=bool)
+    rejected[idx_det[close]] = True
+    return detection[~rejected]
 
 
 INPUT_IMAGE_PATTERN = (
