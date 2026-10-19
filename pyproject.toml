@@ -25,6 +25,8 @@ dependencies = [
   "astropy>=3.2",
   "pandas",
   "pyarrow",
+  "nested-pandas>=0.6",
+  "matplotlib",
   "astroquery",
   "photutils",
   "roman_snpit_snappl>=0.39",

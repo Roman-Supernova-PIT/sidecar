@@ -16,9 +16,11 @@ import argparse
 import operator
 import os
 import re
+from pathlib import Path
 
 import astropy.units as u
 import numpy as np
+import pandas as pd
 from astropy.coordinates import SkyCoord, search_around_sky
 from astropy.table import Table
 from scipy.sparse import coo_matrix
@@ -172,7 +174,25 @@ def match_catalogs(tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=Non
     """
     normalized_filters = _normalize_row_filters(row_filters)
     filtered_tables = [_apply_row_filters(table, normalized_filters) for table in tables]
+    grouping = _group_detections(filtered_tables, radius, min_matches, min_pixel_separation, min_distinct_positions)
+    if grouping is None:
+        return Table({"ra": [], "dec": [], "n_match": []}, dtype=[float, float, int])
 
+    mean_ra, mean_dec = _group_mean_positions(grouping)
+    rows = list(zip(mean_ra, mean_dec, grouping["n_match_all"][grouping["kept_groups"]]))
+
+    out = Table(rows=rows, names=("ra", "dec", "n_match"), dtype=(float, float, int))
+    out["ra"].unit = u.deg
+    out["dec"].unit = u.deg
+    return out
+
+
+def _group_detections(filtered_tables, radius, min_matches, min_pixel_separation, min_distinct_positions):
+    """Group the rows of already-filtered tables into objects; None if there are no rows.
+
+    Returns a dict with per-row 'ra', 'dec', 'cat_index', 'labels' (group of each row),
+    per-group 'n_match_all' and the sorted indices 'kept_groups' of groups passing the cuts.
+    """
     ra = np.concatenate([_to_deg(t["ra"]) for t in filtered_tables]) if filtered_tables else np.array([])
     dec = np.concatenate([_to_deg(t["dec"]) for t in filtered_tables]) if filtered_tables else np.array([])
     cat_index = (
@@ -194,7 +214,7 @@ def match_catalogs(tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=Non
 
     n = len(ra)
     if n == 0:
-        return Table({"ra": [], "dec": [], "n_match": []}, dtype=[float, float, int])
+        return None
 
     coords = SkyCoord(ra, dec, unit="deg")
     idx1, idx2, _, _ = search_around_sky(coords, coords, radius)
@@ -218,21 +238,169 @@ def match_catalogs(tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=Non
             )
             if n_positions < min_distinct_positions:
                 keep[g] = False
-    kept_groups = np.flatnonzero(keep)
+    return {
+        "ra": ra,
+        "dec": dec,
+        "cat_index": cat_index,
+        "labels": labels,
+        "n_groups": n_groups,
+        "n_match_all": n_match_all,
+        "kept_groups": np.flatnonzero(keep),
+    }
 
-    # Average unit vectors per group to avoid ra wrap problems.
-    ra_rad, dec_rad = np.deg2rad(ra), np.deg2rad(dec)
+
+def _group_mean_positions(grouping):
+    """Mean (ra, dec) in degrees of the kept groups, averaging unit vectors to avoid ra wrap problems."""
+    labels, n_groups, kept_groups = grouping["labels"], grouping["n_groups"], grouping["kept_groups"]
+    ra_rad, dec_rad = np.deg2rad(grouping["ra"]), np.deg2rad(grouping["dec"])
     cos_dec = np.cos(dec_rad)
     sums = [np.bincount(labels, weights=w, minlength=n_groups)[kept_groups]
             for w in (cos_dec * np.cos(ra_rad), cos_dec * np.sin(ra_rad), np.sin(dec_rad))]
     mean_ra = np.rad2deg(np.arctan2(sums[1], sums[0])) % 360.0
     mean_dec = np.rad2deg(np.arctan2(sums[2], np.hypot(sums[0], sums[1])))
-    rows = list(zip(mean_ra, mean_dec, n_match_all[kept_groups]))
+    return mean_ra, mean_dec
 
-    out = Table(rows=rows, names=("ra", "dec", "n_match"), dtype=(float, float, int))
-    out["ra"].unit = u.deg
-    out["dec"].unit = u.deg
-    return out
+
+_CATALOG_NAME_RE = re.compile(
+    r"^(?P<kind>.+?)_(?P<subtraction_id>(?P<band>[A-Z]\d{3})_(?P<science_id>\d+)_(?P<detector>\d+)"
+    r"_-_(?P<template_band>[A-Z]\d{3})_(?P<template_id>\d+)_(?P<template_detector>\d+))$"
+)
+SOURCE_ID_SEPARATOR = ":"
+
+
+def parse_catalog_path(path):
+    """Identify a per-subtraction catalog from its file name.
+
+    ``cleaned_simple_detection_F087_<sci>_14_-_F087_<tpl>_14.ecsv`` gives
+
+    - ``catalog_kind``: ``cleaned_simple_detection`` (which catalog of the subtraction)
+    - ``subtraction_id``: ``F087_<sci>_14_-_F087_<tpl>_14`` (the subtraction: unique per
+      science image, template image and detector; shared by all catalog kinds)
+    - ``band``, ``science_id``, ``template_id``, ``detector``: its parts.
+
+    Returns an empty dict if the name does not follow the pattern.
+    """
+    match = _CATALOG_NAME_RE.match(Path(str(path)).name.split(".")[0])
+    if match is None:
+        return {}
+    info = match.groupdict()
+    info["catalog_kind"] = info.pop("kind")
+    info["detector"] = int(info["detector"])
+    info["template_detector"] = int(info.pop("template_detector"))
+    info.pop("template_band")
+    return info
+
+
+def make_source_id(catalog_kind, subtraction_id, source):
+    """Globally unique, parseable ID of one detection: ``<catalog_kind>:<subtraction_id>:<id>``."""
+    return SOURCE_ID_SEPARATOR.join([str(catalog_kind), str(subtraction_id), str(source)])
+
+
+def make_object_id(ra, dec):
+    """Object ID from the mean position, e.g. ``J058.92129-49.44007`` (0.04" resolution)."""
+    return f"J{ra:09.5f}{dec:+09.5f}"
+
+
+def _sources_frame(table, index):
+    """One table's rows as a DataFrame with the identifying columns added."""
+    frame = table.to_pandas()
+    meta = table.meta
+    kind = meta.get("catalog_kind", "catalog")
+    sub_id = meta.get("subtraction_id", f"catalog{index}")
+    ids = frame["id"] if "id" in frame else range(len(frame))
+    identity = {
+        "source_id": [make_source_id(kind, sub_id, i) for i in ids],
+        "catalog_kind": kind,
+        "subtraction_id": sub_id,
+        "band": meta.get("band"),
+        "science_id": meta.get("science_id"),
+        "template_id": meta.get("template_id"),
+    }
+    for position, (key, value) in enumerate(identity.items()):
+        frame.insert(position, key, value)
+    if "detector" not in frame:
+        frame["detector"] = _table_detector(table)
+    return frame
+
+
+def match_catalogs_nested(tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=None,
+                          min_pixel_separation=None, min_distinct_positions=2):
+    """Like `match_catalogs`, but keep the per-subtraction rows of every object.
+
+    Terminology: a *source* is one detection in one per-subtraction catalog; an
+    *object* is a group of sources matched across at least `min_matches` catalogs.
+
+    Returns
+    -------
+    nested_pandas.NestedFrame
+        Indexed by ``object_id`` (`make_object_id`; position-based, so independent of
+        input order) with columns 'ra', 'dec' (mean, degrees), 'n_match', 'n_sources' and
+        a nested column ``sources``: one row per source with all catalog columns plus
+        'source_id' (`make_source_id`), 'catalog_kind', 'subtraction_id', 'band',
+        'science_id', 'template_id' and 'detector' (from ``table.meta``; set by
+        `match_catalog_files` from the file names).  ``obj['sources']`` is the per-object
+        table; ``nf['sources'].nest.to_flat()`` is every source with its ``object_id`` index.
+    """
+    from nested_pandas import NestedFrame
+
+    normalized_filters = _normalize_row_filters(row_filters)
+    filtered = [_apply_row_filters(table, normalized_filters) for table in tables]
+    grouping = _group_detections(filtered, radius, min_matches, min_pixel_separation, min_distinct_positions)
+    kept_groups = grouping["kept_groups"] if grouping is not None else np.array([], int)
+
+    mean_ra, mean_dec = _group_mean_positions(grouping) if grouping is not None else (np.array([]), np.array([]))
+    object_ids = np.array([make_object_id(r, d) for r, d in zip(mean_ra, mean_dec)], dtype=object)
+    # Distinct objects closer than the ID resolution get a suffix so IDs stay unique.
+    duplicate_rank = pd.Series(object_ids).groupby(object_ids).cumcount().to_numpy()
+    object_ids = np.where(duplicate_rank > 0, [f"{o}_{k}" for o, k in zip(object_ids, duplicate_rank)], object_ids)
+
+    objects = pd.DataFrame(
+        {
+            "ra": mean_ra,
+            "dec": mean_dec,
+            "n_match": grouping["n_match_all"][kept_groups] if grouping is not None else np.array([], int),
+        },
+        index=pd.Index(object_ids, name="object_id", dtype=object),
+    )
+
+    if grouping is None:
+        objects["n_sources"] = np.array([], int)
+        return NestedFrame(objects)
+
+    group_to_object = np.full(grouping["n_groups"], -1)
+    group_to_object[kept_groups] = np.arange(len(kept_groups))
+    row_object = group_to_object[grouping["labels"]]
+    in_object = row_object >= 0
+
+    sources = pd.concat([_sources_frame(t, i) for i, t in enumerate(filtered)], ignore_index=True)
+    sources = sources[in_object]
+    sources.index = pd.Index(object_ids[row_object[in_object]], name="object_id", dtype=object)
+    objects["n_sources"] = np.bincount(row_object[in_object], minlength=len(kept_groups))
+    return NestedFrame(objects).join_nested(sources, "sources")
+
+
+def write_nested_catalog(nested, path):
+    """Write the nested matched catalog to Parquet (nested-pandas layout).
+
+    The ``object_id`` index is stored as a column because Parquet via nested-pandas drops the index.
+    """
+    nested.reset_index().to_parquet(path)
+
+
+def read_nested_catalog(path):
+    """Read a matched catalog written by `write_nested_catalog`."""
+    from nested_pandas import read_parquet
+
+    return read_parquet(path).set_index("object_id")
+
+
+def find_source(nested, source_id):
+    """Return (object_id, source row as a Series) for a ``source_id``; KeyError if absent."""
+    flat = nested["sources"].nest.to_flat()
+    hit = flat[flat["source_id"] == source_id]
+    if hit.empty:
+        raise KeyError(source_id)
+    return hit.index[0], hit.iloc[0]
 
 
 def match_catalog_files(
@@ -246,15 +414,20 @@ def match_catalog_files(
     overwrite=True,
     n_jobs=1,
     cache=True,
+    nested_output_path=None,
 ):
     """Read .ecsv catalogs, match them with `match_catalogs`, and write the result.
 
     Catalogs are read in parallel over `n_jobs` processes (0: all CPUs).  With `cache`, a
     ``.parquet`` copy is written beside each ECSV and used on later runs while up to date.
+
+    If `nested_output_path` is given, also write the nested object/source catalog of
+    `match_catalogs_nested` to that Parquet file.
     """
     input_paths = list(input_paths)
     tables = read_catalogs(input_paths, n_jobs=n_jobs, cache=cache)
     for p, table in zip(input_paths, tables):
+        table.meta.update(parse_catalog_path(p))
         detector = _detector_from_path(p)
         if detector is not None:
             table.meta["detector"] = detector
@@ -264,6 +437,13 @@ def match_catalog_files(
         min_distinct_positions=min_distinct_positions,
     )
     matched.write(output_path, format="ascii.ecsv", overwrite=overwrite)
+    if nested_output_path is not None:
+        write_nested_catalog(
+            match_catalogs_nested(tables, radius=radius, min_matches=min_matches, row_filters=row_filters,
+                                  min_pixel_separation=min_pixel_separation,
+                                  min_distinct_positions=min_distinct_positions),
+            nested_output_path,
+        )
     return matched
 
 
@@ -330,6 +510,12 @@ examples:
         default=True,
         help="Create (if don't exist) and read Parquet copies of the ecsv catalogs.",
     )
+    parser.add_argument(
+        "--nested-output",
+        default=None,
+        metavar="PARQUET",
+        help="Also write a nested Parquet catalog: one row per object with its per-subtraction sources nested.",
+    )
     args = parser.parse_args()
     row_filters = [_parse_filter_expression(expr) for expr in args.row_filter]
 
@@ -343,6 +529,7 @@ examples:
         min_distinct_positions=args.min_distinct_positions,
         n_jobs=args.jobs,
         cache=args.cache,
+        nested_output_path=args.nested_output,
     )
     print(f"Wrote {len(matched)} objects to {args.output}")
 
