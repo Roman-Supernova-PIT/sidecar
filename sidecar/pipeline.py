@@ -11,6 +11,7 @@ from astropy.wcs.utils import pixel_to_skycoord
 import astropy.units as u
 
 from sidecar import star_retrieval
+from sidecar.catalog_io import write_catalog
 from sidecar import subtraction
 from sidecar import truth_matching
 from sidecar import truth_retrieval
@@ -166,7 +167,7 @@ class Detection:
         truth = truth_retrieval.merge_science_and_template_truth(
             science_truth, template_truth, science_wcs, template_wcs, offset=50
         )
-        truth.write(difference_truth_path, overwrite=True)
+        write_catalog(truth, difference_truth_path, overwrite=True)
         return truth
 
     @staticmethod
@@ -221,15 +222,15 @@ class Detection:
             detection, transients, detection_skycoord, transients_skycoord, match_radius, key=id_col
         )
 
-        transients_to_detection.write(transients_to_detection_path, overwrite=True)
-        detection_to_transients.write(detection_to_transients_path, overwrite=True)
+        write_catalog(transients_to_detection, transients_to_detection_path, overwrite=True)
+        write_catalog(detection_to_transients, detection_to_transients_path, overwrite=True)
         return transients_to_detection, detection_to_transients
 
     @staticmethod
     def retrieve_stars(science_image, star_catalog_path, max_mag=None):
         """Retrieve Gaia DR3 stars covering the science image and save them to star_catalog_path."""
         stars = star_retrieval.retrieve_gaia_stars_for_image(science_image, max_mag=max_mag)
-        stars.write(star_catalog_path, overwrite=True, format="ascii.ecsv")
+        write_catalog(stars, star_catalog_path, overwrite=True)
         return stars
 
     @staticmethod
@@ -272,7 +273,7 @@ class Detection:
             detection, stars, match_radius, frame=frame, ra_col=ra_col, dec_col=dec_col, **radius_kwargs
         )
 
-        cleaned_detection.write(cleaned_difference_detection_path, overwrite=True, format="ascii.ecsv")
+        write_catalog(cleaned_detection, cleaned_difference_detection_path, overwrite=True)
 
         return cleaned_detection
 

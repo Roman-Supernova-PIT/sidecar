@@ -24,6 +24,8 @@ from astropy.table import Table
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 
+from sidecar.catalog_io import read_catalogs
+
 DEFAULT_ROW_FILTERS = (("template_in_bounds", "==", True),)
 COMPARISON_OPERATORS = {
     "==": operator.eq,
@@ -242,15 +244,20 @@ def match_catalog_files(
     min_pixel_separation=None,
     min_distinct_positions=2,
     overwrite=True,
+    n_jobs=1,
+    cache=True,
 ):
-    """Read .ecsv catalogs, match them with `match_catalogs`, and write the result."""
-    tables = []
-    for p in input_paths:
-        table = Table.read(p, format="ascii.ecsv")
+    """Read .ecsv catalogs, match them with `match_catalogs`, and write the result.
+
+    Catalogs are read in parallel over `n_jobs` processes (0: all CPUs).  With `cache`, a
+    ``.parquet`` copy is written beside each ECSV and used on later runs while up to date.
+    """
+    input_paths = list(input_paths)
+    tables = read_catalogs(input_paths, n_jobs=n_jobs, cache=cache)
+    for p, table in zip(input_paths, tables):
         detector = _detector_from_path(p)
         if detector is not None:
             table.meta["detector"] = detector
-        tables.append(table)
     matched = match_catalogs(tables, radius=radius, min_matches=min_matches,
         row_filters=row_filters,
         min_pixel_separation=min_pixel_separation,
@@ -310,6 +317,19 @@ examples:
         default=2,
         help="With --min-pixel-separation, minimum number of distinct detector positions per object (default 2).",
     )
+    parser.add_argument(
+        "-j",
+        "--jobs",
+        type=int,
+        default=0,
+        help="Number of processes for reading catalogs (default 0: all CPUs).",
+    )
+    parser.add_argument(
+        "--cache",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Create (if don't exist) and read Parquet copies of the ecsv catalogs.",
+    )
     args = parser.parse_args()
     row_filters = [_parse_filter_expression(expr) for expr in args.row_filter]
 
@@ -321,6 +341,8 @@ examples:
         row_filters=row_filters,
         min_pixel_separation=args.min_pixel_separation,
         min_distinct_positions=args.min_distinct_positions,
+        n_jobs=args.jobs,
+        cache=args.cache,
     )
     print(f"Wrote {len(matched)} objects to {args.output}")
 

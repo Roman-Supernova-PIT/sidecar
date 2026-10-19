@@ -3,6 +3,7 @@ import numpy as np
 
 from astropy.stats import SigmaClip
 from astropy.table import Table, vstack
+from sidecar.catalog_io import write_catalog
 from photutils.aperture import ApertureStats, CircularAnnulus, CircularAperture, aperture_photometry
 from photutils.background import Background2D
 from photutils.centroids import centroid_com
@@ -361,5 +362,5 @@ def detect_and_measure_sources(
     else:
         catalog = measure_sources(detections, measurement_images, **measure_kwargs)
     if catalog_save_path is not None:
-        catalog.write(catalog_save_path, overwrite=overwrite)
+        write_catalog(catalog, catalog_save_path, overwrite=overwrite)
     return catalog
