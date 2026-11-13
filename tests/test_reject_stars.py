@@ -101,3 +101,30 @@ def test_clean_simple_bad_pixels_without_snr_cut(tmp_path):
     assert list(cleaned["id"]) == [1]
     with pytest.raises(ValueError, match="provided together"):
         Detection.reject_stars(stars, path, 5.0, tmp_path / "invalid.ecsv", snr_column="simple_diff_aper_r3_snr")
+
+
+@pytest.mark.parametrize("column_collection", [list, np.array])
+def test_clean_rejects_bad_or_unmeasured_pixels_in_any_image(tmp_path, column_collection):
+    detections = Table(
+        {
+            "id": np.arange(6),
+            "ra": np.arange(6, dtype=float) + 10,
+            "dec": np.zeros(6),
+            "template_flags_npix_bad": [0, 1, 0, 0, -1, 0],
+            "science_flags_npix_bad": [0, 0, 1, 0, 0, 0],
+            "score_flags_npix_bad": [0, 0, 0, 1, 0, 0],
+        }
+    )
+    detections["science_flags_npix_bad"] = MaskedColumn(
+        detections["science_flags_npix_bad"], mask=[False, False, False, False, False, True]
+    )
+    path = tmp_path / "detections.ecsv"
+    out = tmp_path / "cleaned.ecsv"
+    detections.write(path)
+    stars = Table({"ra": [], "dec": []})
+    columns = column_collection(["template_flags_npix_bad", "science_flags_npix_bad", "score_flags_npix_bad"])
+    cleaned = Detection.reject_stars(stars, path, 5.0, out, bad_pixel_column=columns)
+    assert list(cleaned["id"]) == [0]
+    assert list(Table.read(out)["id"]) == [0]
+    with pytest.raises(KeyError):
+        Detection.reject_stars(stars, path, 5.0, out, bad_pixel_column=["template_flags_npix_bad", "missing"])

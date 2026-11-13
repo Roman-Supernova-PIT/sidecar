@@ -269,9 +269,9 @@ class Detection:
             Name of column in detection table for right ascension in degrees
         dec_col : str
             Name of column in detection table for declination in degrees
-        bad_pixel_column : str, optional
-            Column counting bad pixels in the measurement aperture. Only rows with
-            a measured count of zero are retained.
+        bad_pixel_column : str or sequence of str, optional
+            Columns counting bad pixels in the measurement apertures. Only rows
+            with a measured count of zero in every column are retained.
         snr_column : str, optional
             Aperture S/N column to filter on, together with `min_abs_snr`.
         min_abs_snr : float, optional
@@ -290,8 +290,11 @@ class Detection:
         )
 
         if bad_pixel_column is not None:
-            flags = np.ma.asarray(cleaned_detection[bad_pixel_column])
-            good = np.ma.filled(flags == 0, False)
+            columns = [bad_pixel_column] if isinstance(bad_pixel_column, str) else bad_pixel_column
+            good = np.ones(len(cleaned_detection), dtype=bool)
+            for column in columns:
+                flags = np.ma.asarray(cleaned_detection[column])
+                good &= np.ma.filled(flags == 0, False)
             SNLogger.info(f"Removing {np.count_nonzero(~good)} detections with bad or unmeasured pixels")
             cleaned_detection = cleaned_detection[good]
         if (snr_column is None) != (min_abs_snr is None):
@@ -618,7 +621,9 @@ class Detection:
                     file_path["simple_difference_detection_path"],
                     self.REJECT_MATCH_RADIUS,
                     file_path["cleaned_simple_difference_detection_path"],
-                    bad_pixel_column="simple_diff_flags_npix_bad",
+                    bad_pixel_column=[
+                        "template_flags_npix_bad", "science_flags_npix_bad", "simple_diff_flags_npix_bad"
+                    ],
                 )
 
             SNLogger.info("Removing known stars from diffim image detection")
@@ -635,7 +640,7 @@ class Detection:
                 file_path["score_detection_path"],
                 self.REJECT_MATCH_RADIUS,
                 file_path["cleaned_score_detection_path"],
-                bad_pixel_column="score_flags_npix_bad",
+                bad_pixel_column=["template_flags_npix_bad", "science_flags_npix_bad", "score_flags_npix_bad"],
                 snr_column="score_aper_r3_snr",
                 min_abs_snr=self.cleaned_score_min_snr,
             )

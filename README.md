@@ -129,7 +129,8 @@ sidecar/examples/perlmutter/test_sidecar_asdf_manualrdm.sh
   local background-RMS threshold (5 times the local RMS by default); catalog `peak_value` is background-subtracted.
   Subtraction products store SFFT's blank-region mask in a separate `NO_COVERAGE` FITS extension.
 - Cleaned catalogs are written when known-star rejection is enabled. Cleaned score and simple-difference
-  catalogs also exclude sources with bad or unmeasured pixels in the respective 3-pixel flag aperture.
+  catalogs also exclude sources with bad or unmeasured pixels in the 3-pixel flag aperture of the science,
+  template, or respective subtraction product, each measured at the source's sky position.
   The cleaned score catalog additionally requires `abs(score_aper_r3_snr) >= 7`, configurable with
   `--cleaned-score-min-snr`; significant negative detections are retained. The simple-difference catalog
   has no S/N cut. The score-image aperture S/N uses the difference-image noise plane and does not fully
