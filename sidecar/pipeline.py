@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 
 from astropy.coordinates import SkyCoord
+from astropy.io import fits
 from astropy.table import Table
 from astropy.wcs.utils import pixel_to_skycoord
 import astropy.units as u
@@ -393,6 +394,14 @@ class Detection:
         """Load a subtraction product (DATA, NOISE, FLAGS in HDUs 1-3) as a snappl FITSImage."""
         return FITSImage(path, imagehdu=1, noisehdu=2, flagshdu=3, no_base_path=True)
 
+    @staticmethod
+    def load_no_coverage_mask(path):
+        """Load the output-grid no-coverage mask from a subtraction product."""
+        with fits.open(path) as hdus:
+            if "NO_COVERAGE" not in hdus:
+                raise ValueError(f"{path} has no NO_COVERAGE extension; rerun the subtraction to generate it")
+            return hdus["NO_COVERAGE"].data.astype(bool)
+
     def run_one_subtraction(
         self,
         image_collection,
@@ -538,6 +547,9 @@ class Detection:
                         "science": science_image,
                     },
                     catalog_save_path=file_path["simple_difference_detection_path"],
+                    detect_kwargs={
+                        "coverage_mask": self.__class__.load_no_coverage_mask(file_path["simple_difference_image_path"])
+                    },
                 )
 
         SNLogger.info("Processing diffim detection")
@@ -549,6 +561,7 @@ class Detection:
                 "science": science_image,
             },
             catalog_save_path=file_path["difference_detection_path"],
+            detect_kwargs={"coverage_mask": self.__class__.load_no_coverage_mask(file_path["difference_image_path"])},
         )
 
         SNLogger.info("Processing score image detection")
@@ -560,6 +573,7 @@ class Detection:
                 "science": science_image,
             },
             catalog_save_path=file_path["score_detection_path"],
+            detect_kwargs={"coverage_mask": self.__class__.load_no_coverage_mask(file_path["score_image_path"])},
         )
 
         if reject_known_stars:

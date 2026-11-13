@@ -20,6 +20,7 @@ def detect_sources_in_subtraction(
     background_box_size=64,
     negative=True,
     verbose=True,
+    coverage_mask=None,
 ):
     """Detect based on the peak pixels in an image.
 
@@ -28,17 +29,22 @@ def detect_sources_in_subtraction(
     image : snappl.image.Image
         Image to search for sources, using `image.data` and `image.get_wcs()`.
     nsigma : float
-        SNR to use for the detection threshold.
+        Peak threshold in units of local background RMS, not integrated source S/N.
     box_size : int
         Size of box in which to look for unique peaks.  Passed to photutils.find_peaks.
     background_box_size : int
-        Size of box in which to estimate the background.  Passed to photutils.Background2D
+        Size of box in which to estimate the background. Passed to photutils.Background2D;
+        boxes with more than 80 percent masked pixels are excluded.
     negative : bool
         Search for negative sources as well as positive sources.
+    coverage_mask : 2D ndarray of bool, optional
+        True for pixels without template coverage, on the detection image grid.
+        If None, the entire image is assumed to have coverage.
 
     Returns
     -------
-    astropy.table.Table of results
+    astropy.table.Table or None
+        Results with background-subtracted ``peak_value``, or None if no peaks are found.
 
     Notes
     -----
@@ -52,29 +58,35 @@ def detect_sources_in_subtraction(
     https://photutils.readthedocs.io/en/stable/user_guide/detection.html
     """
     data = np.asarray(image.data, dtype=float)
+    if not np.isfinite(nsigma) or nsigma <= 0:
+        raise ValueError("nsigma must be positive and finite")
+    if coverage_mask is None:
+        bad = ~np.isfinite(data)
+    else:
+        coverage_mask = np.asarray(coverage_mask, dtype=bool)
+        if coverage_mask.shape != data.shape:
+            raise ValueError("coverage_mask must have the same shape as image.data")
+        bad = coverage_mask | ~np.isfinite(data)
+    if np.all(bad):
+        raise ValueError("No finite pixels with template coverage are available for source detection")
 
-    bkg = Background2D(image.data, box_size=background_box_size)
-
-    sky_subtracted_data = image.data - bkg.background
-    rms = bkg.background_rms_median
-
-    # Based on the photutils.background documentation
-    sigma_clip = SigmaClip(sigma=2.0, maxiters=10)
-    # threshold_map = detect_threshold(sky_subtracted_data, nsigma=nsigma, sigma_clip=sigma_clip)
-
-    threshold = nsigma * rms  # Override the threshold to be based on the background RMS
+    bkg = Background2D(data, box_size=background_box_size, mask=bad, exclude_percentile=80)
+    sky_subtracted_data = data - bkg.background
+    rms = bkg.background_rms
+    if np.any(~np.isfinite(sky_subtracted_data[~bad])):
+        raise ValueError("Background must be finite in the covered region")
+    if np.any(~np.isfinite(rms[~bad]) | (rms[~bad] <= 0)):
+        raise ValueError("Background RMS must be positive and finite in the covered region")
+    threshold = nsigma * rms
 
     if verbose:
         print(f"Median background: {bkg.background_median}")
-        print(f"Background RMS: {rms}")
-        print(f"sigma_clip: {sigma_clip}")
-        print(f"Detection threshold: {threshold}")
+        print(f"Median background RMS: {bkg.background_rms_median}")
+        print(f"Detection threshold: {nsigma} times the local background RMS")
 
-    threshold = 0.1
-
-    find_peaks_kwargs = {"threshold": threshold, "box_size": box_size, "centroid_func": centroid_com}
-    pos_obj = find_peaks(data, **find_peaks_kwargs)
-    neg_obj = find_peaks(-data, **find_peaks_kwargs)
+    find_peaks_kwargs = {"threshold": threshold, "box_size": box_size, "centroid_func": centroid_com, "mask": bad}
+    pos_obj = find_peaks(sky_subtracted_data, **find_peaks_kwargs)
+    neg_obj = find_peaks(-sky_subtracted_data, **find_peaks_kwargs) if negative else None
 
     if neg_obj is not None:
         neg_obj["peak_value"] = -neg_obj["peak_value"]
@@ -83,10 +95,11 @@ def detect_sources_in_subtraction(
         # The negative object detection will generate its own list, starting at 1
         # Take the largest id from the positive detection and add that to the negative detection ids
         # (which are all positive integers) to get a non-conflicting list of ids in the merged catalog.
-        id_offset = pos_obj["id"].max()
-        neg_obj["id"] += id_offset
-
-        obj = vstack([pos_obj, neg_obj])
+        if pos_obj is not None:
+            neg_obj["id"] += pos_obj["id"].max()
+            obj = vstack([pos_obj, neg_obj])
+        else:
+            obj = neg_obj
     else:
         obj = pos_obj
 
@@ -276,6 +289,7 @@ def measure_sources(
     Returns
     -------
     astropy.table.Table
+        Detection and measurement columns, including for an empty catalog.
         Copy of `catalog` with added columns, for each image `<name>`:
 
         - `<name>_x`, `<name>_y`, `<name>_in_bounds`: position in that image (0-based pixels)
@@ -358,9 +372,11 @@ def detect_and_measure_sources(
     """
     detections = detect_sources_in_subtraction(detection_image, **(detect_kwargs or {}))
     if detections is None:
-        catalog = Table()
-    else:
-        catalog = measure_sources(detections, measurement_images, **measure_kwargs)
+        detections = Table(
+            names=("id", "x_peak", "y_peak", "peak_value", "x_centroid", "y_centroid", "ra", "dec"),
+            dtype=(int, int, int, float, float, float, float, float),
+        )
+    catalog = measure_sources(detections, measurement_images, **measure_kwargs)
     if catalog_save_path is not None:
         write_catalog(catalog, catalog_save_path, overwrite=overwrite)
     return catalog

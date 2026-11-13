@@ -125,7 +125,9 @@ sidecar/examples/perlmutter/test_sidecar_asdf_manualrdm.sh
   | science_band | science_observation_id | science_sca | template_band | template_observation_id | template_sca |
   ```
 - Subtraction: Perform image difference using [SFFT](https://github.com/thomasvrussell/sfft) algorithm.
-- Detection: Perform source detection using [Source-Extractor](https://sextractor.readthedocs.io/en/latest/Introduction.html).
+- Detection: Find positive and negative peaks in background-subtracted difference and score images using a
+  local background-RMS threshold (5 times the local RMS by default); catalog `peak_value` is background-subtracted.
+  Subtraction products store SFFT's blank-region mask in a separate `NO_COVERAGE` FITS extension.
 - Truth Retrieval: Retrieve truth tables of the science image and template image.
 - Truth Matching: Match the truth information to the detected sources for evaluating efficiency. Match the detected sources to truth for evaluating purity.
 - Evaluation: Evaluate efficiency and purity.

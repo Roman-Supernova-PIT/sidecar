@@ -500,7 +500,7 @@ def make_minimal_wcs_header(image):
     return hdr
 
 
-def _save_products_as_fits(path, hdr, data, noise, flags=None, mask=None):
+def _save_products_as_fits(path, hdr, data, noise, flags=None, mask=None, coverage_mask=None):
     """Save products as a FITS file with multiple HDUs.
 
     data: 2D ndarray
@@ -513,9 +513,13 @@ def _save_products_as_fits(path, hdr, data, noise, flags=None, mask=None):
     flags: 2D ndarray of the flags data, optional
         If None (e.g. the flags are not defined for resampled images), a FLAGS plane of zeros is written
         so that the HDU layout is the same for all products.
-    mask: 2D ndarray of the detection mask
+    mask: 2D ndarray
+        The product-specific mask (e.g. interpolated pixels for difference images).
         If None, a MASK plane of zeros is written so that the HDU layout is the same for all products.
         Written as uint8 array
+    coverage_mask: 2D ndarray of bool, optional
+        True where the resampled template has no coverage. If supplied, it is written
+        to a separate NO_COVERAGE extension on the output image grid.
     """
 
     # Handle types.  Make copies if we change something, so we don't modify the passed-in array
@@ -535,15 +539,18 @@ def _save_products_as_fits(path, hdr, data, noise, flags=None, mask=None):
     if flags is None:
         flags = np.zeros(np.shape(data), dtype=np.uint32)
 
-    hdul = fits.HDUList(
-        [
-            fits.PrimaryHDU(data=None, header=hdr),
-            fits.ImageHDU(data=data, name="DATA", header=hdr),
-            fits.ImageHDU(data=noise_standardized, name="NOISE", header=hdr),
-            fits.ImageHDU(data=flags, name="FLAGS", header=hdr),
-            fits.ImageHDU(data=mask_standardized, name="MASK", header=hdr),
-        ]
-    )
+    hdus = [
+        fits.PrimaryHDU(data=None, header=hdr),
+        fits.ImageHDU(data=data, name="DATA", header=hdr),
+        fits.ImageHDU(data=noise_standardized, name="NOISE", header=hdr),
+        fits.ImageHDU(data=flags, name="FLAGS", header=hdr),
+        fits.ImageHDU(data=mask_standardized, name="MASK", header=hdr),
+    ]
+    if coverage_mask is not None:
+        if np.shape(coverage_mask) != np.shape(data):
+            raise ValueError("coverage_mask must have the same shape as data")
+        hdus.append(fits.ImageHDU(data=np.asarray(coverage_mask, dtype=np.uint8), name="NO_COVERAGE", header=hdr))
+    hdul = fits.HDUList(hdus)
     hdul.writeto(path, overwrite=True)
 
 
@@ -811,6 +818,7 @@ class Pipeline:
         diff_noise = np.sqrt(sfftifier.create_variance_image())
         diff_flags = self.template_image.flags | self.science_image.flags
         diff_interpolated_mask = template_image_interpolated_mask | science_image_interpolated_mask
+        no_coverage = sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.BlankMask))
 
         _save_products_as_fits(
             path=self.decorr_diff_path,
@@ -819,6 +827,7 @@ class Pipeline:
             noise=diff_noise,
             flags=diff_flags,
             mask=diff_interpolated_mask,
+            coverage_mask=no_coverage,
         )
 
         _save_products_as_fits(
@@ -828,6 +837,7 @@ class Pipeline:
             noise=diff_noise,
             flags=diff_flags,
             mask=diff_interpolated_mask,
+            coverage_mask=no_coverage,
         )
         fits.writeto(self.decorr_psf_path, decorr_psf, header=None, overwrite=True)
 
@@ -838,6 +848,7 @@ class Pipeline:
             noise=diff_noise,
             flags=diff_flags,
             mask=diff_interpolated_mask,
+            coverage_mask=no_coverage,
         )
 
         if self.save_debug_products:
@@ -923,4 +934,5 @@ class Pipeline:
                 noise=diff_noise,
                 flags=diff_flags,
                 mask=diff_interpolated_mask,
+                coverage_mask=no_coverage,
             )

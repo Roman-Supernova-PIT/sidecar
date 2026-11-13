@@ -1,11 +1,14 @@
 import numpy as np
+import pytest
 from astropy.io import fits
 from astropy.table import Table
 from astropy.wcs import WCS
 
 from snappl.image import FITSImage
 
-from sidecar.source_detection import detect_and_measure_sources, measure_sources
+from sidecar.pipeline import Detection
+from sidecar.source_detection import detect_and_measure_sources, detect_sources_in_subtraction, measure_sources
+from sidecar.subtraction import _save_products_as_fits
 
 
 def _gaussian_psf(size=25, sigma=1.5):
@@ -86,3 +89,59 @@ def test_measure_sources_out_of_bounds_and_empty(tmp_path):
     assert np.isnan(out["sci_aper_r3_flux"][1])
     empty = measure_sources(Table({"ra": [], "dec": []}), {"sci": sci})
     assert len(empty) == 0 and "sci_aper_r3_flux" in empty.colnames
+
+
+def test_detection_uses_coverage_and_local_rms(tmp_path):
+    rng = np.random.default_rng(16)
+    data = rng.normal(3.0, 0.02, (256, 256))
+    no_coverage = np.zeros(data.shape, dtype=bool)
+    no_coverage[:, :160] = True
+    data[no_coverage] = 0.0
+    data[80, 190] += 0.3
+    data[160, 210] -= 0.3
+    data[80, 40] = 100.0
+    data[100, 200] = 0.0
+    data[150, 200] = np.nan
+    path = tmp_path / "diff.fits"
+    _save_products_as_fits(path, _wcs().to_header(), data, np.ones_like(data), coverage_mask=no_coverage)
+    image = Detection.load_product_image(path)
+    mask = Detection.load_no_coverage_mask(path)
+    assert np.array_equal(mask, no_coverage)
+
+    detected = detect_sources_in_subtraction(image, coverage_mask=mask, nsigma=5, verbose=False)
+    positive = detected[detected["peak_value"] > 0]
+    negative = detected[detected["peak_value"] < 0]
+    assert np.any((positive["x_peak"] == 190) & (positive["y_peak"] == 80))
+    assert np.any((negative["x_peak"] == 210) & (negative["y_peak"] == 160))
+    assert np.any((negative["x_peak"] == 200) & (negative["y_peak"] == 100))
+    assert not np.any(mask[detected["y_peak"], detected["x_peak"]])
+
+    positive_only = detect_sources_in_subtraction(image, coverage_mask=mask, nsigma=5, negative=False, verbose=False)
+    assert np.all(positive_only["peak_value"] > 0)
+    assert detect_sources_in_subtraction(image, coverage_mask=mask, nsigma=1000, verbose=False) is None
+    empty_path = tmp_path / "empty.ecsv"
+    empty = detect_and_measure_sources(
+        image, {"diff": image}, empty_path, detect_kwargs={"coverage_mask": mask, "nsigma": 1000, "verbose": False}
+    )
+    assert len(empty) == 0
+    assert "ra" in Table.read(empty_path).colnames
+    assert "diff_aper_r3_flux" in empty.colnames
+
+
+def test_detection_negative_only_and_invalid_coverage(tmp_path):
+    rng = np.random.default_rng(17)
+    data = rng.normal(0.0, 0.01, (128, 128))
+    data[60, 60] = -1.0
+    image = _write_product(tmp_path / "image.fits", data, _wcs())
+    detected = detect_sources_in_subtraction(image, nsigma=10, verbose=False)
+    assert len(detected) == 1
+    assert detected["peak_value"][0] < 0
+    with pytest.raises(ValueError, match="No finite pixels"):
+        detect_sources_in_subtraction(image, coverage_mask=np.ones(data.shape, dtype=bool), verbose=False)
+    with pytest.raises(ValueError, match="same shape"):
+        detect_sources_in_subtraction(image, coverage_mask=np.zeros((1, 1), dtype=bool), verbose=False)
+    with pytest.raises(ValueError, match="NO_COVERAGE"):
+        Detection.load_no_coverage_mask(tmp_path / "image.fits")
+    flat = _write_product(tmp_path / "flat.fits", np.zeros(data.shape), _wcs())
+    with pytest.raises(ValueError, match="Background RMS"):
+        detect_sources_in_subtraction(flat, verbose=False)
