@@ -1,7 +1,9 @@
 import numpy as np
 import astropy.units as u
-from astropy.table import Table
+import pytest
+from astropy.table import MaskedColumn, Table
 
+from sidecar.pipeline import Detection
 from sidecar.util import reject_stars, star_rejection_radii
 
 
@@ -49,3 +51,53 @@ def test_empty():
     detection, stars = _tables()
     assert len(reject_stars(detection, stars[:0], 5.0)) == len(detection)
     assert len(reject_stars(detection[:0], stars, 5.0)) == 0
+
+
+def test_clean_score_bad_pixels_and_absolute_snr(tmp_path):
+    detections = Table(
+        {
+            "id": np.arange(8),
+            "ra": [10, 20, 30, 40, 50, 60, 70, 80],
+            "dec": np.zeros(8),
+            "score_flags_npix_bad": [0, 0, 0, 1, -1, 0, 0, 0],
+        }
+    )
+    detections["score_aper_r3_snr"] = MaskedColumn(
+        [7, -9, 6.9, 20, 20, np.nan, 20, 20], mask=[False, False, False, False, False, False, True, False]
+    )
+    stars = Table({"ra": [80.0], "dec": [0.0]})
+    path = tmp_path / "score.ecsv"
+    out = tmp_path / "cleaned.ecsv"
+    detections.write(path)
+    cleaned = Detection.reject_stars(
+        stars, path, 5.0, out, bad_pixel_column="score_flags_npix_bad",
+        snr_column="score_aper_r3_snr", min_abs_snr=7.0,
+    )
+    assert list(cleaned["id"]) == [0, 1]
+    assert list(Table.read(out)["id"]) == [0, 1]
+    adjusted = Detection.reject_stars(
+        stars, path, 5.0, out, bad_pixel_column="score_flags_npix_bad",
+        snr_column="score_aper_r3_snr", min_abs_snr=6.0,
+    )
+    assert list(adjusted["id"]) == [0, 1, 2]
+
+
+def test_clean_simple_bad_pixels_without_snr_cut(tmp_path):
+    detections = Table(
+        {
+            "id": [1, 2, 3],
+            "ra": [10.0, 20.0, 30.0],
+            "dec": [0.0, 0.0, 0.0],
+            "simple_diff_flags_npix_bad": [0, 1, -1],
+            "simple_diff_aper_r3_snr": [0.5, 100.0, 100.0],
+        }
+    )
+    path = tmp_path / "simple.ecsv"
+    detections.write(path)
+    stars = Table({"ra": [], "dec": []})
+    cleaned = Detection.reject_stars(
+        stars, path, 5.0, tmp_path / "cleaned.ecsv", bad_pixel_column="simple_diff_flags_npix_bad"
+    )
+    assert list(cleaned["id"]) == [1]
+    with pytest.raises(ValueError, match="provided together"):
+        Detection.reject_stars(stars, path, 5.0, tmp_path / "invalid.ecsv", snr_column="simple_diff_aper_r3_snr")

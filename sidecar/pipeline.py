@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import tempfile
 
+import numpy as np
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.table import Table
@@ -100,7 +101,10 @@ class Detection:
         temp_dir=None,
         output_dir=None,
         verbose=False,
+        cleaned_score_min_snr=7.0,
     ):
+        if not np.isfinite(cleaned_score_min_snr) or cleaned_score_min_snr < 0:
+            raise ValueError("cleaned_score_min_snr must be finite and nonnegative")
         SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
         self.config = Config.get()
 
@@ -130,6 +134,7 @@ class Detection:
         self.save_candidates_to_database = save_candidates_to_database
         self.threshold = threshold
         self.threshold_column = threshold_column
+        self.cleaned_score_min_snr = cleaned_score_min_snr
         # Source selection cuts passed to subtraction.sky_subtract_and_detect
         self.detection_kwargs = detection_kwargs or {}
         # Text file of Gaia stars to use instead of querying Gaia
@@ -243,6 +248,9 @@ class Detection:
         frame="icrs",
         ra_col="ra",
         dec_col="dec",
+        bad_pixel_column=None,
+        snr_column=None,
+        min_abs_snr=None,
         **radius_kwargs,
     ):
         """Reject stars from subtraction detection catalogs
@@ -261,6 +269,13 @@ class Detection:
             Name of column in detection table for right ascension in degrees
         dec_col : str
             Name of column in detection table for declination in degrees
+        bad_pixel_column : str, optional
+            Column counting bad pixels in the measurement aperture. Only rows with
+            a measured count of zero are retained.
+        snr_column : str, optional
+            Aperture S/N column to filter on, together with `min_abs_snr`.
+        min_abs_snr : float, optional
+            Minimum absolute S/N. Nonfinite or missing measurements are rejected.
         radius_kwargs :
             ref_mag, scale, max_radius, mag_col for a magnitude-dependent radius; see util.reject_stars
 
@@ -273,6 +288,21 @@ class Detection:
         cleaned_detection = util.reject_stars(
             detection, stars, match_radius, frame=frame, ra_col=ra_col, dec_col=dec_col, **radius_kwargs
         )
+
+        if bad_pixel_column is not None:
+            flags = np.ma.asarray(cleaned_detection[bad_pixel_column])
+            good = np.ma.filled(flags == 0, False)
+            SNLogger.info(f"Removing {np.count_nonzero(~good)} detections with bad or unmeasured pixels")
+            cleaned_detection = cleaned_detection[good]
+        if (snr_column is None) != (min_abs_snr is None):
+            raise ValueError("snr_column and min_abs_snr must be provided together")
+        if snr_column is not None:
+            if not np.isfinite(min_abs_snr) or min_abs_snr < 0:
+                raise ValueError("min_abs_snr must be finite and nonnegative")
+            snr = np.ma.asarray(cleaned_detection[snr_column], dtype=float)
+            good = np.ma.filled(np.isfinite(snr) & (np.abs(snr) >= min_abs_snr), False)
+            SNLogger.info(f"Removing {np.count_nonzero(~good)} detections below the absolute S/N threshold")
+            cleaned_detection = cleaned_detection[good]
 
         write_catalog(cleaned_detection, cleaned_difference_detection_path, overwrite=True)
 
@@ -433,11 +463,13 @@ class Detection:
              them on the subtraction, template and science images with `detect_and_measure_sources`.  Catalogs are
              written to the `*_detection_path` files.
           5. If `reject_known_stars`, write `cleaned_*` catalogs with sources matching known stars removed.
+             Also reject bad or unmeasured pixels in simple-difference and score apertures, and apply the
+             absolute score r=3 aperture S/N cut to the cleaned score catalog.
           6. If `self.save_candidates_to_database`, save DiaObjects from the (cleaned, if made) score catalog.
 
         Uses instance settings for everything not passed as an argument: `cross_convolve`, `save_debug_products`,
         `detection_kwargs`, `resample_method`, `sfft_kwargs`, `pre_smooth_sigma`, `input_star_catalog_path`,
-        `threshold`, `threshold_column`, and `save_candidates_to_database`.
+        `threshold`, `threshold_column`, `cleaned_score_min_snr`, and `save_candidates_to_database`.
 
         Parameters
         ----------
@@ -530,6 +562,7 @@ class Detection:
         difference_image = self.__class__.load_product_image(file_path["difference_image_path"])
         score_image = self.__class__.load_product_image(file_path["score_image_path"])
 
+        simple_detection_exists = False
         if self.save_debug_products:
             # We wait to load this here because the subtraction may not have been run with `save_debug_products`
             # and thus the simple diff image may not exist.
@@ -551,6 +584,7 @@ class Detection:
                         "coverage_mask": self.__class__.load_no_coverage_mask(file_path["simple_difference_image_path"])
                     },
                 )
+                simple_detection_exists = True
 
         SNLogger.info("Processing diffim detection")
         detect_and_measure_sources(
@@ -577,13 +611,14 @@ class Detection:
         )
 
         if reject_known_stars:
-            if self.save_debug_products:
+            if simple_detection_exists:
                 SNLogger.info("Removing known stars from simple diffim image detection")
                 _ = self.__class__.reject_stars(
                     stars,
                     file_path["simple_difference_detection_path"],
                     self.REJECT_MATCH_RADIUS,
                     file_path["cleaned_simple_difference_detection_path"],
+                    bad_pixel_column="simple_diff_flags_npix_bad",
                 )
 
             SNLogger.info("Removing known stars from diffim image detection")
@@ -600,6 +635,9 @@ class Detection:
                 file_path["score_detection_path"],
                 self.REJECT_MATCH_RADIUS,
                 file_path["cleaned_score_detection_path"],
+                bad_pixel_column="score_flags_npix_bad",
+                snr_column="score_aper_r3_snr",
+                min_abs_snr=self.cleaned_score_min_snr,
             )
 
         if self.save_candidates_to_database:
@@ -966,6 +1004,12 @@ def main():
         help="Column name of significance threshold to use candidate catalog.",
     )
     parser.add_argument(
+        "--cleaned-score-min-snr",
+        type=float,
+        default=7.0,
+        help="Minimum absolute score r=3 aperture S/N in the cleaned score catalog (default %(default)s).",
+    )
+    parser.add_argument(
         "--cross-convolve",
         default=False,
         action=argparse.BooleanOptionalAction,
@@ -1200,6 +1244,7 @@ def main():
         assume_subtraction_has_been_run=args.assume_subtraction_has_been_run,
         threshold=args.threshold,
         threshold_column=args.threshold_column,
+        cleaned_score_min_snr=args.cleaned_score_min_snr,
         detection_kwargs=detection_kwargs,
         input_star_catalog_path=args.star_catalog,
         resample_method=args.resample_method,
