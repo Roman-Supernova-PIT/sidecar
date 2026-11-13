@@ -14,7 +14,7 @@ def test_catalog_to_ds9_region_file_cli(tmp_path):
 	subprocess.run(
 		[
 			sys.executable, "-m", "sidecar.catalog_to_ds9_region_file", str(catalog_path),
-			"--ds9_region_path", str(region_path), "--peak_value_threshold", "100",
+			"--ds9-region-path", str(region_path), "--peak-value-threshold", "100",
 		],
 		check=True,
 	)
@@ -23,7 +23,7 @@ def test_catalog_to_ds9_region_file_cli(tmp_path):
 	assert lines[0] == "# Region file format: DS9 version 4.1"
 	assert lines[2] == "fk5"
 	assert len(lines) == 4  # header (3 lines) + one region above threshold
-	assert lines[3] == 'circle(10.10000000, 20.10000000, 1.000")  # text={200}'
+	assert lines[3] == 'circle(10.10000000, 20.10000000, 1.000")  # text={200.00}'
 
 
 def test_catalog_to_ds9_region_file_cli_default_region_path(tmp_path):
@@ -39,4 +39,4 @@ def test_catalog_to_ds9_region_file_cli_default_region_path(tmp_path):
 
 	region_path = tmp_path / "catalog.reg"
 	assert region_path.is_file()
-	assert 'circle(10.00000000, 20.00000000, 1.000")  # text={200}' in region_path.read_text()
+	assert 'circle(10.00000000, 20.00000000, 1.000")  # text={200.00}' in region_path.read_text()

@@ -136,6 +136,9 @@ sidecar/examples/perlmutter/test_sidecar_asdf_manualrdm.sh
   has no S/N cut. The score-image aperture S/N uses the difference-image noise plane and does not fully
   account for correlated noise, so this cut should be validated for each dataset. The product flag plane
   currently combines science and template flags without resampling the template flags to the science grid.
+  Optionally, `--reject-center-jump-det` rejects `JUMP_DET` at the source center of any of these three
+  images; `--center-dq-flags MASK` rejects any bit in an additional integer DQ mask (decimal or `0x` hex).
+  Both are off by default. When enabled, unmeasured center flags are rejected as well.
 - Truth Retrieval: Retrieve truth tables of the science image and template image.
 - Truth Matching: Match the truth information to the detected sources for evaluating efficiency. Match the detected sources to truth for evaluating purity.
 - Evaluation: Evaluate efficiency and purity.
