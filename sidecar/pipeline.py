@@ -1,6 +1,7 @@
 import argparse
 import atexit
 import logging
+import operator
 import os
 from pathlib import Path
 import tempfile
@@ -11,6 +12,7 @@ from astropy.io import fits
 from astropy.table import Table
 from astropy.wcs.utils import pixel_to_skycoord
 import astropy.units as u
+from roman_datamodels import dqflags
 
 from sidecar import star_retrieval
 from sidecar.catalog_io import write_catalog
@@ -32,6 +34,16 @@ from snappl.config import Config
 from snappl.image import FITSImage
 from snappl.imagecollection import ImageCollection
 from snappl.logger import SNLogger
+
+
+def _validate_dq_mask(mask):
+    try:
+        mask = operator.index(mask)
+    except TypeError as exc:
+        raise ValueError("center DQ flag mask must be an integer") from exc
+    if not 0 <= mask <= 0xFFFFFFFF:
+        raise ValueError("center DQ flag mask must be between 0 and 0xFFFFFFFF")
+    return mask
 
 
 class Detection:
@@ -102,9 +114,12 @@ class Detection:
         output_dir=None,
         verbose=False,
         cleaned_score_min_snr=7.0,
+        center_dq_flags=0,
+        reject_center_jump_det=False,
     ):
         if not np.isfinite(cleaned_score_min_snr) or cleaned_score_min_snr < 0:
             raise ValueError("cleaned_score_min_snr must be finite and nonnegative")
+        center_dq_flags = _validate_dq_mask(center_dq_flags)
         SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
         self.config = Config.get()
 
@@ -135,6 +150,7 @@ class Detection:
         self.threshold = threshold
         self.threshold_column = threshold_column
         self.cleaned_score_min_snr = cleaned_score_min_snr
+        self.center_dq_flags = center_dq_flags | (int(dqflags.pixel.JUMP_DET) if reject_center_jump_det else 0)
         # Source selection cuts passed to subtraction.sky_subtract_and_detect
         self.detection_kwargs = detection_kwargs or {}
         # Text file of Gaia stars to use instead of querying Gaia
@@ -251,6 +267,8 @@ class Detection:
         bad_pixel_column=None,
         snr_column=None,
         min_abs_snr=None,
+        center_flag_columns=None,
+        center_dq_flags=0,
         **radius_kwargs,
     ):
         """Reject stars from subtraction detection catalogs
@@ -276,6 +294,11 @@ class Detection:
             Aperture S/N column to filter on, together with `min_abs_snr`.
         min_abs_snr : float, optional
             Minimum absolute S/N. Nonfinite or missing measurements are rejected.
+        center_flag_columns : str or sequence of str, optional
+            Center-pixel DQ columns to inspect when `center_dq_flags` is nonzero.
+        center_dq_flags : int, optional
+            Bit mask of center-pixel flags to reject. Unmeasured or masked center
+            flags are also rejected when the mask is nonzero. Zero disables this cut.
         radius_kwargs :
             ref_mag, scale, max_radius, mag_col for a magnitude-dependent radius; see util.reject_stars
 
@@ -284,6 +307,11 @@ class Detection:
         astropy.table.Table :
             cleaned catalog with matches to stars removed.
         """
+        center_dq_flags = _validate_dq_mask(center_dq_flags)
+        if center_dq_flags and center_flag_columns is None:
+            raise ValueError("center_flag_columns must be provided when center_dq_flags is nonzero")
+        if center_dq_flags and not isinstance(center_flag_columns, str) and len(center_flag_columns) == 0:
+            raise ValueError("center_flag_columns must not be empty when center_dq_flags is nonzero")
         detection = Table.read(difference_detection_path, format="ascii")
         cleaned_detection = util.reject_stars(
             detection, stars, match_radius, frame=frame, ra_col=ra_col, dec_col=dec_col, **radius_kwargs
@@ -296,6 +324,14 @@ class Detection:
                 flags = np.ma.asarray(cleaned_detection[column])
                 good &= np.ma.filled(flags == 0, False)
             SNLogger.info(f"Removing {np.count_nonzero(~good)} detections with bad or unmeasured pixels")
+            cleaned_detection = cleaned_detection[good]
+        if center_dq_flags:
+            columns = [center_flag_columns] if isinstance(center_flag_columns, str) else center_flag_columns
+            good = np.ones(len(cleaned_detection), dtype=bool)
+            for column in columns:
+                flags = np.ma.asarray(cleaned_detection[column])
+                good &= np.ma.filled((flags >= 0) & ((flags & center_dq_flags) == 0), False)
+            SNLogger.info(f"Removing {np.count_nonzero(~good)} detections with rejected or unmeasured center flags")
             cleaned_detection = cleaned_detection[good]
         if (snr_column is None) != (min_abs_snr is None):
             raise ValueError("snr_column and min_abs_snr must be provided together")
@@ -472,7 +508,8 @@ class Detection:
 
         Uses instance settings for everything not passed as an argument: `cross_convolve`, `save_debug_products`,
         `detection_kwargs`, `resample_method`, `sfft_kwargs`, `pre_smooth_sigma`, `input_star_catalog_path`,
-        `threshold`, `threshold_column`, `cleaned_score_min_snr`, and `save_candidates_to_database`.
+        `threshold`, `threshold_column`, `cleaned_score_min_snr`, `center_dq_flags`, and
+        `save_candidates_to_database`.
 
         Parameters
         ----------
@@ -624,6 +661,8 @@ class Detection:
                     bad_pixel_column=[
                         "template_flags_npix_bad", "science_flags_npix_bad", "simple_diff_flags_npix_bad"
                     ],
+                    center_flag_columns=["template_flags_center", "science_flags_center", "simple_diff_flags_center"],
+                    center_dq_flags=self.center_dq_flags,
                 )
 
             SNLogger.info("Removing known stars from diffim image detection")
@@ -641,6 +680,8 @@ class Detection:
                 self.REJECT_MATCH_RADIUS,
                 file_path["cleaned_score_detection_path"],
                 bad_pixel_column=["template_flags_npix_bad", "science_flags_npix_bad", "score_flags_npix_bad"],
+                center_flag_columns=["template_flags_center", "science_flags_center", "score_flags_center"],
+                center_dq_flags=self.center_dq_flags,
                 snr_column="score_aper_r3_snr",
                 min_abs_snr=self.cleaned_score_min_snr,
             )
@@ -1015,6 +1056,18 @@ def main():
         help="Minimum absolute score r=3 aperture S/N in the cleaned score catalog (default %(default)s).",
     )
     parser.add_argument(
+        "--center-dq-flags",
+        type=lambda value: int(value, 0),
+        default=0,
+        help="Integer bit mask of DQ flags to reject at source centers (decimal or 0x-prefixed hex; default 0).",
+    )
+    parser.add_argument(
+        "--reject-center-jump-det",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Additionally reject JUMP_DET at the source center in science, template, or product (default off).",
+    )
+    parser.add_argument(
         "--cross-convolve",
         default=False,
         action=argparse.BooleanOptionalAction,
@@ -1250,6 +1303,8 @@ def main():
         threshold=args.threshold,
         threshold_column=args.threshold_column,
         cleaned_score_min_snr=args.cleaned_score_min_snr,
+        center_dq_flags=args.center_dq_flags,
+        reject_center_jump_det=args.reject_center_jump_det,
         detection_kwargs=detection_kwargs,
         input_star_catalog_path=args.star_catalog,
         resample_method=args.resample_method,
