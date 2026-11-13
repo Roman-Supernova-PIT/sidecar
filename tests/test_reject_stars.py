@@ -2,6 +2,7 @@ import numpy as np
 import astropy.units as u
 import pytest
 from astropy.table import MaskedColumn, Table
+from roman_datamodels import dqflags
 
 from sidecar.pipeline import Detection
 from sidecar.util import reject_stars, star_rejection_radii
@@ -128,3 +129,57 @@ def test_clean_rejects_bad_or_unmeasured_pixels_in_any_image(tmp_path, column_co
     assert list(Table.read(out)["id"]) == [0]
     with pytest.raises(KeyError):
         Detection.reject_stars(stars, path, 5.0, out, bad_pixel_column=["template_flags_npix_bad", "missing"])
+
+
+@pytest.mark.parametrize("product", ["score", "simple_diff"])
+def test_center_flag_rejection(tmp_path, product):
+    jump = int(dqflags.pixel.JUMP_DET)
+    other = int(dqflags.pixel.PERSISTENCE)
+    detections = Table({
+        "id": np.arange(8), "ra": np.arange(8, dtype=float) + 10, "dec": np.zeros(8),
+        "template_flags_center": [0, jump, 0, 0, -1, 0, other, 0],
+        "science_flags_center": [0, 0, jump | other, 0, 0, 0, 0, 0],
+        f"{product}_flags_center": [0, 0, 0, jump, 0, 0, 0, 0],
+    })
+    detections["science_flags_center"] = MaskedColumn(
+        detections["science_flags_center"], mask=[False, False, False, False, False, True, False, False]
+    )
+    path = tmp_path / "detections.ecsv"
+    out = tmp_path / "cleaned.ecsv"
+    detections.write(path)
+    stars = Table({"ra": [], "dec": []})
+    columns = ["template_flags_center", "science_flags_center", f"{product}_flags_center"]
+    cleaned = Detection.reject_stars(stars, path, 5, out, center_flag_columns=columns, center_dq_flags=jump)
+    assert list(cleaned["id"]) == [0, 6, 7]
+    assert list(Table.read(out)["id"]) == [0, 6, 7]
+    cleaned = Detection.reject_stars(stars, path, 5, out, center_flag_columns=columns,
+                                     center_dq_flags=jump | other)
+    assert list(cleaned["id"]) == [0, 7]
+    cleaned = Detection.reject_stars(stars, path, 5, out, center_flag_columns="template_flags_center",
+                                     center_dq_flags=jump)
+    assert list(cleaned["id"]) == [0, 2, 3, 5, 6, 7]
+    assert len(Detection.reject_stars(stars, path, 5, out, center_flag_columns=columns)) == 8
+    with pytest.raises(ValueError, match="center_flag_columns"):
+        Detection.reject_stars(stars, path, 5, out, center_dq_flags=jump)
+    with pytest.raises(ValueError, match="center_flag_columns"):
+        Detection.reject_stars(stars, path, 5, out, center_flag_columns=[], center_dq_flags=jump)
+    with pytest.raises(ValueError, match="mask"):
+        Detection.reject_stars(stars, path, 5, out, center_flag_columns=columns, center_dq_flags=-1)
+
+
+def test_center_flag_options_combine(monkeypatch, tmp_path):
+    class TestConfig:
+        def value(self, key, default=None):
+            if key == "system.ou24.tds_base":
+                raise ValueError("not configured")
+            return default
+
+    monkeypatch.setattr("sidecar.pipeline.Config.get", lambda: TestConfig())
+    kwargs = dict(image_collection=None, data_records=[], temp_dir=tmp_path, output_dir=tmp_path)
+    assert Detection(**kwargs).center_dq_flags == 0
+    other = int(dqflags.pixel.PERSISTENCE)
+    assert Detection(**kwargs, center_dq_flags=other, reject_center_jump_det=True).center_dq_flags == (
+        other | int(dqflags.pixel.JUMP_DET)
+    )
+    with pytest.raises(ValueError, match="mask"):
+        Detection(**kwargs, center_dq_flags=2**32)
