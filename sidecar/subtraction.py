@@ -838,8 +838,12 @@ class Pipeline:
 
         diff = sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_DIFF))
         diff_noise = np.sqrt(sfftifier.create_variance_image())
-        diff_flags = self.template_image.flags | self.science_image.flags
-        diff_interpolated_mask = template_image_interpolated_mask | science_image_interpolated_mask
+        # I conceptually want to do the following, but I need resampled template flags and mask to do it.
+        # For now, just use the science image flags and mask.
+        # diff_flags = self.template_image.flags | self.science_image.flags
+        # diff_interpolated_mask = template_image_interpolated_mask | science_image_interpolated_mask
+        diff_flags = self.science_image.flags
+        diff_interpolated_mask = science_image_interpolated_mask
         no_coverage = sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.BlankMask))
 
         _save_products_as_fits(
