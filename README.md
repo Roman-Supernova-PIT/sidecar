@@ -152,7 +152,7 @@ Entries must satisfy `template_in_bounds == True` by default. Additional boolean
 
 ```bash
 python -m sidecar.match_catalogs \
-    /rrn-ops/wmwv/subtractions/F*01062*_15_-_F*_15/cleaned_score_*.ecsv \
+    ./subtractions/F*_15_-_F*_15/cleaned_score_*.ecsv \
     --min-matches 3 \
     --radius 1.0 \
     --row-filter "score_in_bounds,==,True" \
