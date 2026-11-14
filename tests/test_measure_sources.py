@@ -43,7 +43,9 @@ def _write_product(path, data, wcs, noise=None, flags=None):
     hdus = [fits.PrimaryHDU(), fits.ImageHDU(data.astype(np.float32), header=wcs.to_header(), name="DATA")]
     hdus.append(fits.ImageHDU((np.ones_like(data) if noise is None else noise).astype(np.float32), name="NOISE"))
     hdus.append(
-        fits.ImageHDU((np.zeros(data.shape, dtype=np.uint32) if flags is None else flags).astype(np.uint32), name="FLAGS")
+        fits.ImageHDU(
+            (np.zeros(data.shape, dtype=np.uint32) if flags is None else flags).astype(np.uint32), name="FLAGS"
+        )
     )
     fits.HDUList(hdus).writeto(path, overwrite=True)
     return FITSImage(path, imagehdu=1, noisehdu=2, flagshdu=3, no_base_path=True)

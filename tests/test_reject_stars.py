@@ -71,14 +71,24 @@ def test_clean_score_bad_pixels_and_absolute_snr(tmp_path):
     out = tmp_path / "cleaned.ecsv"
     detections.write(path)
     cleaned = Detection.reject_stars(
-        stars, path, 5.0, out, bad_pixel_column="score_flags_npix_bad",
-        snr_column="score_aper_r3_snr", min_abs_snr=7.0,
+        stars,
+        path,
+        5.0,
+        out,
+        bad_pixel_column="score_flags_npix_bad",
+        snr_column="score_aper_r3_snr",
+        min_abs_snr=7.0,
     )
     assert list(cleaned["id"]) == [0, 1]
     assert list(Table.read(out)["id"]) == [0, 1]
     adjusted = Detection.reject_stars(
-        stars, path, 5.0, out, bad_pixel_column="score_flags_npix_bad",
-        snr_column="score_aper_r3_snr", min_abs_snr=6.0,
+        stars,
+        path,
+        5.0,
+        out,
+        bad_pixel_column="score_flags_npix_bad",
+        snr_column="score_aper_r3_snr",
+        min_abs_snr=6.0,
     )
     assert list(adjusted["id"]) == [0, 1, 2]
 
@@ -135,12 +145,16 @@ def test_clean_rejects_bad_or_unmeasured_pixels_in_any_image(tmp_path, column_co
 def test_center_flag_rejection(tmp_path, product):
     jump = int(dqflags.pixel.JUMP_DET)
     other = int(dqflags.pixel.PERSISTENCE)
-    detections = Table({
-        "id": np.arange(8), "ra": np.arange(8, dtype=float) + 10, "dec": np.zeros(8),
-        "template_flags_center": [0, jump, 0, 0, -1, 0, other, 0],
-        "science_flags_center": [0, 0, jump | other, 0, 0, 0, 0, 0],
-        f"{product}_flags_center": [0, 0, 0, jump, 0, 0, 0, 0],
-    })
+    detections = Table(
+        {
+            "id": np.arange(8),
+            "ra": np.arange(8, dtype=float) + 10,
+            "dec": np.zeros(8),
+            "template_flags_center": [0, jump, 0, 0, -1, 0, other, 0],
+            "science_flags_center": [0, 0, jump | other, 0, 0, 0, 0, 0],
+            f"{product}_flags_center": [0, 0, 0, jump, 0, 0, 0, 0],
+        }
+    )
     detections["science_flags_center"] = MaskedColumn(
         detections["science_flags_center"], mask=[False, False, False, False, False, True, False, False]
     )
@@ -152,11 +166,11 @@ def test_center_flag_rejection(tmp_path, product):
     cleaned = Detection.reject_stars(stars, path, 5, out, center_flag_columns=columns, center_dq_flags=jump)
     assert list(cleaned["id"]) == [0, 6, 7]
     assert list(Table.read(out)["id"]) == [0, 6, 7]
-    cleaned = Detection.reject_stars(stars, path, 5, out, center_flag_columns=columns,
-                                     center_dq_flags=jump | other)
+    cleaned = Detection.reject_stars(stars, path, 5, out, center_flag_columns=columns, center_dq_flags=jump | other)
     assert list(cleaned["id"]) == [0, 7]
-    cleaned = Detection.reject_stars(stars, path, 5, out, center_flag_columns="template_flags_center",
-                                     center_dq_flags=jump)
+    cleaned = Detection.reject_stars(
+        stars, path, 5, out, center_flag_columns="template_flags_center", center_dq_flags=jump
+    )
     assert list(cleaned["id"]) == [0, 2, 3, 5, 6, 7]
     assert len(Detection.reject_stars(stars, path, 5, out, center_flag_columns=columns)) == 8
     with pytest.raises(ValueError, match="center_flag_columns"):

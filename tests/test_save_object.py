@@ -47,7 +47,7 @@ def test_save_dia_object():
     )
     science = image_collection.get_image(observation_id=science_observation_id, sca=science_sca, band=science_band)
 
-    (name, ra, dec, _ , mjd) = ("foo2", 7.55110, -44.80718, science, science.mjd)
+    name, ra, dec, _, mjd = ("foo2", 7.55110, -44.80718, science, science.mjd)
 
     major, minor = 0, 1
     config = Config.get()

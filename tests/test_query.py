@@ -15,7 +15,7 @@ from sidecar.util import (
     read_data_records,
 )
 
-_rundir =  Path(__file__).parent.resolve()
+_rundir = Path(__file__).parent.resolve()
 
 
 def test_ra_dec_query():

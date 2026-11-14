@@ -94,7 +94,9 @@ def test_parquet_roundtrip_and_query(tables, tmp_path):
     write_nested_catalog(nested, tmp_path / "m.parquet")
     back = read_nested_catalog(tmp_path / "m.parquet")
     assert list(back.index) == list(nested.index)
-    assert back["sources"].nest.to_flat()["source_id"].tolist() == nested["sources"].nest.to_flat()["source_id"].tolist()
+    assert (
+        back["sources"].nest.to_flat()["source_id"].tolist() == nested["sources"].nest.to_flat()["source_id"].tolist()
+    )
     assert len(back.query("n_match >= 3")) == 1
 
 

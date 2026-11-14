@@ -7,6 +7,7 @@ import importlib
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
@@ -47,9 +48,7 @@ def _report_bad_pixel_flags(flags, bad_mask, n_bins=4):
     col_edges = np.linspace(0, nx, n_bins + 1, dtype=int)
     print(f"Bad pixel fraction per {n_bins}x{n_bins} detector grid cell (row-major, bottom to top):")
     for r0, r1 in zip(row_edges[:-1], row_edges[1:]):
-        row_fractions = [
-            bad_mask[r0:r1, c0:c1].mean() for c0, c1 in zip(col_edges[:-1], col_edges[1:])
-        ]
+        row_fractions = [bad_mask[r0:r1, c0:c1].mean() for c0, c1 in zip(col_edges[:-1], col_edges[1:])]
         print("  " + " ".join(f"{frac:.2f}" for frac in row_fractions))
 
 
@@ -62,9 +61,7 @@ def _quantify_source_distribution(centroids, image_shape, n_bins=4):
     0 = perfectly uniform) summarizes that deviation in a single number.
     """
     rows, cols = zip(*centroids)
-    counts, _, _ = np.histogram2d(
-        rows, cols, bins=n_bins, range=[[0, image_shape[0]], [0, image_shape[1]]]
-    )
+    counts, _, _ = np.histogram2d(rows, cols, bins=n_bins, range=[[0, image_shape[0]], [0, image_shape[1]]])
     expected = len(centroids) / counts.size
     chi_square = np.sum((counts - expected) ** 2 / expected)
     coeff_variation = counts.std() / counts.mean() if counts.mean() else np.nan
@@ -82,16 +79,10 @@ def _summarize_binary_mask(mask):
     print(f"Mask summary: {n_components} connected component(s), {n_holes} hole(s)")
     if n_components:
         comp_sizes = ndimage.sum(mask, labels, range(1, n_components + 1))
-        print(
-            "  component size pctl (10/50/90/max): "
-            f"{np.percentile(comp_sizes, [10, 50, 90, 100])}"
-        )
+        print("  component size pctl (10/50/90/max): " f"{np.percentile(comp_sizes, [10, 50, 90, 100])}")
     if n_holes:
         hole_sizes = ndimage.sum(hole_mask, hole_labels, range(1, n_holes + 1))
-        print(
-            "  hole size pctl (10/50/90/max): "
-            f"{np.percentile(hole_sizes, [10, 50, 90, 100])}"
-        )
+        print("  hole size pctl (10/50/90/max): " f"{np.percentile(hole_sizes, [10, 50, 90, 100])}")
 
 
 SELECTION_CUTS = ("max_peak", "size_clip_sigma", "max_ellipticity", "min_separation", "edge_buffer", "min_bad_distance")
@@ -143,10 +134,7 @@ def test_sky_subtract_and_detect(request):
     bad_mask_bool = bad_mask > 0
     fig, ax = plt.subplots(figsize=(8, 8))
     show_image(ax, sky_subtracted_data, title="Sky-subtracted data with bad pixel mask")
-    ax.imshow(
-        np.ma.masked_where(~bad_mask_bool, bad_mask_bool),
-        origin="lower", cmap="autumn", alpha=0.6
-    )
+    ax.imshow(np.ma.masked_where(~bad_mask_bool, bad_mask_bool), origin="lower", cmap="autumn", alpha=0.6)
     bad_mask_path = outdir / f"{stem}_bad_mask.png"
     fig.savefig(bad_mask_path, dpi=150)
     plt.close(fig)
@@ -157,7 +145,9 @@ def test_sky_subtract_and_detect(request):
     show_image(ax, sky_subtracted_data, title="Sky-subtracted data with dilated bad pixel mask")
     ax.imshow(
         np.ma.masked_where(~convolved_bad_mask_bool, convolved_bad_mask_bool),
-        origin="lower", cmap="autumn", alpha=0.6,
+        origin="lower",
+        cmap="autumn",
+        alpha=0.6,
     )
     convolved_bad_mask_path = outdir / f"{stem}_convolved_bad_mask.png"
     fig.savefig(convolved_bad_mask_path, dpi=150)
@@ -206,7 +196,8 @@ def test_sky_subtract_and_detect(request):
     plt.close(fig)
     print(f"Wrote detection visualization to {detections_path}")
 
-    # Stars form a horizontal locus in FWHM; bright stars with non-linear cores or brighter-fatter broadening drift off it.
+    # Stars form a horizontal locus in FWHM; bright stars with non-linear cores or brighter-fatter broadening
+    # should deviate from the locus.
     fig, (ax_size, ax_ell) = plt.subplots(1, 2, figsize=(14, 6))
     for ax, values, label in ((ax_size, fwhm, "FWHM (pixels)"), (ax_ell, ellipticity, "ellipticity")):
         ax.scatter(peak[selected], values[selected], s=8, c="tab:blue", label="selected")

@@ -25,10 +25,12 @@ def subtraction_image(tmp_path):
     wcs.wcs.crval = [58.0, -49.0]
     wcs.wcs.cdelt = [-0.11 / 3600, 0.11 / 3600]
     path = tmp_path / "subtraction.fits"
-    fits.HDUList([
-        fits.PrimaryHDU(),
-        fits.ImageHDU(data=data, header=wcs.to_header(), name="DATA"),
-    ]).writeto(path)
+    fits.HDUList(
+        [
+            fits.PrimaryHDU(),
+            fits.ImageHDU(data=data, header=wcs.to_header(), name="DATA"),
+        ]
+    ).writeto(path)
     return FITSImage(path, imagehdu=1, no_base_path=True), wcs
 
 
