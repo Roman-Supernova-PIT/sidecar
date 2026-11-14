@@ -860,7 +860,7 @@ class Pipeline:
                 path=self.resamp_template_path,
                 hdr=sfftifier.hdr_target,
                 data=sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_resamp_object)),
-                noise=sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_resamp_objectVar)),
+                noise=np.sqrt(sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_resamp_objectVar))),
                 mask=template_detmask_data,
             )
 
