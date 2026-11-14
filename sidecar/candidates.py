@@ -69,6 +69,13 @@ def add_object_statistics(nested, noise=DEFAULT_NOISE, aperture="r3", diff_prefi
         back to `DEFAULT_NOISE`); that sample is smaller and cleaner than all detections and
         gave 0.18 rather than 0.21 for program 01062, so the default is the fixed constant.
     """
+    if len(nested) == 0:
+        out = nested.copy()
+        for column in STAT_COLUMNS:
+            out[column] = np.empty(0, dtype=int if column == "n_band" else float)
+        out.attrs["noise"] = DEFAULT_NOISE if isinstance(noise, str) and noise == "measure" else noise
+        return out
+
     flat = nested["sources"].nest.to_flat()
     if isinstance(noise, str) and noise == "measure":
         noise = estimate_noise(flat, aperture, diff_prefix) or DEFAULT_NOISE
