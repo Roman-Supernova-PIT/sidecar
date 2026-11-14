@@ -38,6 +38,23 @@ bad_pixel_flags = (
 )
 
 
+def _gaussian_smoothing_kernel(sigma):
+    if not np.isfinite(sigma) or sigma <= 0:
+        raise ValueError("pre_smooth_sigma must be positive and finite")
+
+    radius = int(4.0 * sigma + 0.5)
+    offsets = np.arange(-radius, radius + 1, dtype=float)
+    kernel = np.exp(-0.5 * (offsets / sigma) ** 2)
+    return kernel / kernel.sum()
+
+
+def _filter_variance_with_kernel(variance, kernel):
+    squared_kernel = kernel**2
+    for axis in range(variance.ndim):
+        variance = ndimage.convolve1d(variance, squared_kernel, axis=axis, mode="reflect")
+    return variance
+
+
 def interpolate_over_bad_pixels(data, flags, bad_pixel_flags=bad_pixel_flags):
     """Interpolate over bad pixels in an image.
 
@@ -622,6 +639,9 @@ class Pipeline:
             is not modelled by the SFFT decorrelation).
         """
         self.pre_smooth_sigma = pre_smooth_sigma
+        self.pre_smooth_kernel = (
+            _gaussian_smoothing_kernel(pre_smooth_sigma) if pre_smooth_sigma is not None else None
+        )
         self.resample_method = resample_method
         self.sfft_kwargs = sfft_kwargs or {}
         self.detection_kwargs = detection_kwargs or {}
@@ -760,18 +780,18 @@ class Pipeline:
                 mask=template_detmask_data,
             )
 
-        if self.pre_smooth_sigma:
+        if self.pre_smooth_sigma is not None:
             sigma = self.pre_smooth_sigma
-            # Variance reduction of white noise convolved with a unit-sum Gaussian
-            noise_scale = 1.0 / (2.0 * np.sqrt(np.pi) * sigma)
+            kernel = self.pre_smooth_kernel
+            noise_scale = np.sum(kernel**2)
             science_skysubim_data = ndimage.gaussian_filter(science_skysubim_data, sigma)
             template_skysubim_data = ndimage.gaussian_filter(template_skysubim_data, sigma)
             science_psf = ndimage.gaussian_filter(science_psf, sigma)
             template_psf = ndimage.gaussian_filter(template_psf, sigma)
             science_psf = science_psf / science_psf.sum()
             template_psf = template_psf / template_psf.sum()
-            science_noise = science_noise * noise_scale
-            template_noise = template_noise * noise_scale
+            science_noise = np.sqrt(_filter_variance_with_kernel(science_noise**2, kernel))
+            template_noise = np.sqrt(_filter_variance_with_kernel(template_noise**2, kernel))
             science_skyrms = science_skyrms * noise_scale
             template_skyrms = template_skyrms * noise_scale
 
