@@ -316,7 +316,7 @@ def measure_sources(
     result = Table(catalog, copy=True)
     n = len(result)
     ra, dec = result["ra"], result["dec"]
-    margin = max(max(aperture_radii), background_radii[1], flag_radius)
+    margin = max(max(aperture_radii), background_radii[1] if background_radii is not None else 0, flag_radius)
 
     for name, img in images.items():
         out = {}
