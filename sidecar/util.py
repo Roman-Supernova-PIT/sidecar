@@ -465,12 +465,14 @@ def get_observation_id_sca_band_from_image_path(image_path):
         ),
         # RomanTDS simulated catalog / ASDF naming convention.
         # This also describes the filenames from the Commissioning data
-        # The '.\+' after cal is to allow processing for post-processed images that got extra suffixes added to the filename.
+        # The '.\+' after cal is to allow processing for post-processed images
+        # that got extra suffixes added to the filename.
         re.compile(
-            r"[rR]?(?P<observation_id>\d+)(?:_(?P<observation_id_suffix>[^_]+))?_wfi(?P<sca>\d+)_(?P<band>[A-Za-z0-9]+)_cal.*\.asdf",
+            r"[rR]?(?P<observation_id>\d+)(?:_(?P<observation_id_suffix>[^_]+))?_wfi(?P<sca>\d+)_(?P<band>[A-Za-z0-9]+)_cal.*\.asdf",  # noqa
             re.IGNORECASE,
         ),
-        # Make observation_id_suffix optional to allow for the case where there is no suffix after the observation_id base.
+        # Make observation_id_suffix optional to allow for the case
+        #   where there is no suffix after the observation_id base.
         re.compile(
             r"[rR]?(?P<observation_id>\d+)_combined_wfi(?P<sca>\d+)_(?P<band>[A-Za-z0-9]+)_cal.*\.asdf",
             re.IGNORECASE,

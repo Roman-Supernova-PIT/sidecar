@@ -737,8 +737,8 @@ class Pipeline:
         )
 
         # SFFT needs FITS headers with a WCS and with NAXIS[12]
-        # "header" here just means a dictionary where the keys are FITS keywords and the values are the corresponding values.
-        # There's nothing otherwise "FITS" about this.
+        # "header" here just means a dictionary where the keys are FITS keywords
+        # and the values are the corresponding values.  There's nothing otherwise "FITS" about this.
         science_hdr = make_minimal_wcs_header(self.science_image)
         template_hdr = make_minimal_wcs_header(self.template_image)
 
