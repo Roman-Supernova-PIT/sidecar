@@ -139,6 +139,12 @@ sidecar/examples/perlmutter/test_sidecar_asdf_manualrdm.sh
   Optionally, `--reject-center-jump-det` rejects `JUMP_DET` at the source center of any of these three
   images; `--center-dq-flags MASK` rejects any bit in an additional integer DQ mask (decimal or `0x` hex).
   Both are off by default. When enabled, unmeasured center flags are rejected as well.
+  Override the checked columns with `--bad-pixel-columns` and `--center-flag-columns`, followed by
+  space-separated names. Names beginning with `science_` or `template_` are used as-is; other names
+  receive the `score_` or `simple_diff_` prefix, depending on the catalog. For example,
+  `--bad-pixel-columns science_flags_npix_bad flags_npix_bad` checks science and the product.
+  Supplying `--bad-pixel-columns` without names disables the aperture bad-pixel cut in both catalogs;
+  `--center-flag-columns` requires at least one name.
 - Truth Retrieval: Retrieve truth tables of the science image and template image.
 - Truth Matching: Match the truth information to the detected sources for evaluating efficiency. Match the detected sources to truth for evaluating purity.
 - Evaluation: Evaluate efficiency and purity.

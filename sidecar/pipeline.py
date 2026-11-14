@@ -46,6 +46,12 @@ def _validate_dq_mask(mask):
     return mask
 
 
+def _product_flag_columns(columns, product):
+    if isinstance(columns, str):
+        columns = [columns]
+    return [column if column.startswith(("template_", "science_")) else f"{product}_{column}" for column in columns]
+
+
 class Detection:
     """Set up and run a subtraction
 
@@ -116,6 +122,8 @@ class Detection:
         cleaned_score_min_snr=7.0,
         center_dq_flags=0,
         reject_center_jump_det=False,
+        bad_pixel_columns=None,
+        center_flag_columns=None,
     ):
         if not np.isfinite(cleaned_score_min_snr) or cleaned_score_min_snr < 0:
             raise ValueError("cleaned_score_min_snr must be finite and nonnegative")
@@ -151,6 +159,18 @@ class Detection:
         self.threshold_column = threshold_column
         self.cleaned_score_min_snr = cleaned_score_min_snr
         self.center_dq_flags = center_dq_flags | (int(dqflags.pixel.JUMP_DET) if reject_center_jump_det else 0)
+        self.bad_pixel_columns = (
+            ["template_flags_npix_bad", "science_flags_npix_bad", "flags_npix_bad"]
+            if bad_pixel_columns is None
+            else bad_pixel_columns
+        )
+        self.center_flag_columns = (
+            ["template_flags_center", "science_flags_center", "flags_center"]
+            if center_flag_columns is None
+            else center_flag_columns
+        )
+        if self.center_dq_flags and len(self.center_flag_columns) == 0:
+            raise ValueError("center flag columns must not be empty when center DQ rejection is enabled")
         # Source selection cuts passed to subtraction.sky_subtract_and_detect
         self.detection_kwargs = detection_kwargs or {}
         # Text file of Gaia stars to use instead of querying Gaia
@@ -508,8 +528,8 @@ class Detection:
 
         Uses instance settings for everything not passed as an argument: `cross_convolve`, `save_debug_products`,
         `detection_kwargs`, `resample_method`, `sfft_kwargs`, `pre_smooth_sigma`, `input_star_catalog_path`,
-        `threshold`, `threshold_column`, `cleaned_score_min_snr`, `center_dq_flags`, and
-        `save_candidates_to_database`.
+        `threshold`, `threshold_column`, `cleaned_score_min_snr`, `center_dq_flags`, `bad_pixel_columns`,
+        `center_flag_columns`, and `save_candidates_to_database`.
 
         Parameters
         ----------
@@ -658,12 +678,8 @@ class Detection:
                     file_path["simple_difference_detection_path"],
                     self.REJECT_MATCH_RADIUS,
                     file_path["cleaned_simple_difference_detection_path"],
-                    bad_pixel_column=[
-                        "template_flags_npix_bad",
-                        "science_flags_npix_bad",
-                        "simple_diff_flags_npix_bad",
-                    ],
-                    center_flag_columns=["template_flags_center", "science_flags_center", "simple_diff_flags_center"],
+                    bad_pixel_column=_product_flag_columns(self.bad_pixel_columns, "simple_diff"),
+                    center_flag_columns=_product_flag_columns(self.center_flag_columns, "simple_diff"),
                     center_dq_flags=self.center_dq_flags,
                 )
 
@@ -681,8 +697,8 @@ class Detection:
                 file_path["score_detection_path"],
                 self.REJECT_MATCH_RADIUS,
                 file_path["cleaned_score_detection_path"],
-                bad_pixel_column=["template_flags_npix_bad", "science_flags_npix_bad", "score_flags_npix_bad"],
-                center_flag_columns=["template_flags_center", "science_flags_center", "score_flags_center"],
+                bad_pixel_column=_product_flag_columns(self.bad_pixel_columns, "score"),
+                center_flag_columns=_product_flag_columns(self.center_flag_columns, "score"),
                 center_dq_flags=self.center_dq_flags,
                 snr_column="score_aper_r3_snr",
                 min_abs_snr=self.cleaned_score_min_snr,
@@ -1058,6 +1074,22 @@ def main():
         help="Minimum absolute score r=3 aperture S/N in the cleaned score catalog (default %(default)s).",
     )
     parser.add_argument(
+        "--bad-pixel-columns",
+        nargs="*",
+        default=None,
+        metavar="COLUMN",
+        help="Bad-pixel count columns for cleaned score and simple detections. Non-science/template names are "
+        "prefixed with score_ or simple_diff_; omit values to disable this cut.",
+    )
+    parser.add_argument(
+        "--center-flag-columns",
+        nargs="+",
+        default=None,
+        metavar="COLUMN",
+        help="Center DQ columns for cleaned score and simple detections. Non-science/template names are "
+        "prefixed with score_ or simple_diff_.",
+    )
+    parser.add_argument(
         "--center-dq-flags",
         type=lambda value: int(value, 0),
         default=0,
@@ -1308,6 +1340,8 @@ def main():
         cleaned_score_min_snr=args.cleaned_score_min_snr,
         center_dq_flags=args.center_dq_flags,
         reject_center_jump_det=args.reject_center_jump_det,
+        bad_pixel_columns=args.bad_pixel_columns,
+        center_flag_columns=args.center_flag_columns,
         detection_kwargs=detection_kwargs,
         input_star_catalog_path=args.star_catalog,
         resample_method=args.resample_method,

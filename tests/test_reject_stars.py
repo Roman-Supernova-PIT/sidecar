@@ -1,9 +1,13 @@
+import sys
+from types import SimpleNamespace
+
 import numpy as np
 import astropy.units as u
 import pytest
 from astropy.table import MaskedColumn, Table
 from roman_datamodels import dqflags
 
+from sidecar import pipeline
 from sidecar.pipeline import Detection
 from sidecar.util import reject_stars, star_rejection_radii
 
@@ -197,3 +201,132 @@ def test_center_flag_options_combine(monkeypatch, tmp_path):
     )
     with pytest.raises(ValueError, match="mask"):
         Detection(**kwargs, center_dq_flags=2**32)
+    with pytest.raises(ValueError, match="center flag columns"):
+        Detection(**kwargs, reject_center_jump_det=True, center_flag_columns=[])
+
+
+@pytest.mark.parametrize("mode", ["default", "custom", "empty"])
+def test_pipeline_cli_configures_cleaning_columns(monkeypatch, tmp_path, mode):
+    class TestConfig:
+        def value(self, key, default=None):
+            if key == "system.ou24.tds_base":
+                raise ValueError("not configured")
+            return default
+
+        def augment_argparse(self, parser):
+            pass
+
+        def parse_args(self, args):
+            pass
+
+    monkeypatch.setattr(pipeline.Config, "get", lambda *args, **kwargs: TestConfig())
+    monkeypatch.setattr(pipeline.ImageCollection, "get_collection", lambda **kwargs: None)
+    monkeypatch.setattr(pipeline, "make_data_records_from_image_path", lambda **kwargs: [1])
+    results = []
+    monkeypatch.setattr(Detection, "run_subtractions", lambda self: results.append(self))
+    args = ["pipeline", "--science-path", "science", "--temp-dir", str(tmp_path), "--output-dir", str(tmp_path)]
+    if mode == "custom":
+        args += [
+            "--bad-pixel-columns",
+            "science_flags_npix_bad",
+            "flags_npix_bad",
+            "--center-flag-columns",
+            "template_flags_center",
+            "flags_center",
+            "--center-dq-flags",
+            "0x4",
+        ]
+    elif mode == "empty":
+        args += ["--bad-pixel-columns", "--reject-center-jump-det"]
+    monkeypatch.setattr(sys, "argv", args)
+    pipeline.main()
+    (detection,) = results
+    if mode == "custom":
+        assert detection.bad_pixel_columns == ["science_flags_npix_bad", "flags_npix_bad"]
+        assert detection.center_flag_columns == ["template_flags_center", "flags_center"]
+        assert detection.center_dq_flags == 4
+    elif mode == "empty":
+        assert detection.bad_pixel_columns == []
+        assert detection.center_dq_flags == int(dqflags.pixel.JUMP_DET)
+    else:
+        assert detection.bad_pixel_columns == ["template_flags_npix_bad", "science_flags_npix_bad", "flags_npix_bad"]
+        assert detection.center_flag_columns == ["template_flags_center", "science_flags_center", "flags_center"]
+        assert detection.center_dq_flags == 0
+
+
+def test_pipeline_uses_configured_columns_when_cleaning(monkeypatch, tmp_path):
+    class TestConfig:
+        def value(self, key, default=None):
+            if key == "system.ou24.tds_base":
+                raise ValueError("not configured")
+            return default
+
+    monkeypatch.setattr(pipeline.Config, "get", lambda *args, **kwargs: TestConfig())
+    paths = {
+        key: tmp_path / key
+        for key in (
+            "full_output_dir",
+            "science_image_path",
+            "template_image_path",
+            "difference_image_path",
+            "score_image_path",
+            "simple_difference_image_path",
+            "simple_difference_detection_path",
+            "difference_detection_path",
+            "score_detection_path",
+            "cleaned_simple_difference_detection_path",
+            "cleaned_difference_detection_path",
+            "cleaned_score_detection_path",
+        )
+    }
+    paths["simple_difference_image_path"].touch()
+    stars = Table({"ra": [], "dec": []})
+    monkeypatch.setattr(pipeline.star_retrieval, "read_star_catalog", lambda path: stars)
+    monkeypatch.setattr(pipeline.subtraction, "Pipeline", lambda **kwargs: SimpleNamespace(detection_kwargs={}))
+    monkeypatch.setattr(Detection, "path_helper", lambda *args, **kwargs: paths)
+    monkeypatch.setattr(Detection, "load_product_image", staticmethod(lambda path: object()))
+    monkeypatch.setattr(Detection, "load_no_coverage_mask", staticmethod(lambda path: None))
+    detections = Table(
+        {
+            "id": [0, 1, 2],
+            "ra": [10.0, 20.0, 30.0],
+            "dec": [0.0, 0.0, 0.0],
+            "science_flags_npix_bad": [0, 1, 0],
+            "template_flags_npix_bad": [0, 0, 1],
+            "science_flags_center": [0, 0, 4],
+            "template_flags_center": [0, 4, 0],
+            "score_flags_npix_bad": [0, 1, 0],
+            "simple_diff_flags_npix_bad": [0, 0, 0],
+            "score_flags_center": [0, 0, 4],
+            "simple_diff_flags_center": [0, 4, 0],
+            "score_aper_r3_snr": [10.0, 10.0, 10.0],
+        }
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "detect_and_measure_sources",
+        lambda **kwargs: detections.write(kwargs["catalog_save_path"], format="ascii.ecsv"),
+    )
+    instance = Detection(
+        image_collection=None,
+        data_records=[],
+        temp_dir=tmp_path,
+        output_dir=tmp_path,
+        input_star_catalog_path="stars.ecsv",
+        save_debug_products=True,
+        center_dq_flags=4,
+        bad_pixel_columns=["science_flags_npix_bad", "flags_npix_bad"],
+        center_flag_columns=["template_flags_center", "flags_center"],
+    )
+    instance.run_one_subtraction(
+        SimpleNamespace(get_image=lambda path: object()),
+        "F062",
+        1,
+        1,
+        "F062",
+        2,
+        1,
+        assume_subtraction_has_been_run=True,
+    )
+    assert list(Table.read(paths["cleaned_score_detection_path"], format="ascii.ecsv")["id"]) == [0]
+    assert list(Table.read(paths["cleaned_simple_difference_detection_path"], format="ascii.ecsv")["id"]) == [0, 2]
