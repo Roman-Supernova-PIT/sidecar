@@ -27,6 +27,7 @@ from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 
 from sidecar.catalog_io import read_catalogs
+from snappl.logger import SNLogger
 
 DEFAULT_ROW_FILTERS = (("template_in_bounds", "==", True),)
 COMPARISON_OPERATORS = {
@@ -552,7 +553,7 @@ examples:
         cache=args.cache,
         nested_output_path=args.nested_output,
     )
-    print(f"Wrote {len(matched)} objects to {args.output}")
+    SNLogger.info(f"Wrote {len(matched)} objects to {args.output}")
 
 
 if __name__ == "__main__":

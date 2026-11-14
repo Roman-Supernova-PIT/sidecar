@@ -2,11 +2,13 @@ import numpy as np
 
 from astropy.stats import SigmaClip
 from astropy.table import Table, vstack
-from sidecar.catalog_io import write_catalog
 from photutils.aperture import ApertureStats, CircularAnnulus, CircularAperture, aperture_photometry
 from photutils.background import Background2D
 from photutils.centroids import centroid_com
 from photutils.detection import find_peaks
+
+from sidecar.catalog_io import write_catalog
+from snappl.logger import SNLogger
 
 DEFAULT_APERTURE_RADII = (2.0, 3.0, 5.0)
 DEFAULT_BACKGROUND_RADII = (8.0, 12.0)
@@ -78,10 +80,9 @@ def detect_sources_in_subtraction(
         raise ValueError("Background RMS must be positive and finite in the covered region")
     threshold = nsigma * rms
 
-    if verbose:
-        print(f"Median background: {bkg.background_median}")
-        print(f"Median background RMS: {bkg.background_rms_median}")
-        print(f"Detection threshold: {nsigma} times the local background RMS")
+    SNLogger.info(f"Median background: {bkg.background_median}")
+    SNLogger.info(f"Median background RMS: {bkg.background_rms_median}")
+    SNLogger.info(f"Detection threshold: {nsigma} times the local background RMS")
 
     find_peaks_kwargs = {"threshold": threshold, "box_size": box_size, "centroid_func": centroid_com, "mask": bad}
     pos_obj = find_peaks(sky_subtracted_data, **find_peaks_kwargs)

@@ -31,6 +31,8 @@ import numpy as np
 import pandas as pd
 from scipy.spatial import cKDTree
 
+from snappl.logger import SNLogger
+
 DEFAULT_NOISE = 0.21  # empirical scatter of the diff r3 flux on empty sky in program 01062
 STAT_COLUMNS = (
     "n_band",
@@ -286,7 +288,7 @@ def main():
         star_mag_col=args.star_mag_column,
     )
     write_candidates(candidates, args.output, args.region_file)
-    print(f"Wrote {len(candidates)} of {len(nested)} objects to {args.output} (noise {candidates.attrs.get('noise')})")
+    SNLogger.info(f"Wrote {len(candidates)} of {len(nested)} objects to {args.output} (noise {candidates.attrs.get('noise')})")
 
 
 if __name__ == "__main__":

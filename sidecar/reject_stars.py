@@ -4,7 +4,7 @@ from pathlib import Path
 from sidecar.catalog_io import read_catalog, write_catalog
 from sidecar.star_retrieval import read_star_catalog
 from sidecar.util import DEFAULT_STAR_MAG_COL, reject_stars
-
+from snappl.logger import SNLogger
 
 def main():
     parser = argparse.ArgumentParser(
@@ -47,7 +47,7 @@ def main():
         max_radius=args.max_radius,
     )
     write_catalog(cleaned, output, overwrite=True)
-    print(f"Kept {len(cleaned)} of {len(detection)} sources; wrote {output}")
+    SNLogger.info(f"Kept {len(cleaned)} of {len(detection)} sources; wrote {output}")
 
 
 if __name__ == "__main__":
