@@ -1,0 +1,15 @@
+Improving sidecar working on real ASDF images.
+Write a Parquet copy beside each ECSV catalog written by the pipeline;
+match_catalogs reads catalogs in parallel and caches/reads Parquet copies, and its grouping is vectorised.
+Added `sidecar.candidates` (``python -m sidecar.candidates``)
+  to select transient and variable candidates from a nested matched catalog:
+      object-level statistics (bands, z, sign consistency, science-template change, flux range)
+      and an isolation cut, with a ds9 region file output.
+Added `sidecar.match_catalogs.match_catalogs_nested` (and ``--nested-output`` on the CLI), 
+  which returns a nested-pandas catalog with one row per matched object
+  and its per-subtraction source rows nested inside, with unique ``object_id`` and ``source_id`` identifiers
+    (`parse_catalog_path`, `make_source_id`, `make_object_id`, `find_source`).
+  Added `sidecar.plot_matched` to plot the difference, science and template flux 
+    of each object in a (queried) matched catalog.
+Add ``sidecar.util.reject_stars`` (magnitude-dependent rejection radius)
+  and a ``python -m sidecar.reject_stars`` command line tool; ``Pipeline.reject_stars`` now uses it.
