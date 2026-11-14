@@ -596,8 +596,8 @@ class Detection:
 
         # Load files
         # Load from image collection
-        science_image = self.science_image = image_collection.get_image(path=science_image_path)
-        template_image = self.template_image = image_collection.get_image(path=template_image_path)
+        science_image = self.science_image = image_collection.get_image(path=file_path["science_image_path"])
+        template_image = self.template_image = image_collection.get_image(path=file_path["template_image_path"])
         # Load from file.  The difference and score images are stored as full paths
         difference_image = self.__class__.load_product_image(file_path["difference_image_path"])
         score_image = self.__class__.load_product_image(file_path["score_image_path"])
