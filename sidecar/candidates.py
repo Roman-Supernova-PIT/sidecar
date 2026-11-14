@@ -33,7 +33,13 @@ from scipy.spatial import cKDTree
 
 DEFAULT_NOISE = 0.21  # empirical scatter of the diff r3 flux on empty sky in program 01062
 STAT_COLUMNS = (
-    "n_band", "z_med", "sign_consistency", "sign_agreement", "sci_flux_med", "tpl_flux_med", "frac_change",
+    "n_band",
+    "z_med",
+    "sign_consistency",
+    "sign_agreement",
+    "sci_flux_med",
+    "tpl_flux_med",
+    "frac_change",
     "bright_flux",
 )
 
@@ -117,10 +123,16 @@ def reject_star_objects(nested, stars, match_radius=5.0, ref_mag=None, scale=0.2
 
     from sidecar.util import DEFAULT_STAR_MAG_COL, reject_stars
 
-    positions = Table({"ra": nested["ra"].to_numpy(), "dec": nested["dec"].to_numpy(),
-                       "row": np.arange(len(nested))})
-    kept = reject_stars(positions, stars, match_radius, mag_col=mag_col or DEFAULT_STAR_MAG_COL, ref_mag=ref_mag,
-                        scale=scale, max_radius=max_radius)
+    positions = Table({"ra": nested["ra"].to_numpy(), "dec": nested["dec"].to_numpy(), "row": np.arange(len(nested))})
+    kept = reject_stars(
+        positions,
+        stars,
+        match_radius,
+        mag_col=mag_col or DEFAULT_STAR_MAG_COL,
+        ref_mag=ref_mag,
+        scale=scale,
+        max_radius=max_radius,
+    )
     return nested.iloc[np.asarray(kept["row"], int)]
 
 
@@ -156,8 +168,9 @@ def select_candidates(
     `star_max_radius` arcsec; see `sidecar.util.reject_stars`.
     """
     if stars is not None:
-        nested = reject_star_objects(nested, stars, star_match_radius, star_ref_mag, star_scale, star_max_radius,
-                                     star_mag_col)
+        nested = reject_star_objects(
+            nested, stars, star_match_radius, star_ref_mag, star_scale, star_max_radius, star_mag_col
+        )
     stats = add_object_statistics(nested, noise=noise, aperture=aperture, diff_prefix=diff_prefix)
 
     detected = (stats["n_sources"] >= min_sources) & (stats["z_med"].abs() >= min_abs_z)
@@ -207,24 +220,36 @@ def main():
     parser.add_argument("--min-abs-z", type=float, default=4.0)
     parser.add_argument("--min-sign-consistency", type=float, default=0.85)
     parser.add_argument("--min-sign-agreement", type=float, default=0.8)
-    parser.add_argument("--min-frac-change", type=float, default=0.5,
-                        help="Minimum |science - template| as a fraction of the brighter flux")
+    parser.add_argument(
+        "--min-frac-change",
+        type=float,
+        default=0.5,
+        help="Minimum |science - template| as a fraction of the brighter flux",
+    )
     parser.add_argument("--min-flux", type=float, default=0.8, help="Minimum brighter-epoch flux")
     parser.add_argument("--max-flux", type=float, default=10.0, help="Maximum brighter-epoch flux")
-    parser.add_argument("--isolation-radius", type=float, default=30.0,
-                        help="Arcsec; no other detected object within this radius (0 disables)")
-    parser.add_argument("--star-catalog", default=None,
-                        help="Reference star ECSV (e.g. Gaia); objects near stars are dropped before the cuts")
+    parser.add_argument(
+        "--isolation-radius",
+        type=float,
+        default=30.0,
+        help="Arcsec; no other detected object within this radius (0 disables)",
+    )
+    parser.add_argument(
+        "--star-catalog",
+        default=None,
+        help="Reference star ECSV (e.g. Gaia); objects near stars are dropped before the cuts",
+    )
     parser.add_argument("--star-match-radius", type=float, default=5.0, help="Base star rejection radius, arcsec")
-    parser.add_argument("--star-ref-mag", type=float, default=None,
-                        help="Stars brighter than this get a larger radius")
-    parser.add_argument("--star-scale", type=float, default=0.2,
-                        help="Radius grows as 10**(scale * (ref_mag - mag))")
+    parser.add_argument("--star-ref-mag", type=float, default=None, help="Stars brighter than this get a larger radius")
+    parser.add_argument("--star-scale", type=float, default=0.2, help="Radius grows as 10**(scale * (ref_mag - mag))")
     parser.add_argument("--star-max-radius", type=float, default=None, help="Cap on the star radius, arcsec")
     parser.add_argument("--star-mag-column", default=None, help="Star magnitude column (default phot_g_mean_mag)")
     parser.add_argument("--noise", type=float, default=DEFAULT_NOISE, help="Diff-flux noise used for z")
-    parser.add_argument("--measure-noise", action="store_true",
-                        help="Estimate the noise from the matched sources instead of using --noise")
+    parser.add_argument(
+        "--measure-noise",
+        action="store_true",
+        help="Estimate the noise from the matched sources instead of using --noise",
+    )
     args = parser.parse_args()
 
     from sidecar.match_catalogs import read_nested_catalog

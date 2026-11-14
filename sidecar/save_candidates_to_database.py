@@ -79,8 +79,8 @@ def main():
         default=None,
         help=(
             "Base path of the DIA output files.  ",
-            "Used to specify where to look for catalog files when reading a list of data records."
-        )
+            "Used to specify where to look for catalog files when reading a list of data records.",
+        ),
     )
     parser.add_argument(
         "--threshold",

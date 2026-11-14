@@ -1,4 +1,4 @@
-"""Cross-match source catalogs across observations and apply row cuts.
+r"""Cross-match source catalogs across observations and apply row cuts.
 
 Examples
 --------
@@ -38,6 +38,7 @@ COMPARISON_OPERATORS = {
     "<=": operator.le,
 }
 DEFAULT_MIN_PIXEL_SEPARATION = 10.0
+
 
 def _to_deg(col):
     return u.Quantity(col, u.deg).to_value(u.deg)
@@ -129,8 +130,9 @@ def _count_distinct_positions(xy, detector, tolerance, stop_at=None):
     return len(centers)
 
 
-def match_catalogs(tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=None, min_pixel_separation=None,
-                  min_distinct_positions=2):
+def match_catalogs(
+    tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=None, min_pixel_separation=None, min_distinct_positions=2
+):
     """Cross-match catalogs on ra, dec and keep objects found in enough of them.
 
     Sources within `radius` of each other, directly or through a chain of
@@ -196,7 +198,9 @@ def _group_detections(filtered_tables, radius, min_matches, min_pixel_separation
     ra = np.concatenate([_to_deg(t["ra"]) for t in filtered_tables]) if filtered_tables else np.array([])
     dec = np.concatenate([_to_deg(t["dec"]) for t in filtered_tables]) if filtered_tables else np.array([])
     cat_index = (
-        np.concatenate([np.full(len(t), i) for i, t in enumerate(filtered_tables)]) if filtered_tables else np.array([], int)
+        np.concatenate([np.full(len(t), i) for i, t in enumerate(filtered_tables)])
+        if filtered_tables
+        else np.array([], int)
     )
 
     if min_pixel_separation is not None:
@@ -204,13 +208,19 @@ def _group_detections(filtered_tables, radius, min_matches, min_pixel_separation
             for col in ("x_peak", "y_peak"):
                 if col not in t.colnames:
                     raise KeyError(f"Column {col!r} required for min_pixel_separation not found in {t.colnames}")
-        xy = np.column_stack(
-            [
-                np.concatenate([np.asarray(t["x_peak"], float) for t in filtered_tables]),
-                np.concatenate([np.asarray(t["y_peak"], float) for t in filtered_tables]),
-            ]
-        ) if filtered_tables else np.empty((0, 2))
-        detector = np.concatenate([_table_detector(t) for t in filtered_tables]) if filtered_tables else np.array([], int)
+        xy = (
+            np.column_stack(
+                [
+                    np.concatenate([np.asarray(t["x_peak"], float) for t in filtered_tables]),
+                    np.concatenate([np.asarray(t["y_peak"], float) for t in filtered_tables]),
+                ]
+            )
+            if filtered_tables
+            else np.empty((0, 2))
+        )
+        detector = (
+            np.concatenate([_table_detector(t) for t in filtered_tables]) if filtered_tables else np.array([], int)
+        )
 
     n = len(ra)
     if n == 0:
@@ -254,8 +264,10 @@ def _group_mean_positions(grouping):
     labels, n_groups, kept_groups = grouping["labels"], grouping["n_groups"], grouping["kept_groups"]
     ra_rad, dec_rad = np.deg2rad(grouping["ra"]), np.deg2rad(grouping["dec"])
     cos_dec = np.cos(dec_rad)
-    sums = [np.bincount(labels, weights=w, minlength=n_groups)[kept_groups]
-            for w in (cos_dec * np.cos(ra_rad), cos_dec * np.sin(ra_rad), np.sin(dec_rad))]
+    sums = [
+        np.bincount(labels, weights=w, minlength=n_groups)[kept_groups]
+        for w in (cos_dec * np.cos(ra_rad), cos_dec * np.sin(ra_rad), np.sin(dec_rad))
+    ]
     mean_ra = np.rad2deg(np.arctan2(sums[1], sums[0])) % 360.0
     mean_dec = np.rad2deg(np.arctan2(sums[2], np.hypot(sums[0], sums[1])))
     return mean_ra, mean_dec
@@ -323,8 +335,9 @@ def _sources_frame(table, index):
     return frame
 
 
-def match_catalogs_nested(tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=None,
-                          min_pixel_separation=None, min_distinct_positions=2):
+def match_catalogs_nested(
+    tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=None, min_pixel_separation=None, min_distinct_positions=2
+):
     """Like `match_catalogs`, but keep the per-subtraction rows of every object.
 
     Terminology: a *source* is one detection in one per-subtraction catalog; an
@@ -431,7 +444,10 @@ def match_catalog_files(
         detector = _detector_from_path(p)
         if detector is not None:
             table.meta["detector"] = detector
-    matched = match_catalogs(tables, radius=radius, min_matches=min_matches,
+    matched = match_catalogs(
+        tables,
+        radius=radius,
+        min_matches=min_matches,
         row_filters=row_filters,
         min_pixel_separation=min_pixel_separation,
         min_distinct_positions=min_distinct_positions,
@@ -439,9 +455,14 @@ def match_catalog_files(
     matched.write(output_path, format="ascii.ecsv", overwrite=overwrite)
     if nested_output_path is not None:
         write_nested_catalog(
-            match_catalogs_nested(tables, radius=radius, min_matches=min_matches, row_filters=row_filters,
-                                  min_pixel_separation=min_pixel_separation,
-                                  min_distinct_positions=min_distinct_positions),
+            match_catalogs_nested(
+                tables,
+                radius=radius,
+                min_matches=min_matches,
+                row_filters=row_filters,
+                min_pixel_separation=min_pixel_separation,
+                min_distinct_positions=min_distinct_positions,
+            ),
             nested_output_path,
         )
     return matched

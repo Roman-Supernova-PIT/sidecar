@@ -603,14 +603,14 @@ def write_ds9_regions_from_ecsv(
     with open(ds9_region_path, "w") as region_file:
         region_file.write("# Region file format: DS9 version 4.1\n")
         region_file.write(
-            f"global color={region_color} width=1 font=\"helvetica 10 normal\" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n"  # noqa
+            f'global color={region_color} width=1 font="helvetica 10 normal" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n'  # noqa
         )
         region_file.write(f"{coord_system}\n")
 
         for row in catalog[mask]:
             ra = float(row[ra_column])
             dec = float(row[dec_column])
-            line = f"circle({ra:.8f}, {dec:.8f}, {radius_arcsec:.3f}\")"
+            line = f'circle({ra:.8f}, {dec:.8f}, {radius_arcsec:.3f}")'
             if peak_value_column is not None:
                 peak_value = float(row[peak_value_column])
                 line += f"  # text={{{peak_value:.2f}}}"

@@ -85,8 +85,16 @@ def plot_lightcurve(sources, object_id=None, aperture="r3", diff_prefix=DIFF_PRE
         x = table["mjd"] if use_mjd else table["image_id"].map({i: n for n, i in enumerate(ids)})
         for band in bands:
             sel = (table["band"] == band) if band is not None else np.ones(len(table), bool)
-            ax.errorbar(x[sel], table["flux"][sel], table["flux_err"][sel], fmt="o", ms=4,
-                        color=colors[band], label=band, capsize=2)
+            ax.errorbar(
+                x[sel],
+                table["flux"][sel],
+                table["flux_err"][sel],
+                fmt="o",
+                ms=4,
+                color=colors[band],
+                label=band,
+                capsize=2,
+            )
         ax.axhline(0, color="gray", lw=0.5)
         ax.set_ylabel(f"{title} flux ({aperture})")
         if not use_mjd:
@@ -106,8 +114,9 @@ def _short_id(image_id):
     return " - ".join(part.split("_", 1)[-1][-14:] if len(parts) > 1 else part[-14:] for part in parts)
 
 
-def plot_lightcurves(matched, object_ids=None, max_objects=25, outdir=None, aperture="r3",
-                     diff_prefix=DIFF_PREFIX, dpi=100):
+def plot_lightcurves(
+    matched, object_ids=None, max_objects=25, outdir=None, aperture="r3", diff_prefix=DIFF_PREFIX, dpi=100
+):
     """Plot the light curves of every object in a matched (nested) catalog or query result.
 
     Parameters
@@ -139,8 +148,9 @@ def plot_lightcurves(matched, object_ids=None, max_objects=25, outdir=None, aper
 
     results = []
     for object_id in ids:
-        fig = plot_lightcurve(matched.loc[object_id, "sources"], object_id=object_id, aperture=aperture,
-                              diff_prefix=diff_prefix)
+        fig = plot_lightcurve(
+            matched.loc[object_id, "sources"], object_id=object_id, aperture=aperture, diff_prefix=diff_prefix
+        )
         if outdir is None:
             results.append(fig)
         else:

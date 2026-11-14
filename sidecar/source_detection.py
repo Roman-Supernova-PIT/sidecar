@@ -1,4 +1,3 @@
-
 import numpy as np
 
 from astropy.stats import SigmaClip
@@ -105,7 +104,9 @@ def detect_sources_in_subtraction(
 
     if obj is not None:
         # snappl's pixel_to_world returns (ra, dec) in degrees
-        ra, dec = image.get_wcs().pixel_to_world(np.asarray(obj["x_centroid"], dtype=float), np.asarray(obj["y_centroid"], dtype=float))
+        ra, dec = image.get_wcs().pixel_to_world(
+            np.asarray(obj["x_centroid"], dtype=float), np.asarray(obj["y_centroid"], dtype=float)
+        )
         obj["ra"] = np.atleast_1d(ra)
         obj["dec"] = np.atleast_1d(dec)
 

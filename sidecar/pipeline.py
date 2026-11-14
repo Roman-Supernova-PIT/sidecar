@@ -659,7 +659,9 @@ class Detection:
                     self.REJECT_MATCH_RADIUS,
                     file_path["cleaned_simple_difference_detection_path"],
                     bad_pixel_column=[
-                        "template_flags_npix_bad", "science_flags_npix_bad", "simple_diff_flags_npix_bad"
+                        "template_flags_npix_bad",
+                        "science_flags_npix_bad",
+                        "simple_diff_flags_npix_bad",
                     ],
                     center_flag_columns=["template_flags_center", "science_flags_center", "simple_diff_flags_center"],
                     center_dq_flags=self.center_dq_flags,
@@ -849,7 +851,7 @@ class Detection:
                 temp_dir=temp_dir,
                 reject_known_stars=self.reject_known_stars,
                 backend4subtract=self.backend4subtract,
-                assume_subtraction_has_been_run=self.assume_subtraction_has_been_run
+                assume_subtraction_has_been_run=self.assume_subtraction_has_been_run,
             )
 
     def run_match_truth(self):
@@ -1172,7 +1174,8 @@ def main():
         default="bilinear",
         choices=["bilinear", "spline3", "spline5"],
         help="Interpolation used to warp the template image onto the science grid.  bilinear blurs undersampled "
-        "images, so the SFFT kernel has to sharpen the template; spline3/spline5 preserve sharpness.",
+        "images, so the SFFT kernel has to sharpen the template; spline3/spline5 preserve sharpness."
+        "The spline3 and spline5 methods were exploratory and not necessarily recommended.",
     )
     parser.add_argument(
         "--pre-smooth-sigma",
