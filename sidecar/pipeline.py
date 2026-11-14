@@ -1133,10 +1133,10 @@ def main():
     )
     parser.add_argument(
         "--bright-star-mag",
-        type=float,
+        type=lambda s: None if s.lower() == "none" else float(s),
         default=17,
-        help="Mask pixels around Gaia stars brighter than this G mag from the SFFT kernel sources."
-        "Mask in a circle of radius of 'bright-star-radius'.",
+        help="Mask pixels around Gaia stars brighter than this G mag from the SFFT kernel sources. "
+        "Use 'none' to disable; the halo radius is set by --bright-star-radius.",
     )
     parser.add_argument(
         "--bright-star-radius",
