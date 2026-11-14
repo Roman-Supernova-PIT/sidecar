@@ -125,7 +125,64 @@ sidecar/examples/perlmutter/test_sidecar_asdf_manualrdm.sh
   | science_band | science_observation_id | science_sca | template_band | template_observation_id | template_sca |
   ```
 - Subtraction: Perform image difference using [SFFT](https://github.com/thomasvrussell/sfft) algorithm.
-- Detection: Perform source detection using [Source-Extractor](https://sextractor.readthedocs.io/en/latest/Introduction.html).
+- Detection: Find positive and negative peaks in background-subtracted difference and score images using a
+  local background-RMS threshold (5 times the local RMS by default); catalog `peak_value` is background-subtracted.
+  Subtraction products store SFFT's blank-region mask in a separate `NO_COVERAGE` FITS extension.
+- Cleaned catalogs are written when known-star rejection is enabled. Cleaned score and simple-difference
+  catalogs also exclude sources with bad or unmeasured pixels in the 3-pixel flag aperture of the science,
+  template, or respective subtraction product, each measured at the source's sky position.
+  The cleaned score catalog additionally requires `abs(score_aper_r3_snr) >= 7`, configurable with
+  `--cleaned-score-min-snr`; significant negative detections are retained. The simple-difference catalog
+  has no S/N cut. The score-image aperture S/N uses the difference-image noise plane and does not fully
+  account for correlated noise, so this cut should be validated for each dataset. The product flag plane
+  currently combines science and template flags without resampling the template flags to the science grid.
+  Optionally, `--reject-center-jump-det` rejects `JUMP_DET` at the source center of any of these three
+  images; `--center-dq-flags MASK` rejects any bit in an additional integer DQ mask (decimal or `0x` hex).
+  Both are off by default. When enabled, unmeasured center flags are rejected as well.
+  Override the checked columns with `--bad-pixel-columns` and `--center-flag-columns`, followed by
+  space-separated names. Names beginning with `science_` or `template_` are used as-is; other names
+  receive the `score_` or `simple_diff_` prefix, depending on the catalog. For example,
+  `--bad-pixel-columns science_flags_npix_bad flags_npix_bad` checks science and the product.
+  Supplying `--bad-pixel-columns` without names disables the aperture bad-pixel cut in both catalogs;
+  `--center-flag-columns` requires at least one name.
 - Truth Retrieval: Retrieve truth tables of the science image and template image.
 - Truth Matching: Match the truth information to the detected sources for evaluating efficiency. Match the detected sources to truth for evaluating purity.
 - Evaluation: Evaluate efficiency and purity.
+
+## Matching Catalogs Across Observations
+
+To cross-match sources across detection catalogs on `ra` and `dec`, use `sidecar.match_catalogs`.
+Entries must satisfy `template_in_bounds == True` by default. Additional boolean and numeric comparison cuts (`==`, `!=`, `>`, `<`, `>=`, `<=`) can be supplied with `--row-filter`.
+
+### Example: Multi-Filter Matching
+
+```bash
+python -m sidecar.match_catalogs \
+    ./subtractions/F*_15_-_F*_15/cleaned_score_*.ecsv \
+    --min-matches 3 \
+    --radius 1.0 \
+    --row-filter "score_in_bounds,==,True" \
+    --row-filter "score_peak_snr,>,10" \
+    --row-filter "score_flags_npix_bad,<=,0" \
+    --output matched_01062_cleaned_score_15.ecsv
+```
+
+In Python:
+
+```python
+from astropy.table import Table
+import astropy.units as u
+from sidecar.match_catalogs import match_catalogs
+
+tables = [Table.read("cat1.ecsv"), Table.read("cat2.ecsv")]
+matched = match_catalogs(
+    tables,
+    radius=1.0 * u.arcsec,
+    min_matches=2,
+    row_filters=[
+        ("score_in_bounds", "==", True),
+        ("score_peak_snr", ">", 10.0),
+        ("score_flags_npix_bad", "<=", 0),
+    ],
+)
+```

@@ -1,20 +1,27 @@
 import argparse
 import atexit
 import logging
+import operator
 import os
 from pathlib import Path
 import tempfile
 
+import numpy as np
 from astropy.coordinates import SkyCoord
+from astropy.io import fits
 from astropy.table import Table
 from astropy.wcs.utils import pixel_to_skycoord
 import astropy.units as u
+from roman_datamodels import dqflags
 
+from sidecar import star_retrieval
+from sidecar.catalog_io import write_catalog
 from sidecar import subtraction
 from sidecar import truth_matching
 from sidecar import truth_retrieval
 from sidecar.database import save_dia_objects_from_subtraction
-from sidecar.source_detection import detect_sources
+from sidecar.source_detection import detect_and_measure_sources
+from sidecar import util
 from sidecar.util import (
     find_templates_for_observation_ids,
     make_data_records_from_observation_id,
@@ -24,8 +31,25 @@ from sidecar.util import (
 )
 
 from snappl.config import Config
+from snappl.image import FITSImage
 from snappl.imagecollection import ImageCollection
 from snappl.logger import SNLogger
+
+
+def _validate_dq_mask(mask):
+    try:
+        mask = operator.index(mask)
+    except TypeError as exc:
+        raise ValueError("center DQ flag mask must be an integer") from exc
+    if not 0 <= mask <= 0xFFFFFFFF:
+        raise ValueError("center DQ flag mask must be between 0 and 0xFFFFFFFF")
+    return mask
+
+
+def _product_flag_columns(columns, product):
+    if isinstance(columns, str):
+        columns = [columns]
+    return [column if column.startswith(("template_", "science_")) else f"{product}_{column}" for column in columns]
 
 
 class Detection:
@@ -63,6 +87,7 @@ class Detection:
     CLEANED_DIFF_DETECTION_PREFIX = "cleaned_" + DIFF_DETECTION_PREFIX
     CLEANED_SCORE_DETECTION_PREFIX = "cleaned_" + SCORE_DETECTION_PREFIX
     DIFF_TRUTH_PREFIX = "truth_"
+    STAR_CATALOG_PREFIX = "gaia_stars_"
     TRANSIENTS_TO_DETECTION_PREFIX = "transients_to_detection_"
     DETECTION_TO_TRANSIENTS_PREFIX = "detection_to_transients_"
     TRANSIENTS_TO_CLEANED_DETECTION_PREFIX = "transients_to_cleaned_detection_"
@@ -83,12 +108,26 @@ class Detection:
         backend4subtract=None,
         save_debug_products=False,
         save_candidates_to_database=False,
+        assume_subtraction_has_been_run=False,
         threshold=None,
         threshold_column="peak_value",
+        detection_kwargs=None,
+        input_star_catalog_path=None,
+        resample_method="bilinear",
+        sfft_kwargs=None,
+        pre_smooth_sigma=None,
         temp_dir=None,
         output_dir=None,
         verbose=False,
+        cleaned_score_min_snr=7.0,
+        center_dq_flags=0,
+        reject_center_jump_det=False,
+        bad_pixel_columns=None,
+        center_flag_columns=None,
     ):
+        if not np.isfinite(cleaned_score_min_snr) or cleaned_score_min_snr < 0:
+            raise ValueError("cleaned_score_min_snr must be finite and nonnegative")
+        center_dq_flags = _validate_dq_mask(center_dq_flags)
         SNLogger.setLevel(logging.DEBUG if verbose else logging.INFO)
         self.config = Config.get()
 
@@ -112,11 +151,33 @@ class Detection:
         self.psf_size = psf_size
         self.reject_known_stars = reject_known_stars
         self.cross_convolve = cross_convolve
+        self.assume_subtraction_has_been_run = assume_subtraction_has_been_run
 
         self.save_debug_products = save_debug_products
         self.save_candidates_to_database = save_candidates_to_database
         self.threshold = threshold
         self.threshold_column = threshold_column
+        self.cleaned_score_min_snr = cleaned_score_min_snr
+        self.center_dq_flags = center_dq_flags | (int(dqflags.pixel.JUMP_DET) if reject_center_jump_det else 0)
+        self.bad_pixel_columns = (
+            ["template_flags_npix_bad", "science_flags_npix_bad", "flags_npix_bad"]
+            if bad_pixel_columns is None
+            else bad_pixel_columns
+        )
+        self.center_flag_columns = (
+            ["template_flags_center", "science_flags_center", "flags_center"]
+            if center_flag_columns is None
+            else center_flag_columns
+        )
+        if self.center_dq_flags and len(self.center_flag_columns) == 0:
+            raise ValueError("center flag columns must not be empty when center DQ rejection is enabled")
+        # Source selection cuts passed to subtraction.sky_subtract_and_detect
+        self.detection_kwargs = detection_kwargs or {}
+        # Text file of Gaia stars to use instead of querying Gaia
+        self.input_star_catalog_path = input_star_catalog_path
+        self.resample_method = resample_method
+        self.sfft_kwargs = sfft_kwargs or {}
+        self.pre_smooth_sigma = pre_smooth_sigma
 
         if temp_dir is not None:
             self.temp_dir = temp_dir
@@ -148,7 +209,7 @@ class Detection:
         truth = truth_retrieval.merge_science_and_template_truth(
             science_truth, template_truth, science_wcs, template_wcs, offset=50
         )
-        truth.write(difference_truth_path, overwrite=True)
+        write_catalog(truth, difference_truth_path, overwrite=True)
         return truth
 
     @staticmethod
@@ -203,64 +264,106 @@ class Detection:
             detection, transients, detection_skycoord, transients_skycoord, match_radius, key=id_col
         )
 
-        transients_to_detection.write(transients_to_detection_path, overwrite=True)
-        detection_to_transients.write(detection_to_transients_path, overwrite=True)
+        write_catalog(transients_to_detection, transients_to_detection_path, overwrite=True)
+        write_catalog(detection_to_transients, detection_to_transients_path, overwrite=True)
         return transients_to_detection, detection_to_transients
 
     @staticmethod
+    def retrieve_stars(science_image, star_catalog_path, max_mag=None):
+        """Retrieve Gaia DR3 stars covering the science image and save them to star_catalog_path."""
+        stars = star_retrieval.retrieve_gaia_stars_for_image(science_image, max_mag=max_mag)
+        write_catalog(stars, star_catalog_path, overwrite=True)
+        return stars
+
+    @staticmethod
     def reject_stars(
-        truth,
-        difference_image_path,
+        stars,
         difference_detection_path,
         match_radius,
         cleaned_difference_detection_path,
-        frame="fk5",
-        x_col="X_IMAGE",
-        y_col="Y_IMAGE",
-        bright=10,
+        frame="icrs",
+        ra_col="ra",
+        dec_col="dec",
+        bad_pixel_column=None,
+        snr_column=None,
+        min_abs_snr=None,
+        center_flag_columns=None,
+        center_dq_flags=0,
+        **radius_kwargs,
     ):
         """Reject stars from subtraction detection catalogs
 
         Parameter
         ---------
-        truth : astropy.table.Table
-        difference_image_path : str
+        stars : astropy.table.Table
+            Star catalog with 'ra' and 'dec' columns in degrees, e.g., from star_retrieval.
         difference_detection_path : str
         match_radius : float
             Match radius in arcseconds
         cleaned_difference_detection_path : str
         frame : str
-            astropy.wcs coordinate frame.  E.g., "icrs" or "fk5"
-        x_col : str
-            Name of column in detection table for x coordinate
-        y_col : str
-            Name of column in detection table for y coordinate
-        bright : float
-            Minim counts for a star to be considered bright
+            astropy.wcs coordinate frame of the star catalog.  E.g., "icrs" or "fk5"
+        ra_col : str
+            Name of column in detection table for right ascension in degrees
+        dec_col : str
+            Name of column in detection table for declination in degrees
+        bad_pixel_column : str or sequence of str, optional
+            Columns counting bad pixels in the measurement apertures. Only rows
+            with a measured count of zero in every column are retained.
+        snr_column : str, optional
+            Aperture S/N column to filter on, together with `min_abs_snr`.
+        min_abs_snr : float, optional
+            Minimum absolute S/N. Nonfinite or missing measurements are rejected.
+        center_flag_columns : str or sequence of str, optional
+            Center-pixel DQ columns to inspect when `center_dq_flags` is nonzero.
+        center_dq_flags : int, optional
+            Bit mask of center-pixel flags to reject. Unmeasured or masked center
+            flags are also rejected when the mask is nonzero. Zero disables this cut.
+        radius_kwargs :
+            ref_mag, scale, max_radius, mag_col for a magnitude-dependent radius; see util.reject_stars
 
         Return
         ------
         astropy.table.Table :
-            cleaned catalog with matches to bright stars removed.
+            cleaned catalog with matches to stars removed.
         """
-        difference_wcs = load_wcs_from_fits(difference_image_path, hdu_id=0)
-
+        center_dq_flags = _validate_dq_mask(center_dq_flags)
+        if center_dq_flags and center_flag_columns is None:
+            raise ValueError("center_flag_columns must be provided when center_dq_flags is nonzero")
+        if center_dq_flags and not isinstance(center_flag_columns, str) and len(center_flag_columns) == 0:
+            raise ValueError("center_flag_columns must not be empty when center_dq_flags is nonzero")
         detection = Table.read(difference_detection_path, format="ascii")
-        star = truth[truth["object_type"] == "star"]
-        bright_star_idx = star["realized_flux"] > bright
-        if sum(bright_star_idx) < 1:
-            cleaned_detection = detection.copy()
-        else:
-            bright_star = star[bright_star_idx]
-            bright_star_skycoord = SkyCoord(
-                bright_star["object_ra"], bright_star["object_dec"], frame=frame, unit="deg"
-            )
-            detection_skycoord = pixel_to_skycoord(detection[x_col], detection[y_col], difference_wcs)
-            cleaned_detection = truth_matching.skymatch_and_reject(
-                detection, bright_star, detection_skycoord, bright_star_skycoord, match_radius=match_radius
-            )
+        cleaned_detection = util.reject_stars(
+            detection, stars, match_radius, frame=frame, ra_col=ra_col, dec_col=dec_col, **radius_kwargs
+        )
 
-        cleaned_detection.write(cleaned_difference_detection_path, overwrite=True, format="ascii.ecsv")
+        if bad_pixel_column is not None:
+            columns = [bad_pixel_column] if isinstance(bad_pixel_column, str) else bad_pixel_column
+            good = np.ones(len(cleaned_detection), dtype=bool)
+            for column in columns:
+                flags = np.ma.asarray(cleaned_detection[column])
+                good &= np.ma.filled(flags == 0, False)
+            SNLogger.info(f"Removing {np.count_nonzero(~good)} detections with bad or unmeasured pixels")
+            cleaned_detection = cleaned_detection[good]
+        if center_dq_flags:
+            columns = [center_flag_columns] if isinstance(center_flag_columns, str) else center_flag_columns
+            good = np.ones(len(cleaned_detection), dtype=bool)
+            for column in columns:
+                flags = np.ma.asarray(cleaned_detection[column])
+                good &= np.ma.filled((flags >= 0) & ((flags & center_dq_flags) == 0), False)
+            SNLogger.info(f"Removing {np.count_nonzero(~good)} detections with rejected or unmeasured center flags")
+            cleaned_detection = cleaned_detection[good]
+        if (snr_column is None) != (min_abs_snr is None):
+            raise ValueError("snr_column and min_abs_snr must be provided together")
+        if snr_column is not None:
+            if not np.isfinite(min_abs_snr) or min_abs_snr < 0:
+                raise ValueError("min_abs_snr must be finite and nonnegative")
+            snr = np.ma.asarray(cleaned_detection[snr_column], dtype=float)
+            good = np.ma.filled(np.isfinite(snr) & (np.abs(snr) >= min_abs_snr), False)
+            SNLogger.info(f"Removing {np.count_nonzero(~good)} detections below the absolute S/N threshold")
+            cleaned_detection = cleaned_detection[good]
+
+        write_catalog(cleaned_detection, cleaned_difference_detection_path, overwrite=True)
 
         return cleaned_detection
 
@@ -314,7 +417,12 @@ class Detection:
             file_path["full_output_dir"],
             self.SCORE_DETECTION_PREFIX + diff_pattern + ".ecsv",
         )
-        # truth retrieval
+        # star retrieval
+        file_path["star_catalog_path"] = Path(
+            file_path["full_output_dir"],
+            self.STAR_CATALOG_PREFIX + diff_pattern + ".ecsv",
+        )
+        # truth retrieval (only used for matching to simulated transients)
         file_path["science_truth_path"] = self.INPUT_TRUTH_PATTERN.format(**science_id)
         file_path["template_truth_path"] = self.INPUT_TRUTH_PATTERN.format(**template_id)
         file_path["difference_truth_path"] = Path(
@@ -342,11 +450,11 @@ class Detection:
         )
         file_path["cleaned_simple_difference_detection_path"] = Path(
             file_path["full_output_dir"],
-            self.CLEANED_SIMPLE_DIFF_DETECTION_PREFIX + diff_pattern + ".cat",
+            self.CLEANED_SIMPLE_DIFF_DETECTION_PREFIX + diff_pattern + ".ecsv",
         )
         file_path["cleaned_difference_detection_path"] = Path(
             file_path["full_output_dir"],
-            self.CLEANED_DIFF_DETECTION_PREFIX + diff_pattern + ".cat",
+            self.CLEANED_DIFF_DETECTION_PREFIX + diff_pattern + ".ecsv",
         )
         file_path["cleaned_score_detection_path"] = Path(
             file_path["full_output_dir"],
@@ -370,6 +478,19 @@ class Detection:
         )
         return file_path
 
+    @staticmethod
+    def load_product_image(path):
+        """Load a subtraction product (DATA, NOISE, FLAGS in HDUs 1-3) as a snappl FITSImage."""
+        return FITSImage(path, imagehdu=1, noisehdu=2, flagshdu=3, no_base_path=True)
+
+    @staticmethod
+    def load_no_coverage_mask(path):
+        """Load the output-grid no-coverage mask from a subtraction product."""
+        with fits.open(path) as hdus:
+            if "NO_COVERAGE" not in hdus:
+                raise ValueError(f"{path} has no NO_COVERAGE extension; rerun the subtraction to generate it")
+            return hdus["NO_COVERAGE"].data.astype(bool)
+
     def run_one_subtraction(
         self,
         image_collection,
@@ -387,7 +508,55 @@ class Detection:
         reject_known_stars=True,
         cross_convolve=False,
         backend4subtract="Cupy",
+        assume_subtraction_has_been_run=False,
     ):
+        """Subtract one template from one science image, detect and measure sources, and optionally save candidates.
+
+        Steps:
+          1. Build the output paths (`path_helper`) and the `subtraction.Pipeline`.
+          2. If needed, load a star catalog (from `--star-catalog` or by querying Gaia).  It is used to select SFFT
+             matching sources (`gaia_mag_limit`, `bright_star_mag`) and to reject known stars from detections.
+          3. Run the subtraction, writing the diff, decorrelated diff, score and (with `save_debug_products`)
+             simple diff images.  Skipped if `assume_subtraction_has_been_run`.
+          4. Detect sources in the diff and score images (and the simple diff if `save_debug_products`) and measure
+             them on the subtraction, template and science images with `detect_and_measure_sources`.  Catalogs are
+             written to the `*_detection_path` files.
+          5. If `reject_known_stars`, write `cleaned_*` catalogs with sources matching known stars removed.
+             Also reject bad or unmeasured pixels in simple-difference and score apertures, and apply the
+             absolute score r=3 aperture S/N cut to the cleaned score catalog.
+          6. If `self.save_candidates_to_database`, save DiaObjects from the (cleaned, if made) score catalog.
+
+        Uses instance settings for everything not passed as an argument: `cross_convolve`, `save_debug_products`,
+        `detection_kwargs`, `resample_method`, `sfft_kwargs`, `pre_smooth_sigma`, `input_star_catalog_path`,
+        `threshold`, `threshold_column`, `cleaned_score_min_snr`, `center_dq_flags`, `bad_pixel_columns`,
+        `center_flag_columns`, and `save_candidates_to_database`.
+
+        Parameters
+        ----------
+        image_collection : snappl image collection
+            Used to find the science and template images and to save DiaObjects.
+        science_band, science_observation_id, science_sca : str, int, int
+            Identify the science image.
+        template_band, template_observation_id, template_sca : str, int, int
+            Identify the template image.
+        science_image_path, template_image_path : str or Path, optional
+            Explicit image paths.  If None, they are looked up from `image_collection`.
+        psf_type : str
+            PSF type known to `snappl.psf`.
+        psf_size : int, optional
+            PSF stamp size in pixels.  None uses the size the PSF model returns.
+        temp_dir : str or Path, optional
+            Directory for intermediate products.  None uses the output directory.
+        reject_known_stars : bool
+            Remove detections matching known stars and write the `cleaned_*` catalogs.
+        cross_convolve : bool
+            Accepted for compatibility; the instance's `self.cross_convolve` is what is passed to the subtraction.
+        backend4subtract : str
+            SFFT backend, e.g. "Cupy" or "numpy".
+        assume_subtraction_has_been_run : bool
+            Skip the subtraction and use the products already in the output directory.
+            This is intended for debugging, particularly of the source detection and measurement stage.
+        """
         science_id = {
             "band": science_band,
             "observation_id": science_observation_id,
@@ -424,27 +593,116 @@ class Detection:
             out_dir=file_path["full_output_dir"],
             backend4subtract=backend4subtract,
             save_debug_products=self.save_debug_products,
+            detection_kwargs=self.detection_kwargs,
+            resample_method=self.resample_method,
+            sfft_kwargs=self.sfft_kwargs,
+            pre_smooth_sigma=self.pre_smooth_sigma,
         )
-        subtract.run()
 
+        # One star catalog serves both source selection for SFFT and rejecting candidates.
+        gaia_mag_limit = self.detection_kwargs.get("gaia_mag_limit", subtraction.DEFAULT_GAIA_MAG_LIMIT)
+        stars = None
+        if reject_known_stars or gaia_mag_limit is not None or "bright_star_mag" in self.detection_kwargs:
+            if self.input_star_catalog_path is not None:
+                SNLogger.info(f"Reading stars from {self.input_star_catalog_path}")
+                stars = star_retrieval.read_star_catalog(self.input_star_catalog_path)
+            else:
+                SNLogger.info("Retrieving Gaia DR3 stars")
+                stars = self.__class__.retrieve_stars(subtract.science_image, file_path["star_catalog_path"])
+            subtract.detection_kwargs = {**subtract.detection_kwargs, "star_catalog": stars}
+
+        if not assume_subtraction_has_been_run:
+            subtract.run()
+
+        # Load files
+        # Load from image collection
+        science_image = self.science_image = image_collection.get_image(path=file_path["science_image_path"])
+        template_image = self.template_image = image_collection.get_image(path=file_path["template_image_path"])
+        # Load from file.  The difference and score images are stored as full paths
+        difference_image = self.__class__.load_product_image(file_path["difference_image_path"])
+        score_image = self.__class__.load_product_image(file_path["score_image_path"])
+
+        simple_detection_exists = False
         if self.save_debug_products:
-            SNLogger.info("Processing simple diffim detection")
-            detect_sources(
-                file_path["simple_difference_image_path"],
-                file_path["simple_difference_detection_path"],
-            )
+            # We wait to load this here because the subtraction may not have been run with `save_debug_products`
+            # and thus the simple diff image may not exist.
+            if not os.path.exists(file_path["simple_difference_image_path"]):
+                SNLogger.info("Simple difference image not found; skipping simple diffim detection")
+            else:
+                simple_difference_image = self.__class__.load_product_image(file_path["simple_difference_image_path"])
+
+                SNLogger.info("Processing simple diffim detection")
+                detect_and_measure_sources(
+                    detection_image=simple_difference_image,
+                    measurement_images={
+                        "simple_diff": simple_difference_image,
+                        "template": template_image,
+                        "science": science_image,
+                    },
+                    catalog_save_path=file_path["simple_difference_detection_path"],
+                    detect_kwargs={
+                        "coverage_mask": self.__class__.load_no_coverage_mask(file_path["simple_difference_image_path"])
+                    },
+                )
+                simple_detection_exists = True
 
         SNLogger.info("Processing diffim detection")
-        detect_sources(
-            file_path["difference_image_path"],
-            file_path["difference_detection_path"],
+        detect_and_measure_sources(
+            detection_image=difference_image,
+            measurement_images={
+                "diff": difference_image,
+                "template": template_image,
+                "science": science_image,
+            },
+            catalog_save_path=file_path["difference_detection_path"],
+            detect_kwargs={"coverage_mask": self.__class__.load_no_coverage_mask(file_path["difference_image_path"])},
         )
 
         SNLogger.info("Processing score image detection")
-        detect_sources(
-            file_path["score_image_path"],
-            file_path["score_detection_path"],
+        detect_and_measure_sources(
+            detection_image=score_image,
+            measurement_images={
+                "score": score_image,
+                "template": template_image,
+                "science": science_image,
+            },
+            catalog_save_path=file_path["score_detection_path"],
+            detect_kwargs={"coverage_mask": self.__class__.load_no_coverage_mask(file_path["score_image_path"])},
         )
+
+        if reject_known_stars:
+            if simple_detection_exists:
+                SNLogger.info("Removing known stars from simple diffim image detection")
+                _ = self.__class__.reject_stars(
+                    stars,
+                    file_path["simple_difference_detection_path"],
+                    self.REJECT_MATCH_RADIUS,
+                    file_path["cleaned_simple_difference_detection_path"],
+                    bad_pixel_column=_product_flag_columns(self.bad_pixel_columns, "simple_diff"),
+                    center_flag_columns=_product_flag_columns(self.center_flag_columns, "simple_diff"),
+                    center_dq_flags=self.center_dq_flags,
+                )
+
+            SNLogger.info("Removing known stars from diffim image detection")
+            _ = self.__class__.reject_stars(
+                stars,
+                file_path["difference_detection_path"],
+                self.REJECT_MATCH_RADIUS,
+                file_path["cleaned_difference_detection_path"],
+            )
+
+            SNLogger.info("Removing known stars from score image detection")
+            _ = self.__class__.reject_stars(
+                stars,
+                file_path["score_detection_path"],
+                self.REJECT_MATCH_RADIUS,
+                file_path["cleaned_score_detection_path"],
+                bad_pixel_column=_product_flag_columns(self.bad_pixel_columns, "score"),
+                center_flag_columns=_product_flag_columns(self.center_flag_columns, "score"),
+                center_dq_flags=self.center_dq_flags,
+                snr_column="score_aper_r3_snr",
+                min_abs_snr=self.cleaned_score_min_snr,
+            )
 
         if self.save_candidates_to_database:
             catalog_path = (
@@ -472,49 +730,6 @@ class Detection:
                 )
             else:
                 SNLogger.warning(f"Skipping database save; catalog not found: {catalog_path}")
-
-        if reject_known_stars:
-            truth = self.__class__.retrieve_truth(
-                subtract.science_image,
-                subtract.template_image,
-                file_path["science_truth_path"],
-                file_path["template_truth_path"],
-                file_path["difference_truth_path"],
-            )
-
-            if self.save_debug_products:
-                SNLogger.info("Removing known stars from simple diffim image detection")
-                _ = self.__class__.reject_stars(
-                    truth,
-                    file_path["simple_difference_image_path"],
-                    file_path["simple_difference_detection_path"],
-                    self.REJECT_MATCH_RADIUS,
-                    file_path["cleaned_simple_difference_detection_path"],
-                    x_col="x_peak",
-                    y_col="y_peak",
-                )
-
-            SNLogger.info("Removing known stars from diffim image detection")
-            _ = self.__class__.reject_stars(
-                truth,
-                file_path["difference_image_path"],
-                file_path["difference_detection_path"],
-                self.REJECT_MATCH_RADIUS,
-                file_path["cleaned_difference_detection_path"],
-                x_col="x_peak",
-                y_col="y_peak",
-            )
-
-            SNLogger.info("Removing known stars from score image detection")
-            _ = self.__class__.reject_stars(
-                truth,
-                file_path["difference_image_path"],
-                file_path["score_detection_path"],
-                self.REJECT_MATCH_RADIUS,
-                file_path["cleaned_score_detection_path"],
-                x_col="x_peak",
-                y_col="y_peak",
-            )
 
         SNLogger.info("Processing subtraction finished.")
 
@@ -652,6 +867,7 @@ class Detection:
                 temp_dir=temp_dir,
                 reject_known_stars=self.reject_known_stars,
                 backend4subtract=self.backend4subtract,
+                assume_subtraction_has_been_run=self.assume_subtraction_has_been_run,
             )
 
     def run_match_truth(self):
@@ -852,6 +1068,40 @@ def main():
         help="Column name of significance threshold to use candidate catalog.",
     )
     parser.add_argument(
+        "--cleaned-score-min-snr",
+        type=float,
+        default=7.0,
+        help="Minimum absolute score r=3 aperture S/N in the cleaned score catalog (default %(default)s).",
+    )
+    parser.add_argument(
+        "--bad-pixel-columns",
+        nargs="*",
+        default=None,
+        metavar="COLUMN",
+        help="Bad-pixel count columns for cleaned score and simple detections. Non-science/template names are "
+        "prefixed with score_ or simple_diff_; omit values to disable this cut.",
+    )
+    parser.add_argument(
+        "--center-flag-columns",
+        nargs="+",
+        default=None,
+        metavar="COLUMN",
+        help="Center DQ columns for cleaned score and simple detections. Non-science/template names are "
+        "prefixed with score_ or simple_diff_.",
+    )
+    parser.add_argument(
+        "--center-dq-flags",
+        type=lambda value: int(value, 0),
+        default=0,
+        help="Integer bit mask of DQ flags to reject at source centers (decimal or 0x-prefixed hex; default 0).",
+    )
+    parser.add_argument(
+        "--reject-center-jump-det",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Additionally reject JUMP_DET at the source center in science, template, or product (default off).",
+    )
+    parser.add_argument(
         "--cross-convolve",
         default=False,
         action=argparse.BooleanOptionalAction,
@@ -863,6 +1113,128 @@ def main():
         default="Cupy",
         choices=["Cupy", "Numpy", "cupy", "numpy"],
         help="Which backend to use for subtraction",
+    )
+    parser.add_argument(
+        "--max-peak",
+        type=float,
+        default=None,
+        help="Exclude sources with peak sky-subtracted pixel value above this from the SFFT matching sources.",
+    )
+    parser.add_argument(
+        "--size-clip-sigma",
+        type=float,
+        default=None,
+        help="Exclude sources whose FWHM differs from the median by more than this many MAD-based sigma.",
+    )
+    parser.add_argument(
+        "--max-ellipticity",
+        type=float,
+        default=None,
+        help="Exclude sources with ellipticity above this.",
+    )
+    parser.add_argument(
+        "--min-separation",
+        type=float,
+        default=None,
+        help="Exclude sources with another detection closer than this many pixels.",
+    )
+    parser.add_argument(
+        "--edge-buffer",
+        type=float,
+        default=None,
+        help="Exclude sources with centroids within this many pixels of the image edge.",
+    )
+    parser.add_argument(
+        "--min-bad-distance",
+        type=float,
+        default=None,
+        help="Exclude sources with any pixel within this many pixels of a bad pixel.",
+    )
+    parser.add_argument(
+        "--gaia-mag-limit",
+        type=lambda s: None if s.lower() == "none" else float(s),
+        default=17.0,
+        help="Exclude sources matching Gaia DR3 stars brighter than this G magnitude from the SFFT matching "
+        "sources.  Use 'none' to disable.",
+    )
+    parser.add_argument(
+        "--gaia-match-radius",
+        type=float,
+        default=5.0,
+        help="Match radius in pixels for --gaia-mag-limit.",
+    )
+    parser.add_argument(
+        "--bright-star-mag",
+        type=lambda s: None if s.lower() == "none" else float(s),
+        default=17,
+        help="Mask pixels around Gaia stars brighter than this G mag from the SFFT kernel sources. "
+        "Use 'none' to disable; the halo radius is set by --bright-star-radius.",
+    )
+    parser.add_argument(
+        "--bright-star-radius",
+        type=float,
+        default=30.0,
+        help="Radius of pixels masked at --bright-star-mag; grows as 10**('bright-star-scale'*(bright_star_mag-mag)).",
+    )
+    parser.add_argument(
+        "--bright-star-scale",
+        type=float,
+        default=0.2,
+        help="Exponent scale of halo radius with magnitude (0.2 = radius ~ sqrt(flux)).",
+    )
+    parser.add_argument(
+        "--bright-star-max-radius",
+        type=float,
+        default=150,
+        help="Cap on halo radius in pixels."
+        "At bright-star-mag=10 a bright-star-max-radius = 150 pixels was determined to be appropriate "
+        "in early testing but this could use more investigation. "
+        "The idea of this cap is that once masks get too big, "
+        "the amount of area loss may exceed the gain in the subtraction quality.",
+    )
+    parser.add_argument(
+        "--star-catalog",
+        type=str,
+        default=None,
+        help="Text file (ECSV with ra, dec, phot_g_mean_mag columns) of stars to use for source selection and "
+        "candidate rejection instead of querying Gaia, so no network is needed.  May be empty.  "
+        "Generate with 'python -m sidecar.star_retrieval <image.asdf>'.",
+    )
+    parser.add_argument(
+        "--resample-method",
+        type=str,
+        default="bilinear",
+        choices=["bilinear", "spline3", "spline5"],
+        help="Interpolation used to warp the template image onto the science grid.  bilinear blurs undersampled "
+        "images, so the SFFT kernel has to sharpen the template; spline3/spline5 preserve sharpness."
+        "The spline3 and spline5 methods were exploratory and not necessarily recommended.",
+    )
+    parser.add_argument(
+        "--pre-smooth-sigma",
+        type=float,
+        default=None,
+        help="Gaussian sigma (pixels) to smooth both images and PSFs with before SFFT, to suppress "
+        "sub-pixel-phase mismatches of undersampled stars.",
+    )
+    # The default values for these --sfft... options is None, so that we can detect if they are specified.
+    # If unspecified, the SFFT defaults will be used.
+    parser.add_argument("--sfft-ker-hw", type=int, default=None, help="SFFT kernel half-width (GKerHW).")
+    parser.add_argument("--sfft-ker-poly-order", type=int, default=None, help="SFFT spatial kernel polynomial order.")
+    parser.add_argument(
+        "--sfft-bg-poly-order", type=int, default=None, help="SFFT spatial background polynomial order."
+    )
+    parser.add_argument(
+        "--sfft-const-phot-ratio",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="SFFT: assume a constant photometric ratio across the image.",
+    )
+    parser.add_argument(
+        "--assume-subtraction-has-been-run",
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        help="Skip the subtraction and use the products already in the output directory.  This is intended for "
+        "debugging, particularly of the source detection and measurement stage.",
     )
 
     cfg.augment_argparse(parser)
@@ -930,6 +1302,26 @@ def main():
         SNLogger.warning("Stopping.")
         return
 
+    detection_kwargs = {
+        name: getattr(args, name)
+        for name in (
+            "max_peak",
+            "size_clip_sigma",
+            "max_ellipticity",
+            "min_separation",
+            "edge_buffer",
+            "min_bad_distance",
+        )
+        if getattr(args, name) is not None
+    }
+    detection_kwargs["gaia_mag_limit"] = args.gaia_mag_limit
+    detection_kwargs["gaia_match_radius"] = args.gaia_match_radius
+    if args.bright_star_mag is not None:
+        detection_kwargs["bright_star_mag"] = args.bright_star_mag
+        detection_kwargs["bright_star_radius"] = args.bright_star_radius
+        detection_kwargs["bright_star_scale"] = args.bright_star_scale
+        detection_kwargs["bright_star_max_radius"] = args.bright_star_max_radius
+
     detection = Detection(
         image_collection=image_collection,
         data_records=data_records,
@@ -942,8 +1334,28 @@ def main():
         cross_convolve=args.cross_convolve,
         save_debug_products=args.save_debug_products,
         save_candidates_to_database=args.save_candidates_to_database,
+        assume_subtraction_has_been_run=args.assume_subtraction_has_been_run,
         threshold=args.threshold,
         threshold_column=args.threshold_column,
+        cleaned_score_min_snr=args.cleaned_score_min_snr,
+        center_dq_flags=args.center_dq_flags,
+        reject_center_jump_det=args.reject_center_jump_det,
+        bad_pixel_columns=args.bad_pixel_columns,
+        center_flag_columns=args.center_flag_columns,
+        detection_kwargs=detection_kwargs,
+        input_star_catalog_path=args.star_catalog,
+        resample_method=args.resample_method,
+        pre_smooth_sigma=args.pre_smooth_sigma,
+        sfft_kwargs={
+            key: value
+            for key, value in (
+                ("GKerHW", args.sfft_ker_hw),
+                ("KerPolyOrder", args.sfft_ker_poly_order),
+                ("BGPolyOrder", args.sfft_bg_poly_order),
+                ("ConstPhotRatio", args.sfft_const_phot_ratio),
+            )
+            if value is not None
+        },
     )
     detection.run_subtractions()
 

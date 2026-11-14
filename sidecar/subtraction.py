@@ -1,26 +1,58 @@
+import inspect
 import os
+import warnings
 from pathlib import Path
 
 import numpy as np
+from scipy import ndimage
 from scipy.interpolate import griddata
 from scipy.signal import convolve2d
+from scipy.spatial import cKDTree
 
+from astropy.coordinates import SkyCoord
 from astropy.io import fits
-from astropy.stats import SigmaClip
+from astropy.stats import SigmaClip, mad_std
+from astropy.table import Table
 from photutils.background import Background2D
-from photutils.segmentation import detect_threshold, detect_sources
+from photutils.segmentation import SourceCatalog, detect_threshold, detect_sources
 from photutils.utils import circular_footprint
 
 from roman_datamodels import dqflags
 
 from sfft.SpaceSFFTFlow import SpaceSFFT_Flow
+from sidecar.star_retrieval import retrieve_gaia_stars_for_image
 from snappl.psf import PSF
 
 # dqflags.pixel.DO_NOT_USE + dqflags.pixel.NONLINEAR + dqflags.pixel.HOT,
 # Data quality flags
 # Set all bits in enum
 # (could just use 2**32 - 1, but using len of dqflags.pixel is in principle more flexible):
-bad_pixel_flags = 2 ** len(dqflags.pixel) - 1 - dqflags.pixel.WARM - dqflags.pixel.LOW_QE
+# 20261003 - Ignore JUMP_DET, but revisit this.
+bad_pixel_flags = (
+    2 ** len(dqflags.pixel)
+    - 1
+    - dqflags.pixel.WARM
+    - dqflags.pixel.LOW_QE
+    - dqflags.pixel.PERSISTENCE
+    - dqflags.pixel.JUMP_DET
+)
+
+
+def _gaussian_smoothing_kernel(sigma):
+    if not np.isfinite(sigma) or sigma <= 0:
+        raise ValueError("pre_smooth_sigma must be positive and finite")
+
+    radius = int(4.0 * sigma + 0.5)
+    offsets = np.arange(-radius, radius + 1, dtype=float)
+    kernel = np.exp(-0.5 * (offsets / sigma) ** 2)
+    return kernel / kernel.sum()
+
+
+def _filter_variance_with_kernel(variance, kernel):
+    squared_kernel = kernel**2
+    for axis in range(variance.ndim):
+        variance = ndimage.convolve1d(variance, squared_kernel, axis=axis, mode="reflect")
+    return variance
 
 
 def interpolate_over_bad_pixels(data, flags, bad_pixel_flags=bad_pixel_flags):
@@ -51,7 +83,7 @@ def interpolate_over_bad_pixels(data, flags, bad_pixel_flags=bad_pixel_flags):
     (e.g., using neighboring pixel values), depending on the implementation.
     """
     # Create a mask of bad pixels based on the flags
-    bad_mask = flags & bad_pixel_flags > 0
+    bad_mask = (flags & bad_pixel_flags) > 0
 
     interpolated_data = data.copy()
     interpolated_data[bad_mask] = np.nan  # Mark bad pixels as NaN for interpolation
@@ -66,6 +98,208 @@ def interpolate_over_bad_pixels(data, flags, bad_pixel_flags=bad_pixel_flags):
     return interpolated_data, bad_mask
 
 
+DEFAULT_GAIA_MAG_LIMIT = 17.0
+
+# photutils 3.0 renamed 'nsigma' to 'n_sigma' (old name removed in 4.0).
+_N_SIGMA_KWARG = "n_sigma" if "n_sigma" in inspect.signature(detect_threshold).parameters else "nsigma"
+# photutils 3.0 renamed 'npixels' to 'n_pixels' (old name removed in 4.0).
+_N_PIXELS_KWARG = "n_pixels" if "n_pixels" in inspect.signature(detect_sources).parameters else "npixels"
+
+# Our column name -> photutils SourceCatalog property names, newest first (3.0 renamed xcentroid -> x_centroid).
+_SOURCE_PROPERTIES = {
+    "label": ("label", "labels"),
+    "x_centroid": ("x_centroid", "xcentroid"),
+    "y_centroid": ("y_centroid", "ycentroid"),
+    "max_value": ("max_value",),
+    "segment_flux": ("segment_flux",),
+    "fwhm": ("fwhm",),
+    "ellipticity": ("ellipticity",),
+}
+
+
+def _measure_sources(data, segment_img):
+    """Return a Table of source properties with the same column names for any photutils version."""
+    source_catalog = SourceCatalog(data, segment_img)
+    columns = {}
+    for column, property_names in _SOURCE_PROPERTIES.items():
+        for property_name in property_names:
+            try:
+                columns[column] = np.asarray(getattr(source_catalog, property_name))
+                break
+            except AttributeError:
+                continue
+        else:
+            raise AttributeError(f"photutils SourceCatalog has none of {property_names}")
+    return Table(columns)
+
+
+def get_gaia_pixel_positions(image, max_mag, stars=None):
+    """Return an (N, 2) array of 0-based (x, y) pixel positions of stars brighter than max_mag.
+
+    If `stars` (table with ra, dec, phot_g_mean_mag) is None, Gaia DR3 is queried for stars covering the image.
+    """
+    if stars is None:
+        stars = retrieve_gaia_stars_for_image(image, max_mag=max_mag)
+    elif len(stars) > 0:
+        if "phot_g_mean_mag" not in stars.colnames:
+            raise ValueError("Star catalog needs a 'phot_g_mean_mag' column to apply a magnitude limit")
+        mags = np.ma.filled(stars["phot_g_mean_mag"], np.nan).astype(float)
+        stars = stars[mags < max_mag]
+
+    if len(stars) == 0:
+        return np.empty((0, 2))
+    coords = SkyCoord(np.asarray(stars["ra"], dtype=float), np.asarray(stars["dec"], dtype=float), unit="deg")
+    x, y = image.get_wcs().get_astropy_wcs().world_to_pixel(coords)
+    return np.column_stack([x, y])
+
+
+def get_gaia_pixel_positions_and_mags(image, max_mag, stars=None):
+    """Return (x, y, mag) arrays for Gaia stars brighter than max_mag, with 0-based pixel positions."""
+    if stars is None:
+        stars = retrieve_gaia_stars_for_image(image, max_mag=max_mag)
+    if len(stars) == 0:
+        return np.empty(0), np.empty(0), np.empty(0)
+    mags = np.ma.filled(stars["phot_g_mean_mag"], np.nan).astype(float)
+    keep = mags < max_mag
+    stars, mags = stars[keep], mags[keep]
+    if len(stars) == 0:
+        return np.empty(0), np.empty(0), np.empty(0)
+    coords = SkyCoord(np.asarray(stars["ra"], dtype=float), np.asarray(stars["dec"], dtype=float), unit="deg")
+    x, y = image.get_wcs().get_astropy_wcs().world_to_pixel(coords)
+    return np.asarray(x), np.asarray(y), mags
+
+
+def make_bright_star_mask(shape, x, y, mags, ref_mag, ref_radius, scale=0.2, max_radius=None):
+    """Boolean mask, True within a magnitude-dependent radius of each star brighter than ref_mag.
+
+    radius = ref_radius * 10**(scale * (ref_mag - mag)); scale=0.2 means radius grows as flux**0.5.
+    """
+    mask = np.zeros(shape, dtype=bool)
+    ny, nx = shape
+    for xi, yi, m in zip(x, y, mags):
+        if not (m < ref_mag):
+            continue
+        r = ref_radius * 10 ** (scale * (ref_mag - m))
+        if max_radius is not None:
+            r = min(r, max_radius)
+        x0, x1 = int(max(0, np.floor(xi - r))), int(min(nx, np.ceil(xi + r) + 1))
+        y0, y1 = int(max(0, np.floor(yi - r))), int(min(ny, np.ceil(yi + r) + 1))
+        if x0 >= x1 or y0 >= y1:
+            continue
+        yy, xx = np.mgrid[y0:y1, x0:x1]
+        mask[y0:y1, x0:x1] |= (xx - xi) ** 2 + (yy - yi) ** 2 <= r**2
+    return mask
+
+
+def select_matching_sources(
+    segment_img,
+    data,
+    bad_mask,
+    max_peak=None,
+    size_clip_sigma=None,
+    max_ellipticity=None,
+    min_separation=None,
+    edge_buffer=None,
+    min_bad_distance=None,
+    gaia_xy=None,
+    gaia_match_radius=5.0,
+    exclusion_mask=None,
+):
+    """Measure detected sources and flag which are good enough to constrain the SFFT matching kernel.
+
+    Each cut is only applied if its argument is not None.
+
+    Parameters
+    ----------
+    segment_img : photutils.segmentation.SegmentationImage
+    data : ndarray
+        Sky-subtracted image data.
+    bad_mask : ndarray of bool
+        Bad pixels (before dilation).
+    max_peak : float, optional
+        Reject sources with peak pixel value above this, in the units of `data`.
+        Intended to drop bright stars with a non-linear or saturated core that are not flagged in the DQ array.
+    size_clip_sigma : float, optional
+        Reject sources whose FWHM differs from the median by more than this many MAD-based sigma.
+        Removes galaxies, blends, and bright stars broadened by the brighter-fatter effect.
+    max_ellipticity : float, optional
+        Reject sources more elliptical than this.
+    min_separation : float, optional
+        Reject sources with another detection closer than this many pixels.
+    edge_buffer : float, optional
+        Reject sources with centroids within this many pixels of the image edge.
+    min_bad_distance : float, optional
+        Reject sources with any pixel within this many pixels of a bad pixel.
+    gaia_xy : ndarray of shape (N, 2), optional
+        Pixel (x, y) positions of bright Gaia stars.  Sources within `gaia_match_radius` of one are rejected.
+    gaia_match_radius : float
+        Match radius in pixels for `gaia_xy`.
+    exclusion_mask : ndarray of bool, optional
+        Sources whose centroid lies in True pixels (e.g. halos of very bright stars) are rejected.
+
+    Returns
+    -------
+    astropy.table.Table
+        One row per detected source, with measured properties, one `pass_<cut>` boolean column
+        per applied cut, and a `selected` column that is True where all applied cuts pass.
+    """
+    catalog = _measure_sources(data, segment_img)
+    n_sources = len(catalog)
+    labels = np.asarray(catalog["label"], dtype=int)
+    x = np.asarray(catalog["x_centroid"], dtype=float)
+    y = np.asarray(catalog["y_centroid"], dtype=float)
+    peak = np.asarray(catalog["max_value"], dtype=float)
+    fwhm = np.asarray(catalog["fwhm"], dtype=float)
+    ellipticity = np.asarray(catalog["ellipticity"], dtype=float)
+
+    passes = {}
+    if max_peak is not None:
+        passes["peak"] = peak <= max_peak
+    if size_clip_sigma is not None:
+        passes["size"] = np.abs(fwhm - np.nanmedian(fwhm)) <= size_clip_sigma * mad_std(fwhm, ignore_nan=True)
+    if max_ellipticity is not None:
+        passes["ellipticity"] = ellipticity <= max_ellipticity
+    if min_separation is not None:
+        if n_sources > 1:
+            positions = np.column_stack([x, y])
+            nearest_neighbor_distance = cKDTree(positions).query(positions, k=2)[0][:, 1]
+            passes["isolation"] = nearest_neighbor_distance > min_separation
+        else:
+            passes["isolation"] = np.ones(n_sources, dtype=bool)
+    if edge_buffer is not None:
+        ny, nx = data.shape
+        passes["edge"] = (
+            (x >= edge_buffer) & (x <= nx - 1 - edge_buffer) & (y >= edge_buffer) & (y <= ny - 1 - edge_buffer)
+        )
+    if min_bad_distance is not None:
+        if bad_mask.any():
+            distance_to_bad = ndimage.distance_transform_edt(~bad_mask)
+            closest_bad = ndimage.minimum(distance_to_bad, segment_img.data, index=labels)
+            passes["bad"] = closest_bad > min_bad_distance
+        else:
+            passes["bad"] = np.ones(n_sources, dtype=bool)
+    if gaia_xy is not None:
+        if len(gaia_xy) > 0:
+            distance_to_gaia = cKDTree(gaia_xy).query(np.column_stack([x, y]))[0]
+            passes["gaia"] = distance_to_gaia > gaia_match_radius
+        else:
+            passes["gaia"] = np.ones(n_sources, dtype=bool)
+
+    if exclusion_mask is not None:
+        ny, nx = exclusion_mask.shape
+        xi = np.clip(np.rint(x), 0, nx - 1).astype(int)
+        yi = np.clip(np.rint(y), 0, ny - 1).astype(int)
+        passes["bright_halo"] = ~exclusion_mask[yi, xi]
+
+    selected = np.ones(n_sources, dtype=bool)
+    for name, passed in passes.items():
+        catalog[f"pass_{name}"] = passed
+        selected &= passed
+    catalog["selected"] = selected
+
+    return catalog
+
+
 def sky_subtract_and_detect(
     image,
     nsigma=20,
@@ -74,8 +308,26 @@ def sky_subtract_and_detect(
     bad_pixel_flags=bad_pixel_flags,
     too_bright_threshold=None,
     background_box_size=64,
+    max_peak=None,
+    size_clip_sigma=None,
+    max_ellipticity=None,
+    min_separation=None,
+    edge_buffer=None,
+    min_bad_distance=None,
+    gaia_mag_limit=DEFAULT_GAIA_MAG_LIMIT,
+    gaia_match_radius=5.0,
+    star_catalog=None,
+    bright_star_mag=None,
+    bright_star_radius=30.0,
+    bright_star_scale=0.2,
+    bright_star_max_radius=None,
 ):
     """Perform sky subtraction and create a detection mask for an image.
+
+    Optionally reject stars from a Gaia catalogs.  Can query or take pass-in catalog.
+
+    Optional blank out areas around bright stars based on a magnitude cut.
+    Need to figure out the pixel radius scaling as a function of magnitude.
 
     Parameters
     ----------
@@ -91,6 +343,23 @@ def sky_subtract_and_detect(
         Bitwise combination of DQ flags used to identify bad pixels.
     too_bright_threshold : float or None, optional
         If set, pixels with absolute sky-subtracted values above this threshold are also masked.
+    max_peak, size_clip_sigma, max_ellipticity, min_separation, edge_buffer, min_bad_distance : float or None
+        Cuts on which detected sources are kept in the detection mask.  See `select_matching_sources`.
+        All default to None (no cut).
+    gaia_mag_limit : float or None, optional
+        Exclude detected sources within `gaia_match_radius` pixels of a Gaia DR3 star brighter (G mag) than this.
+        Queries Gaia, so needs network access.  None disables the cut.
+    gaia_match_radius : float, optional
+        Match radius in pixels for the Gaia cut.
+    star_catalog : astropy.table.Table or None, optional
+        Pre-retrieved stars with ra, dec (degrees, ICRS) and phot_g_mean_mag columns, used for the Gaia cut
+        instead of querying Gaia.  May have zero rows, in which case no sources are rejected.
+
+    bright_star_mag : float or None, optional
+        Gaia stars brighter than this G mag get an exclusion zone, removed from the detection mask, and
+        sources centred inside a zone are not selected.  Radius in pixels is
+        `bright_star_radius` * 10**(`bright_star_scale` * (bright_star_mag - mag)), capped at
+        `bright_star_max_radius`.  None disables.  Uses the same catalog as the Gaia cut.
 
     Returns
     -------
@@ -100,6 +369,10 @@ def sky_subtract_and_detect(
         Boolean source detection mask with bad pixels excluded.
     rms : float
         Median background RMS estimated by Background2D.
+    convolved_bad_mask : ndarray
+        Bad pixel mask dilated by bad_mask_radius, as passed to detect_sources.
+    catalog : astropy.table.Table
+        Detected sources with measured properties and which of them were selected.  See `select_matching_sources`.
 
     Notes
     -----
@@ -115,10 +388,10 @@ def sky_subtract_and_detect(
 
     # Based on the photutils.background documentation
     sigma_clip = SigmaClip(sigma=2.0, maxiters=10)
-    threshold = detect_threshold(sky_subtracted_data, nsigma=nsigma, sigma_clip=sigma_clip)
+    threshold = detect_threshold(sky_subtracted_data, **{_N_SIGMA_KWARG: nsigma}, sigma_clip=sigma_clip)
 
     # Mask pixels that are flagged as bad in the input image
-    bad_mask = image.flags & bad_pixel_flags > 0
+    bad_mask = (image.flags & bad_pixel_flags) > 0
 
     # Build a mask of pixels that are in the non-linear regime
     if too_bright_threshold is not None:
@@ -130,10 +403,51 @@ def sky_subtract_and_detect(
     convolved_bad_mask = convolve2d(bad_mask, bad_mask_footprint, fillvalue=0, mode="same")
 
     detection_footprint = circular_footprint(radius=footprint_radius)
-    segment_img = detect_sources(sky_subtracted_data, threshold, npixels=footprint_radius, mask=convolved_bad_mask)
-    detmask_data = segment_img.make_source_mask(footprint=detection_footprint)
+    segment_img = detect_sources(
+        sky_subtracted_data, threshold, **{_N_PIXELS_KWARG: footprint_radius}, mask=convolved_bad_mask
+    )
 
-    return sky_subtracted_data, detmask_data, rms
+    gaia_xy = (
+        get_gaia_pixel_positions(image, gaia_mag_limit, stars=star_catalog) if gaia_mag_limit is not None else None
+    )
+    bright_star_mask = None
+    if bright_star_mag is not None:
+        bx, by, bmags = get_gaia_pixel_positions_and_mags(image, bright_star_mag, stars=star_catalog)
+        bright_star_mask = make_bright_star_mask(
+            sky_subtracted_data.shape,
+            bx,
+            by,
+            bmags,
+            bright_star_mag,
+            bright_star_radius,
+            scale=bright_star_scale,
+            max_radius=bright_star_max_radius,
+        )
+    catalog = select_matching_sources(
+        segment_img,
+        sky_subtracted_data,
+        bad_mask,
+        exclusion_mask=bright_star_mask,
+        max_peak=max_peak,
+        size_clip_sigma=size_clip_sigma,
+        max_ellipticity=max_ellipticity,
+        min_separation=min_separation,
+        edge_buffer=edge_buffer,
+        min_bad_distance=min_bad_distance,
+        gaia_xy=gaia_xy,
+        gaia_match_radius=gaia_match_radius,
+    )
+    selected_labels = np.asarray(catalog["label"])[np.asarray(catalog["selected"])]
+    if len(selected_labels) == 0:
+        warnings.warn("No sources remain after source selection cuts; the detection mask is empty.")
+        detmask_data = np.zeros(sky_subtracted_data.shape, dtype=bool)
+    else:
+        segment_img.keep_labels(selected_labels)
+        detmask_data = segment_img.make_source_mask(footprint=detection_footprint)
+    if bright_star_mask is not None:
+        detmask_data = detmask_data & ~bright_star_mask
+
+    return sky_subtracted_data, detmask_data, rms, convolved_bad_mask, catalog
 
 
 def get_psf_kernel(image, psf_type="STPSF", psf_size=None, **kwargs):
@@ -203,7 +517,7 @@ def make_minimal_wcs_header(image):
     return hdr
 
 
-def _save_products_as_fits(path, hdr, data, noise, flags, mask):
+def _save_products_as_fits(path, hdr, data, noise, flags=None, mask=None, coverage_mask=None):
     """Save products as a FITS file with multiple HDUs.
 
     data: 2D ndarray
@@ -213,30 +527,47 @@ def _save_products_as_fits(path, hdr, data, noise, flags, mask):
         Will check to see if this is a 16-bit float array, and if so promote to 32-bit float.
         Will otherwise leave alone, so 32-bit or 64-bit float arrays will be kept,
         but also 16-bit int or 32-bit int will be saved as is.
-    flags: 2D ndarray of the flags data
-    mask: 2D ndarray of the detection mask
+    flags: 2D ndarray of the flags data, optional
+        If None (e.g. the flags are not defined for resampled images), a FLAGS plane of zeros is written
+        so that the HDU layout is the same for all products.
+    mask: 2D ndarray
+        The product-specific mask (e.g. interpolated pixels for difference images).
+        If None, a MASK plane of zeros is written so that the HDU layout is the same for all products.
         Written as uint8 array
+    coverage_mask: 2D ndarray of bool, optional
+        True where the resampled template has no coverage. If supplied, it is written
+        to a separate NO_COVERAGE extension on the output image grid.
     """
 
     # Handle types.  Make copies if we change something, so we don't modify the passed-in array
     # but views if we don't modify are fine.
     # Noise array from romancal L2 is 16-bit float so let's check for that and recast to 32-bit float
+    # because FITS doesn't recognize 16-bit floats as a valid type.
     if noise.dtype == np.float16:
         noise_standardized = noise.astype(np.float32)
     else:
         noise_standardized = noise
     # Make sure the mask is interpreted as an unsigned 8-bit integer array
-    mask_standardized = mask.astype(np.uint8)
+    if mask is None:
+        mask_standardized = np.zeros(np.shape(data), dtype=np.uint8)
+    else:
+        mask_standardized = mask.astype(np.uint8)
 
-    hdul = fits.HDUList(
-        [
-            fits.PrimaryHDU(data=None, header=hdr),
-            fits.ImageHDU(data=data, name="DATA", header=hdr),
-            fits.ImageHDU(data=noise_standardized, name="NOISE", header=hdr),
-            fits.ImageHDU(data=flags, name="FLAGS", header=hdr),
-            fits.ImageHDU(data=mask_standardized, name="MASK", header=hdr),
-        ]
-    )
+    if flags is None:
+        flags = np.zeros(np.shape(data), dtype=np.uint32)
+
+    hdus = [
+        fits.PrimaryHDU(data=None, header=hdr),
+        fits.ImageHDU(data=data, name="DATA", header=hdr),
+        fits.ImageHDU(data=noise_standardized, name="NOISE", header=hdr),
+        fits.ImageHDU(data=flags, name="FLAGS", header=hdr),
+        fits.ImageHDU(data=mask_standardized, name="MASK", header=hdr),
+    ]
+    if coverage_mask is not None:
+        if np.shape(coverage_mask) != np.shape(data):
+            raise ValueError("coverage_mask must have the same shape as data")
+        hdus.append(fits.ImageHDU(data=np.asarray(coverage_mask, dtype=np.uint8), name="NO_COVERAGE", header=hdr))
+    hdul = fits.HDUList(hdus)
     hdul.writeto(path, overwrite=True)
 
 
@@ -261,6 +592,10 @@ class Pipeline:
         out_dir="./output",
         temp_dir=None,
         save_debug_products=False,
+        detection_kwargs=None,
+        resample_method="bilinear",
+        sfft_kwargs=None,
+        pre_smooth_sigma=None,
     ):
         """Subtraction pipeline object.  Initialize and then run to produce subtracted image.
 
@@ -286,7 +621,30 @@ class Pipeline:
             Save intermediate+debug products, default=False
             Products are saved to temp_dir
             These include sky subtracted images, detection masks, and PSFs for both science and template images.
+        detection_kwargs: dict or None
+            Extra keyword arguments passed to sky_subtract_and_detect for both images,
+            e.g., source selection cuts like {"size_clip_sigma": 3, "max_peak": 1e3}.
+        resample_method: str
+            "bilinear" (SFFT default), "spline3" or "spline5".  SFFT's bilinear warp of the template blurs
+            undersampled images, so the matching kernel then has to sharpen the template (noisy, ringing kernel).
+            The spline options replace the resampled template image (not its variance or mask) with a
+            scipy.ndimage spline interpolation of that order.
+        sfft_kwargs: dict or None
+            Extra keyword arguments for SpaceSFFT_Flow, e.g. {"GKerHW": 9, "KerPolyOrder": 2}.
+        pre_smooth_sigma: float or None
+            If set, convolve both sky-subtracted images and both PSFs with a Gaussian of this sigma (pixels)
+            just before SFFT.  The PSF is undersampled (FWHM < 2 pixels), so stars observed at different sub-pixel
+            phases differ at the pixel level in a way no single convolution kernel can model; smoothing removes
+            this.  The noise and sky rms are rescaled assuming white input noise (the noise correlation introduced
+            is not modelled by the SFFT decorrelation).
         """
+        self.pre_smooth_sigma = pre_smooth_sigma
+        self.pre_smooth_kernel = (
+            _gaussian_smoothing_kernel(pre_smooth_sigma) if pre_smooth_sigma is not None else None
+        )
+        self.resample_method = resample_method
+        self.sfft_kwargs = sfft_kwargs or {}
+        self.detection_kwargs = detection_kwargs or {}
         self.cross_convolve = cross_convolve
         self.backend4subtract = backend4subtract
         self.cuda_compiler = cuda_compiler
@@ -348,6 +706,23 @@ class Pipeline:
         self.decorr_diff_path = self.out_dir / f"decorr_diff_{self.diff_pattern}.fits"
         self.decorr_psf_path = self.out_dir / f"decorr_psf_{self.diff_pattern}.fits"
 
+    def _spline_resample_template(self, sfftifier, science_hdr, template_hdr, template_data):
+        """Replace sfftifier.PixA_resamp_object with a spline-interpolated warp of the template image."""
+        order = {"spline3": 3, "spline5": 5}[self.resample_method]
+        # SFFT arrays are indexed [x, y] and its projected coordinates are 1-based
+        XX_proj, YY_proj = sfftifier.op.Resampling(RESAMP_METHOD="BILINEAR", VERBOSE_LEVEL=1).resamp_projection_astropy(
+            hdr_obj=template_hdr, hdr_targ=science_hdr
+        )
+        resampled = ndimage.map_coordinates(
+            np.ascontiguousarray(template_data.T, dtype=np.float64),
+            [XX_proj - 1.0, YY_proj - 1.0],
+            order=order,
+            mode="constant",
+            cval=0.0,
+        )
+        sfftifier.PixA_resamp_object = resampled
+        sfftifier.BlankMask = resampled == 0.0
+
     def run(self):
         os.makedirs(self.out_dir, exist_ok=True)
 
@@ -374,10 +749,16 @@ class Pipeline:
         )
 
         # sky subtraction and source detection
-        science_skysubim_data, science_detmask_data, science_skyrms = sky_subtract_and_detect(self.science_image)
-        template_skysubim_data, template_detmask_data, template_skyrms = sky_subtract_and_detect(self.template_image)
+        science_skysubim_data, science_detmask_data, science_skyrms, _, _ = sky_subtract_and_detect(
+            self.science_image, **self.detection_kwargs
+        )
+        template_skysubim_data, template_detmask_data, template_skyrms, _, _ = sky_subtract_and_detect(
+            self.template_image, **self.detection_kwargs
+        )
 
         # SFFT needs FITS headers with a WCS and with NAXIS[12]
+        # "header" here just means a dictionary where the keys are FITS keywords
+        # and the values are the corresponding values.  There's nothing otherwise "FITS" about this.
         science_hdr = make_minimal_wcs_header(self.science_image)
         template_hdr = make_minimal_wcs_header(self.template_image)
 
@@ -399,6 +780,21 @@ class Pipeline:
                 mask=template_detmask_data,
             )
 
+        if self.pre_smooth_sigma is not None:
+            sigma = self.pre_smooth_sigma
+            kernel = self.pre_smooth_kernel
+            noise_scale = np.sum(kernel**2)
+            science_skysubim_data = ndimage.gaussian_filter(science_skysubim_data, sigma)
+            template_skysubim_data = ndimage.gaussian_filter(template_skysubim_data, sigma)
+            science_psf = ndimage.gaussian_filter(science_psf, sigma)
+            template_psf = ndimage.gaussian_filter(template_psf, sigma)
+            science_psf = science_psf / science_psf.sum()
+            template_psf = template_psf / template_psf.sum()
+            science_noise = np.sqrt(_filter_variance_with_kernel(science_noise**2, kernel))
+            template_noise = np.sqrt(_filter_variance_with_kernel(template_noise**2, kernel))
+            science_skyrms = science_skyrms * noise_scale
+            template_skyrms = template_skyrms * noise_scale
+
         sfftifier = SpaceSFFT_Flow(
             science_hdr,
             template_hdr,
@@ -406,8 +802,8 @@ class Pipeline:
             template_skyrms,
             science_skysubim_data,
             template_skysubim_data,
-            science_noise,
-            template_noise,
+            science_noise**2,
+            template_noise**2,
             science_detmask_data,
             template_detmask_data,
             science_psf,
@@ -415,9 +811,12 @@ class Pipeline:
             transpose=True,
             BACKEND_4SUBTRACT=self.backend4subtract,
             CUDA_COMPILER=self.cuda_compiler,
+            **self.sfft_kwargs,
         )
 
         sfftifier.resample_image_mask_psf()
+        if self.resample_method != "bilinear":
+            self._spline_resample_template(sfftifier, science_hdr, template_hdr, template_skysubim_data)
         if self.cross_convolve:
             sfftifier.cross_convolve()
 
@@ -437,9 +836,15 @@ class Pipeline:
         # and saved as an attribute of instance
         score_image = sfftifier.create_score_image()
 
+        diff = sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_DIFF))
         diff_noise = np.sqrt(sfftifier.create_variance_image())
-        diff_flags = self.template_image.flags + self.science_image.flags
-        diff_interpolated_mask = template_image_interpolated_mask | science_image_interpolated_mask
+        # I conceptually want to do the following, but I need resampled template flags and mask to do it.
+        # For now, just use the science image flags and mask.
+        # diff_flags = self.template_image.flags | self.science_image.flags
+        # diff_interpolated_mask = template_image_interpolated_mask | science_image_interpolated_mask
+        diff_flags = self.science_image.flags
+        diff_interpolated_mask = science_image_interpolated_mask
+        no_coverage = sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.BlankMask))
 
         _save_products_as_fits(
             path=self.decorr_diff_path,
@@ -448,24 +853,39 @@ class Pipeline:
             noise=diff_noise,
             flags=diff_flags,
             mask=diff_interpolated_mask,
+            coverage_mask=no_coverage,
         )
 
-        fits.writeto(self.score_image_path, score_image, header=sfftifier.hdr_target, overwrite=True)
+        _save_products_as_fits(
+            path=self.score_image_path,
+            hdr=sfftifier.hdr_target,
+            data=score_image,
+            noise=diff_noise,
+            flags=diff_flags,
+            mask=diff_interpolated_mask,
+            coverage_mask=no_coverage,
+        )
         fits.writeto(self.decorr_psf_path, decorr_psf, header=None, overwrite=True)
 
-        fits.writeto(
-            self.diff_path,
-            sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_DIFF)),
-            header=sfftifier.hdr_target,
-            overwrite=True,
+        _save_products_as_fits(
+            path=self.diff_path,
+            hdr=sfftifier.hdr_target,
+            data=diff,
+            noise=diff_noise,
+            flags=diff_flags,
+            mask=diff_interpolated_mask,
+            coverage_mask=no_coverage,
         )
 
         if self.save_debug_products:
-            fits.writeto(
-                self.resamp_template_path,
-                sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_resamp_object)),
-                header=sfftifier.hdr_target,
-                overwrite=True,
+            # I might be saving the Variance instead of the noise.  Check later.
+            # We don't have resampled flags because we haven't defined what that means.
+            _save_products_as_fits(
+                path=self.resamp_template_path,
+                hdr=sfftifier.hdr_target,
+                data=sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_resamp_object)),
+                noise=np.sqrt(sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_resamp_objectVar))),
+                mask=template_detmask_data,
             )
 
         # Write out masked aray to check if we're passing good stamps to SFFT.
@@ -506,13 +926,13 @@ class Pipeline:
 
             fits.writeto(
                 self.mask_cresamp_template_path,
-                sfftifier.op.asnumpy(PixA_mCresamp_object),
+                sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(PixA_mCresamp_object)),
                 header=sfftifier.hdr_target,
                 overwrite=True,
             )
             fits.writeto(
                 self.mask_ctarget_science_path,
-                sfftifier.op.asnumpy(PixA_mCtarget),
+                sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(PixA_mCtarget)),
                 header=sfftifier.hdr_target,
                 overwrite=True,
             )
@@ -526,12 +946,19 @@ class Pipeline:
             )
 
             if sfftifier.CROSS_CONVOLVED:
-                simple_diff = sfftifier.op.asnumpy(
-                    sfftifier.op.transpose_if_needed(sfftifier.PixA_Ctarget - sfftifier.PixA_Cresamp_object)
-                )
+                simple_diff = sfftifier.PixA_Ctarget - sfftifier.PixA_Cresamp_object
             else:
-                simple_diff = sfftifier.op.asnumpy(
-                    sfftifier.op.transpose_if_needed(sfftifier.PixA_target - sfftifier.PixA_resamp_object)
-                )
+                simple_diff = sfftifier.PixA_target - sfftifier.PixA_resamp_object
+            # Blank out regions that the template didn't cover
+            simple_diff[sfftifier.BlankMask] = 0.0
+            simple_diff = sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(simple_diff))
 
-            fits.writeto(self.simple_diff_path, simple_diff, header=sfftifier.hdr_target, overwrite=True)
+            _save_products_as_fits(
+                path=self.simple_diff_path,
+                hdr=sfftifier.hdr_target,
+                data=simple_diff,
+                noise=diff_noise,
+                flags=diff_flags,
+                mask=diff_interpolated_mask,
+                coverage_mask=no_coverage,
+            )
