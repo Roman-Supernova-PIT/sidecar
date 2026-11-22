@@ -4,10 +4,13 @@ Works on the output of `sidecar.match_catalogs.match_catalogs_nested` (a nested-
 frame with one row per object and the per-subtraction rows in ``sources``).  The
 per-detection flag cuts are applied earlier, as ``--row-filter`` options of
 `sidecar.match_catalogs`; the cuts here need all of an object's detections.
+The nested input is Parquet; the optional reference-star catalog and the selected
+object output can be ECSV or Parquet.  Output defaults to Parquet.
 
 Example
 -------
-    python -m sidecar.candidates matched.parquet -o candidates.ecsv --region-file candidates.reg
+    python -m sidecar.candidates matched.parquet -o candidates.parquet --region-file candidates.reg
+    python -m sidecar.candidates matched.parquet -o candidates.ecsv --catalog-output-format ecsv
 
 Cuts (all configurable), on median values over an object's sources:
 
@@ -25,12 +28,14 @@ Cuts (all configurable), on median values over an object's sources:
 """
 
 import argparse
+from pathlib import Path
 
 import astropy.units as u
 import numpy as np
 import pandas as pd
 from scipy.spatial import cKDTree
 
+from sidecar.catalog_io import OUTPUT_FORMATS, write_catalog
 from snappl.logger import SNLogger
 
 DEFAULT_NOISE = 0.21  # empirical scatter of the diff r3 flux on empty sky in program 01062
@@ -196,8 +201,8 @@ def select_candidates(
     return stats[keep.fillna(False).to_numpy(bool)]
 
 
-def write_candidates(candidates, path, region_file=None):
-    """Write the object-level columns of `candidates` to ECSV, and optionally a ds9 region file.
+def write_candidates(candidates, path, region_file=None, output_format="parquet"):
+    """Write object-level columns to Parquet or ECSV, and optionally a ds9 region file.
 
     Regions are 1" circles, green for brightening (z > 0) and red for fading, labelled with z.
     """
@@ -206,7 +211,7 @@ def write_candidates(candidates, path, region_file=None):
     flat_columns = [c for c in candidates.columns if c != "sources"]
     table = Table.from_pandas(pd.DataFrame(candidates[flat_columns]).reset_index())
     table.meta["noise"] = candidates.attrs.get("noise")
-    table.write(path, format="ascii.ecsv", overwrite=True)
+    write_catalog(table, path, overwrite=True, output_format=output_format)
 
     if region_file is not None:
         with open(region_file, "w") as f:
@@ -224,11 +229,17 @@ def main():
         description="Select candidates from a nested matched catalog (sidecar.match_catalogs --nested-output).",
     )
     parser.add_argument("nested_catalog", help="Nested Parquet catalog from match_catalogs --nested-output")
-    parser.add_argument("-o", "--output", required=True, help="Output ECSV of selected objects")
+    parser.add_argument("-o", "--output", required=True, help="Output catalog of selected objects")
+    parser.add_argument(
+        "--catalog-output-format",
+        choices=OUTPUT_FORMATS,
+        default="parquet",
+        help="Catalog output format (default: %(default)s).",
+    )
     parser.add_argument("--region-file", default=None, help="Also write a ds9 region file")
     parser.add_argument("--min-sources", type=int, default=5)
     parser.add_argument("--min-bands", type=int, default=3)
-    parser.add_argument("--min-abs-z", type=float, default=4.0)
+    parser.add_argument("--min-abs-snr", type=float, default=4.0)
     parser.add_argument("--min-sign-consistency", type=float, default=0.85)
     parser.add_argument("--min-sign-agreement", type=float, default=0.8)
     parser.add_argument(
@@ -248,7 +259,7 @@ def main():
     parser.add_argument(
         "--star-catalog",
         default=None,
-        help="Reference star ECSV (e.g. Gaia); objects near stars are dropped before the cuts",
+        help="Reference star ECSV or Parquet (e.g. Gaia); objects near stars are dropped before the cuts",
     )
     parser.add_argument("--star-match-radius", type=float, default=5.0, help="Base star rejection radius, arcsec")
     parser.add_argument("--star-ref-mag", type=float, default=None, help="Stars brighter than this get a larger radius")
@@ -262,6 +273,10 @@ def main():
         help="Estimate the noise from the matched sources instead of using --noise",
     )
     args = parser.parse_args()
+
+    allowed_suffixes = (".parquet", ".pq") if args.catalog_output_format == "parquet" else (".ecsv",)
+    if Path(args.output).suffix.lower() not in allowed_suffixes:
+        parser.error("--output extension must match --catalog-output-format")
 
     from sidecar.match_catalogs import read_nested_catalog
 
@@ -289,7 +304,7 @@ def main():
         star_max_radius=args.star_max_radius,
         star_mag_col=args.star_mag_column,
     )
-    write_candidates(candidates, args.output, args.region_file)
+    write_candidates(candidates, args.output, args.region_file, output_format=args.catalog_output_format)
     SNLogger.info(
         f"Wrote {len(candidates)} of {len(nested)} objects to {args.output} (noise {candidates.attrs.get('noise')})"
     )
