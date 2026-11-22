@@ -16,6 +16,7 @@ import argparse
 import operator
 import os
 import re
+import tempfile
 from pathlib import Path
 
 import astropy.units as u
@@ -26,7 +27,7 @@ from astropy.table import Table
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 
-from sidecar.catalog_io import read_catalogs
+from sidecar.catalog_io import OUTPUT_FORMATS, read_catalogs, write_catalog
 from snappl.logger import SNLogger
 
 DEFAULT_ROW_FILTERS = (("template_in_bounds", "==", True),)
@@ -428,16 +429,61 @@ def match_catalog_files(
     overwrite=True,
     n_jobs=1,
     nested_output_path=None,
+    output_format="ecsv",
+    pipeline_cuts=None,
+    star_catalog=None,
 ):
-    """Read .ecsv catalogs, match them with `match_catalogs`, and write the result.
+    """Read ECSV or Parquet catalogs, match them with `match_catalogs`, and write the result.
 
-    Catalogs are read in parallel over `n_jobs` processes (0: all CPUs).
+    Catalogs are read in parallel over `n_jobs` processes (0: all CPUs), unless
+    `pipeline_cuts` is enabled, in which case they are processed sequentially.
 
     If `nested_output_path` is given, also write the nested object/source catalog of
     `match_catalogs_nested` to that Parquet file.
+
+    If `pipeline_cuts` is ``simple_diff`` or ``score``, reapply the pipeline's
+    star, DQ and pixel-shape cuts, with the S/N and center-JUMP_DET settings from
+    test_subtraction.sh, before matching. `star_catalog` must be a star table.
+    Existing cleaned catalogs cannot recover rows removed by earlier processing.
     """
     input_paths = list(input_paths)
-    tables = read_catalogs(input_paths, n_jobs=n_jobs)
+    if pipeline_cuts is None:
+        tables = read_catalogs(input_paths, n_jobs=n_jobs)
+    else:
+        if pipeline_cuts not in ("simple_diff", "score"):
+            raise ValueError(f"Unsupported pipeline cuts product: {pipeline_cuts!r}")
+        if star_catalog is None:
+            raise ValueError("star_catalog is required when applying pipeline cuts")
+        from roman_datamodels import dqflags
+
+        from sidecar.pipeline import Detection
+
+        product = pipeline_cuts
+        tables = []
+        with tempfile.TemporaryDirectory(prefix="sidecar-match-cuts-") as temp_dir:
+            for path in input_paths:
+                cleaned = Detection.reject_stars(
+                    star_catalog,
+                    path,
+                    Detection.REJECT_MATCH_RADIUS.to_value(u.arcsec),
+                    Path(temp_dir) / "cleaned.parquet",
+                    bad_pixel_column=[
+                        "template_flags_npix_bad",
+                        "science_flags_npix_bad",
+                        f"{product}_flags_npix_bad",
+                    ],
+                    center_flag_columns=["template_flags_center", "science_flags_center", f"{product}_flags_center"],
+                    center_dq_flags=int(dqflags.pixel.JUMP_DET),
+                    snr_column=f"{product}_aper_r3_snr",
+                    min_abs_snr=7.0,
+                    single_pixel_product=product,
+                    square_pixel_product=product,
+                    ref_mag=Detection.REJECT_REF_MAG,
+                    scale=Detection.REJECT_SCALE,
+                    max_radius=Detection.REJECT_MAX_RADIUS,
+                )
+                SNLogger.info(f"Applied pipeline cuts to {path}: {len(cleaned)} detections retained")
+                tables.append(cleaned)
     for p, table in zip(input_paths, tables):
         table.meta.update(parse_catalog_path(p))
         detector = _detector_from_path(p)
@@ -451,7 +497,7 @@ def match_catalog_files(
         min_pixel_separation=min_pixel_separation,
         min_distinct_positions=min_distinct_positions,
     )
-    matched.write(output_path, format="ascii.ecsv", overwrite=overwrite)
+    write_catalog(matched, output_path, overwrite=overwrite, output_format=output_format)
     if nested_output_path is not None:
         write_nested_catalog(
             match_catalogs_nested(
@@ -469,7 +515,7 @@ def match_catalog_files(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Match .ecsv source catalogs on ra, dec and filter candidate rows.",
+        description="Match ECSV or Parquet source catalogs on ra, dec and filter candidate rows.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 examples:
@@ -484,8 +530,18 @@ examples:
       --row-filter "score_flags_npix_bad,<=,0"
 """,
     )
-    parser.add_argument("catalogs", nargs="+", help="Input .ecsv catalogs with ra, dec columns")
-    parser.add_argument("-o", "--output", required=True, help="Output .ecsv catalog")
+    parser.add_argument("catalogs", nargs="+", help="Input ECSV or Parquet catalogs with ra, dec columns")
+    parser.add_argument("-o", "--output", required=True, help="Output matched catalog")
+    parser.add_argument(
+        "--catalog-output-format", choices=OUTPUT_FORMATS, default="ecsv",
+        help="Output catalog format (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--pipeline-cuts",
+        choices=("simple_diff", "score"),
+        help="Reapply pipeline star, DQ, pixel-shape and |aperture S/N| >= 7 cuts before matching.",
+    )
+    parser.add_argument("--star-catalog", help="Reference star catalog; required with --pipeline-cuts.")
     parser.add_argument("-r", "--radius", type=float, default=1.0, help="Match radius in arcsec")
     parser.add_argument("-n", "--min-matches", type=int, default=2, help="Minimum number of catalogs per object")
     parser.add_argument(
@@ -522,7 +578,7 @@ examples:
         "--jobs",
         type=int,
         default=0,
-        help="Number of processes for reading catalogs (default 0: all CPUs).",
+        help="Number of processes for reading catalogs (default 0: all CPUs; pipeline cuts run sequentially).",
     )
     parser.add_argument(
         "--nested-output",
@@ -531,6 +587,18 @@ examples:
         help="Also write a nested Parquet catalog: one row per object with its per-subtraction sources nested.",
     )
     args = parser.parse_args()
+    if args.pipeline_cuts and not args.star_catalog:
+        parser.error("--pipeline-cuts requires --star-catalog")
+    if args.star_catalog and not args.pipeline_cuts:
+        parser.error("--star-catalog requires --pipeline-cuts")
+    allowed_suffixes = (".parquet", ".pq") if args.catalog_output_format == "parquet" else (".ecsv",)
+    if Path(args.output).suffix.lower() not in allowed_suffixes:
+        parser.error("--output extension must match --catalog-output-format")
+    stars = None
+    if args.star_catalog:
+        from sidecar.star_retrieval import read_star_catalog
+
+        stars = read_star_catalog(args.star_catalog)
     row_filters = [_parse_filter_expression(expr) for expr in args.row_filter]
 
     matched = match_catalog_files(
@@ -543,6 +611,9 @@ examples:
         min_distinct_positions=args.min_distinct_positions,
         n_jobs=args.jobs,
         nested_output_path=args.nested_output,
+        output_format=args.catalog_output_format,
+        pipeline_cuts=args.pipeline_cuts,
+        star_catalog=stars,
     )
     SNLogger.info(f"Wrote {len(matched)} objects to {args.output}")
 
