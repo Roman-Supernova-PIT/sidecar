@@ -219,7 +219,7 @@ def write_candidates(candidates, path, region_file=None, output_format="parquet"
             for _, row in candidates.sort_values("snr_med", key=abs, ascending=False).iterrows():
                 color = "green" if row["snr_med"] > 0 else "red"
                 f.write(
-                    f'circle({row["ra"]:.7f},{row["dec"]:.7f},1") # color={color} text={{z={row["snr_med"]:.1f}}}\n'
+                    f'circle({row["ra"]:.7f},{row["dec"]:.7f},1") # color={color} text={{snr_med={row["snr_med"]:.1f}}}\n'
                 )
     return table
 

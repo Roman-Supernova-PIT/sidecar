@@ -102,10 +102,12 @@ def _parse_filter_expression(expression):
     return column, op, _parse_filter_value(raw_value)
 
 
-def _detector_from_path(path):
-    """Extract the detector number from a subtraction filename, e.g. 'F087_<id>_14_-_F087_<id>_14' -> 14."""
-    match = re.search(r"_(\d+)_-_", os.path.basename(str(path)))
-    return int(match.group(1)) if match else None
+def _detectors_from_path(path):
+    """Extract the detector numbers from a subtraction filename, e.g. 'F087_<id>_14_-_F087_<id>_12' -> 14, 12."""
+    match = re.search(r"_(\d+)_-.*_(\d+)", os.path.basename(str(path)))
+    if match:
+        return tuple(int(x) for x in match.groups())
+    return None
 
 
 def _table_detector(table):
@@ -133,7 +135,7 @@ def _count_distinct_positions(xy, detector, tolerance, stop_at=None):
 
 
 def match_catalogs(
-    tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=None, min_pixel_separation=None, min_distinct_positions=2
+    tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=None, min_pixel_separation=None, min_distinct_positions=2, min_distinct_template_positions=1
 ):
     """Cross-match catalogs on ra, dec and keep objects found in enough of them.
 
@@ -167,8 +169,12 @@ def match_catalogs(
         'detector' column or ``table.meta['detector']`` (all one detector if
         absent).  Requires 'x_peak' and 'y_peak' columns.  None (default) disables the check.
     min_distinct_positions : int
-        Minimum number of distinct detector positions; only used when
+        Minimum number of distinct x, y positions on difference image; only used when
         `min_pixel_separation` is given.
+    min_distinct_template_positions : int
+        Minimum number of distinct template detector positions; only used when
+        `min_pixel_separation` is given and the template position is known (from
+        ['template_x', 'template_y'] columns).
 
     Returns
     -------
@@ -178,7 +184,7 @@ def match_catalogs(
     """
     normalized_filters = _normalize_row_filters(row_filters)
     filtered_tables = [_apply_row_filters(table, normalized_filters) for table in tables]
-    grouping = _group_detections(filtered_tables, radius, min_matches, min_pixel_separation, min_distinct_positions)
+    grouping = _group_detections(filtered_tables, radius, min_matches, min_pixel_separation, min_distinct_positions, min_distinct_template_positions)
     if grouping is None:
         return Table({"ra": [], "dec": [], "n_match": []}, dtype=[float, float, int])
 
@@ -191,7 +197,7 @@ def match_catalogs(
     return out
 
 
-def _group_detections(filtered_tables, radius, min_matches, min_pixel_separation, min_distinct_positions):
+def _group_detections(filtered_tables, radius, min_matches, min_pixel_separation, min_distinct_positions, min_distinct_template_positions):
     """Group the rows of already-filtered tables into objects; None if there are no rows.
 
     Returns a dict with per-row 'ra', 'dec', 'cat_index', 'labels' (group of each row),
@@ -223,6 +229,16 @@ def _group_detections(filtered_tables, radius, min_matches, min_pixel_separation
         detector = (
             np.concatenate([_table_detector(t) for t in filtered_tables]) if filtered_tables else np.array([], int)
         )
+        template_xy = (
+            np.column_stack(
+                [
+                    np.concatenate([np.asarray(t["template_x"], float) for t in filtered_tables]),
+                    np.concatenate([np.asarray(t["template_y"], float) for t in filtered_tables]),
+                ]
+            )
+            if filtered_tables
+            else np.empty((0, 2))
+        )
 
     n = len(ra)
     if n == 0:
@@ -248,7 +264,10 @@ def _group_detections(filtered_tables, radius, min_matches, min_pixel_separation
             n_positions = _count_distinct_positions(
                 xy[members], detector[members], min_pixel_separation, min_distinct_positions
             )
-            if n_positions < min_distinct_positions:
+            n_template_positions = _count_distinct_positions(
+                template_xy[members], detector[members], min_pixel_separation, min_distinct_template_positions
+            )
+            if n_positions < min_distinct_positions or n_template_positions < min_distinct_template_positions:
                 keep[g] = False
     return {
         "ra": ra,
@@ -338,7 +357,7 @@ def _sources_frame(table, index):
 
 
 def match_catalogs_nested(
-    tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=None, min_pixel_separation=None, min_distinct_positions=2
+    tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=None, min_pixel_separation=None, min_distinct_positions=2, min_distinct_template_positions=1
 ):
     """Like `match_catalogs`, but keep the per-subtraction rows of every object.
 
@@ -360,7 +379,7 @@ def match_catalogs_nested(
 
     normalized_filters = _normalize_row_filters(row_filters)
     filtered = [_apply_row_filters(table, normalized_filters) for table in tables]
-    grouping = _group_detections(filtered, radius, min_matches, min_pixel_separation, min_distinct_positions)
+    grouping = _group_detections(filtered, radius, min_matches, min_pixel_separation, min_distinct_positions, min_distinct_template_positions)
     kept_groups = grouping["kept_groups"] if grouping is not None else np.array([], int)
 
     mean_ra, mean_dec = _group_mean_positions(grouping) if grouping is not None else (np.array([]), np.array([]))
@@ -426,6 +445,7 @@ def match_catalog_files(
     row_filters=None,
     min_pixel_separation=None,
     min_distinct_positions=2,
+    min_distinct_template_positions=1,
     overwrite=True,
     n_jobs=1,
     nested_output_path=None,
@@ -486,9 +506,12 @@ def match_catalog_files(
                 tables.append(cleaned)
     for p, table in zip(input_paths, tables):
         table.meta.update(parse_catalog_path(p))
-        detector = _detector_from_path(p)
-        if detector is not None:
+        # Add detector numbers from the file name if not already in the table.
+        detector, template_detector = _detectors_from_path(p)
+        if detector is not None and "detector" not in table.colnames:
             table.meta["detector"] = detector
+        if template_detector is not None and "template_detector" not in table.colnames:
+            table.meta["template_detector"] = template_detector
     matched = match_catalogs(
         tables,
         radius=radius,
@@ -496,6 +519,7 @@ def match_catalog_files(
         row_filters=row_filters,
         min_pixel_separation=min_pixel_separation,
         min_distinct_positions=min_distinct_positions,
+        min_distinct_template_positions=min_distinct_template_positions,
     )
     write_catalog(matched, output_path, overwrite=overwrite, output_format=output_format)
     if nested_output_path is not None:
@@ -507,6 +531,7 @@ def match_catalog_files(
                 row_filters=row_filters,
                 min_pixel_separation=min_pixel_separation,
                 min_distinct_positions=min_distinct_positions,
+                min_distinct_template_positions=min_distinct_template_positions,
             ),
             nested_output_path,
         )
@@ -571,7 +596,13 @@ examples:
         "--min-distinct-positions",
         type=int,
         default=2,
-        help="With --min-pixel-separation, minimum number of distinct detector positions per object (default 2).",
+        help="With --min-pixel-separation, minimum number of distinct detector x,y positions per object (default 2).",
+    )
+    parser.add_argument(
+        "--min-distinct-template-positions",
+        type=int,
+        default=1,
+        help="With --min-pixel-separation, minimum number of distinct template x,y positions per object (default 1).",
     )
     parser.add_argument(
         "-j",
@@ -609,6 +640,7 @@ examples:
         row_filters=row_filters,
         min_pixel_separation=args.min_pixel_separation,
         min_distinct_positions=args.min_distinct_positions,
+        min_distinct_template_positions=args.min_distinct_template_positions,
         n_jobs=args.jobs,
         nested_output_path=args.nested_output,
         output_format=args.catalog_output_format,
