@@ -246,7 +246,7 @@ def detect_sources_in_subtraction(
     negative : bool
         Search for negative sources as well as positive sources.
     coverage_mask : 2D ndarray of bool, optional
-        True for pixels without template coverage, on the detection image grid.
+        True for pixels without science or template coverage, on the detection image grid.
         If None, the entire image is assumed to have coverage.
 
     Returns
@@ -276,7 +276,7 @@ def detect_sources_in_subtraction(
             raise ValueError("coverage_mask must have the same shape as image.data")
         bad = coverage_mask | ~np.isfinite(data)
     if np.all(bad):
-        raise ValueError("No finite pixels with template coverage are available for source detection")
+        raise ValueError("No finite pixels with science and template coverage are available for source detection")
 
     bkg = Background2D(data, box_size=background_box_size, mask=bad, exclude_percentile=80)
     sky_subtracted_data = data - bkg.background

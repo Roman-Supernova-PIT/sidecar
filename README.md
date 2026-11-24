@@ -69,6 +69,14 @@ remains the default. Truth matching and database saving are not supported in thi
 changes identification and naming: the image reader, PSF, and subtraction must still support
 the inputs. In particular, Roman L3 skycell mosaics are not yet supported by `manual_rdm`.
 
+When using a mosaic-capable reader that exposes `no_coverage_mask`, subtraction
+excludes missing coverage from background estimation and records the union of
+science and projected template gaps in the `NO_COVERAGE` FITS extension of
+the difference products. Template pixels are considered covered only when
+their bilinear interpolation support is covered. Missing data or noise also
+counts as no coverage. Interpolated values are still used internally by SFFT;
+the mask does not model convolution leakage near coverage boundaries.
+
 Nov 2025 example
 ```
 python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2024 --image-process load_ou2024_image --observation-id 36846 --sca 15 --band H158 --output-dir /dia_out_dir

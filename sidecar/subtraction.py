@@ -13,6 +13,7 @@ from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.stats import SigmaClip, mad_std
 from astropy.table import Table
+from astropy.wcs import WCS
 from photutils.background import Background2D
 from photutils.segmentation import SourceCatalog, detect_threshold, detect_sources
 from photutils.utils import circular_footprint
@@ -55,7 +56,7 @@ def _filter_variance_with_kernel(variance, kernel):
     return variance
 
 
-def interpolate_over_bad_pixels(data, flags, bad_pixel_flags=bad_pixel_flags, reject_nonfinite=True):
+def interpolate_over_bad_pixels(data, flags, bad_pixel_flags=bad_pixel_flags, reject_nonfinite=True, large_mask=False):
     """Interpolate over bad pixels in an image.
 
     Bad pixels are identified based on the provided `bad_pixel_flags`.
@@ -74,6 +75,8 @@ def interpolate_over_bad_pixels(data, flags, bad_pixel_flags=bad_pixel_flags, re
         If False, NaN values are treated as bad pixels but inf is allowed.
         I'm not sure exactly when one would want to do this, but in principle inf is the correct value
         for a saturated or otherwise unusable pixel, so maybe one would want to keep those in some cases.
+    large_mask : bool, optional
+        Use a distance transform for large masked regions rather than building a nearest-neighbor tree.
 
     Returns
     -------
@@ -100,14 +103,48 @@ def interpolate_over_bad_pixels(data, flags, bad_pixel_flags=bad_pixel_flags, re
     interpolated_data = data.copy()
     interpolated_data[bad_mask] = np.nan  # Mark bad pixels as NaN for interpolation
 
-    # Interpolation using nearest neighbor
-    x, y = np.indices(data.shape)
     good_pixels = ~bad_mask
-    interpolated_data[bad_mask] = griddata(
-        (x[good_pixels], y[good_pixels]), data[good_pixels], (x[bad_mask], y[bad_mask]), method="nearest"
-    )
+    if not np.any(good_pixels):
+        raise ValueError("Cannot interpolate an image with no good pixels")
+    if large_mask and np.any(bad_mask):
+        indices = ndimage.distance_transform_edt(bad_mask, return_distances=False, return_indices=True)
+        interpolated_data[bad_mask] = data[tuple(index[bad_mask] for index in indices)]
+    elif np.any(bad_mask):
+        x, y = np.indices(data.shape)
+        interpolated_data[bad_mask] = griddata(
+            (x[good_pixels], y[good_pixels]), data[good_pixels], (x[bad_mask], y[bad_mask]), method="nearest"
+        )
 
     return interpolated_data, bad_mask
+
+
+def _image_no_coverage(image):
+    """Return a mosaic's missing-coverage mask, or None for images without one."""
+    mask = getattr(image, "no_coverage_mask", None)
+    if mask is None:
+        return None
+    mask = np.asarray(mask, dtype=bool)
+    if mask.shape != image.data.shape or image.noise.shape != mask.shape:
+        raise ValueError("Image coverage mask, data, and noise must have the same shape")
+    return mask | ~np.isfinite(image.data) | ~np.isfinite(image.noise)
+
+
+def _project_no_coverage(mask, template_hdr, science_hdr):
+    """Project template coverage to the science grid, requiring full bilinear support."""
+    science_wcs = WCS(science_hdr)
+    template_wcs = WCS(template_hdr)
+    height, width = int(science_hdr["NAXIS2"]), int(science_hdr["NAXIS1"])
+    result = np.empty((height, width), dtype=bool)
+    valid = (~mask).astype(np.float32)
+    x = np.arange(width, dtype=float)
+    for start in range(0, height, 128):
+        stop = min(start + 128, height)
+        xx, yy = np.meshgrid(x, np.arange(start, stop, dtype=float))
+        ra, dec = science_wcs.all_pix2world(xx, yy, 0)
+        tx, ty = template_wcs.all_world2pix(ra, dec, 0)
+        coverage = ndimage.map_coordinates(valid, [ty, tx], order=1, mode="grid-constant", cval=0, prefilter=False)
+        result[start:stop] = ~np.isfinite(coverage) | (coverage < 1 - 1.e-6)
+    return result
 
 
 DEFAULT_GAIA_MAG_LIMIT = 17.0
@@ -333,6 +370,7 @@ def sky_subtract_and_detect(
     bright_star_radius=30.0,
     bright_star_scale=0.2,
     bright_star_max_radius=None,
+    coverage_mask=None,
 ):
     """Perform sky subtraction and create a detection mask for an image.
 
@@ -372,6 +410,8 @@ def sky_subtract_and_detect(
         sources centred inside a zone are not selected.  Radius in pixels is
         `bright_star_radius` * 10**(`bright_star_scale` * (bright_star_mag - mag)), capped at
         `bright_star_max_radius`.  None disables.  Uses the same catalog as the Gaia cut.
+    coverage_mask : 2D boolean array or None
+        True where the image has no usable coverage; excluded from background estimation.
 
     Returns
     -------
@@ -393,17 +433,22 @@ def sky_subtract_and_detect(
         optionally, bright pixels that are too bright masked out.
     The bad pixels are dilated by `bad_mask_radius` to ensure they are fully masked in the detection process.
     """
-    bkg = Background2D(image.data, box_size=background_box_size)
+    background_kwargs = {} if coverage_mask is None else {"mask": coverage_mask, "exclude_percentile": 80}
+    bkg = Background2D(image.data, box_size=background_box_size, **background_kwargs)
 
     sky_subtracted_data = image.data - bkg.background
     rms = bkg.background_rms_median
 
     # Based on the photutils.background documentation
     sigma_clip = SigmaClip(sigma=2.0, maxiters=10)
-    threshold = detect_threshold(sky_subtracted_data, **{_N_SIGMA_KWARG: nsigma}, sigma_clip=sigma_clip)
+    threshold = detect_threshold(
+        sky_subtracted_data, **{_N_SIGMA_KWARG: nsigma}, sigma_clip=sigma_clip, mask=coverage_mask
+    )
 
     # Mask pixels that are flagged as bad in the input image
     bad_mask = (image.flags & bad_pixel_flags) > 0
+    if coverage_mask is not None:
+        bad_mask |= coverage_mask
 
     # Build a mask of pixels that are in the non-linear regime
     if too_bright_threshold is not None:
@@ -458,6 +503,8 @@ def sky_subtract_and_detect(
         detmask_data = segment_img.make_source_mask(footprint=detection_footprint)
     if bright_star_mask is not None:
         detmask_data = detmask_data & ~bright_star_mask
+    if coverage_mask is not None:
+        detmask_data &= ~coverage_mask
 
     return sky_subtracted_data, detmask_data, rms, convolved_bad_mask, catalog
 
@@ -547,7 +594,7 @@ def _save_products_as_fits(path, hdr, data, noise, flags=None, mask=None, covera
         If None, a MASK plane of zeros is written so that the HDU layout is the same for all products.
         Written as uint8 array
     coverage_mask: 2D ndarray of bool, optional
-        True where the resampled template has no coverage. If supplied, it is written
+        True where either input has no coverage on the output grid. If supplied, it is written
         to a separate NO_COVERAGE extension on the output image grid.
     """
 
@@ -747,31 +794,38 @@ class Pipeline:
             fits.writeto(self.science_psf_path, science_psf, overwrite=True)
             fits.writeto(self.template_psf_path, template_psf, overwrite=True)
 
+        science_no_coverage = _image_no_coverage(self.science_image)
+        template_no_coverage = _image_no_coverage(self.template_image)
+
         # Interpolate over bad pixels in the science and template images before sky subtraction and source detection.
         # This is to avoid bad pixels in the images being convolved out to look like sources
         self.science_image._data, science_image_interpolated_mask = interpolate_over_bad_pixels(
-            self.science_image.data, self.science_image.flags, bad_pixel_flags=bad_pixel_flags
+            self.science_image.data, self.science_image.flags, bad_pixel_flags=bad_pixel_flags,
+            large_mask=science_no_coverage is not None,
         )
         self.template_image._data, template_image_interpolated_mask = interpolate_over_bad_pixels(
-            self.template_image.data, self.template_image.flags, bad_pixel_flags=bad_pixel_flags
+            self.template_image.data, self.template_image.flags, bad_pixel_flags=bad_pixel_flags,
+            large_mask=template_no_coverage is not None,
         )
         # The Roman datamodel noise arrays are 16-bit floats
         # We recast to 32-bit floats to avoid floating-point overflow when squaring to create variance arrays
         science_noise, _ = interpolate_over_bad_pixels(
-            self.science_image.noise, self.science_image.flags, bad_pixel_flags=bad_pixel_flags
+            self.science_image.noise, self.science_image.flags, bad_pixel_flags=bad_pixel_flags,
+            large_mask=science_no_coverage is not None,
         )
         science_noise = np.asarray(science_noise, dtype=np.float32)
         template_noise, _ = interpolate_over_bad_pixels(
-            self.template_image.noise, self.template_image.flags, bad_pixel_flags=bad_pixel_flags
+            self.template_image.noise, self.template_image.flags, bad_pixel_flags=bad_pixel_flags,
+            large_mask=template_no_coverage is not None,
         )
         template_noise = np.asarray(template_noise, dtype=np.float32)
 
         # sky subtraction and source detection
         science_skysubim_data, science_detmask_data, science_skyrms, _, _ = sky_subtract_and_detect(
-            self.science_image, **self.detection_kwargs
+            self.science_image, coverage_mask=science_no_coverage, **self.detection_kwargs
         )
         template_skysubim_data, template_detmask_data, template_skyrms, _, _ = sky_subtract_and_detect(
-            self.template_image, **self.detection_kwargs
+            self.template_image, coverage_mask=template_no_coverage, **self.detection_kwargs
         )
 
         # SFFT needs FITS headers with a WCS and with NAXIS[12]
@@ -788,6 +842,7 @@ class Pipeline:
                 noise=science_noise,
                 flags=self.science_image.flags,
                 mask=science_detmask_data,
+                coverage_mask=science_no_coverage,
             )
             _save_products_as_fits(
                 path=self.template_debug_path,
@@ -796,6 +851,7 @@ class Pipeline:
                 noise=template_noise,
                 flags=self.template_image.flags,
                 mask=template_detmask_data,
+                coverage_mask=template_no_coverage,
             )
 
         if self.pre_smooth_sigma is not None:
@@ -835,6 +891,13 @@ class Pipeline:
         sfftifier.resample_image_mask_psf()
         if self.resample_method != "bilinear":
             self._spline_resample_template(sfftifier, science_hdr, template_hdr, template_skysubim_data)
+        if science_no_coverage is not None or template_no_coverage is not None:
+            no_coverage = sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.BlankMask)).copy()
+            if science_no_coverage is not None:
+                no_coverage |= science_no_coverage
+            if template_no_coverage is not None:
+                no_coverage |= _project_no_coverage(template_no_coverage, template_hdr, science_hdr)
+            sfftifier.BlankMask |= sfftifier.op.asarray(sfftifier.op.transpose_if_needed(no_coverage))
         if self.cross_convolve:
             sfftifier.cross_convolve()
 
