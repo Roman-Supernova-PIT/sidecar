@@ -61,9 +61,11 @@ python sidecar/pipeline.py --image-collection ou2024 --science-path ${image_path
 
 For an explicit pair of paths, `--path-identity` avoids parsing detector identifiers from
 the filenames. Supply both `--science-path` and `--template-path` and an image collection
-that supports those files. Product names use the input filenames and hashes of their resolved
-paths; moving an input therefore changes the product name. Detector-based naming remains the
-default. Truth matching and database saving are not supported in this mode. This option only
+that supports those files. Product names use `science_-_template`, removing the `.asdf`,
+`.fits`, or `.fits.gz` extension from each input filename. Directory names are ignored, so
+different input paths with the same filename stems share output names and may overwrite one
+another. Existing outputs with the previous hashed names are not reused. Detector-based naming
+remains the default. Truth matching and database saving are not supported in this mode. This option only
 changes identification and naming: the image reader, PSF, and subtraction must still support
 the inputs. In particular, Roman L3 skycell mosaics are not yet supported by `manual_rdm`.
 

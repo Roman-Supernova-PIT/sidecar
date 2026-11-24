@@ -587,8 +587,8 @@ def test_path_identity_keeps_product_names_consistent_without_detector_ids(monke
     instance = Detection(
         collection, [], temp_dir=tmp_path, output_dir=tmp_path, path_identity=True, input_base_path=tmp_path
     )
-    science = "one/skycell.asdf"
-    template = "two/skycell.asdf"
+    science = "one/science_skycell.asdf"
+    template = "two/template_skycell.fits"
     empty_id = {"band": None, "observation_id": None, "sca": None}
     paths = instance.path_helper(empty_id, empty_id, science_image_path=science, template_image_path=template)
     subtraction = pipeline.subtraction.Pipeline(
@@ -597,8 +597,10 @@ def test_path_identity_keeps_product_names_consistent_without_detector_ids(monke
         out_dir=paths["full_output_dir"], diff_pattern=paths["full_output_dir"].name,
     )
     assert subtraction.diff_path == paths["difference_image_path"]
-    first, second = subtraction.diff_pattern.split("_-_")
-    assert first != second
+    assert subtraction.diff_pattern == "science_skycell_-_template_skycell"
+    assert paths["full_output_dir"].name == subtraction.diff_pattern
+    assert paths["difference_image_path"].name == "diff_science_skycell_-_template_skycell.fits"
+    assert subtraction.resamp_template_path.name == "resamp_template_science_skycell_-_template_skycell.fits"
     assert subtraction.diff_pattern == pipeline.util.difference_pattern_from_paths(
         tmp_path / science, tmp_path / template
     )
@@ -606,6 +608,20 @@ def test_path_identity_keeps_product_names_consistent_without_detector_ids(monke
         instance.path_helper(empty_id, empty_id, science_image_path=science)
     with pytest.raises(ValueError, match="truth matching"):
         instance.run_match_truth()
+
+
+@pytest.mark.parametrize(
+    "science,template,expected",
+    [
+        ("dir/science.asdf", "other/template.fits", "science_-_template"),
+        ("science.FITS.GZ", "template.ASDF", "science_-_template"),
+        ("a/same.asdf", "b/same.fits", "same_-_same"),
+        ("with spaces.v1.asdf", "with spaces.v2.fits", "with_spaces.v1_-_with_spaces.v2"),
+        ("x" * 70 + ".asdf", "template.fits", "x" * 70 + "_-_template"),
+    ],
+)
+def test_difference_pattern_from_paths(science, template, expected, tmp_path):
+    assert pipeline.util.difference_pattern_from_paths(science, template, tmp_path) == expected
 
 
 def test_path_identity_cli_uses_explicit_paths(monkeypatch, tmp_path):

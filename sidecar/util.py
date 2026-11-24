@@ -1,4 +1,3 @@
-import hashlib
 import re
 from pathlib import Path
 
@@ -20,17 +19,12 @@ DEFAULT_STAR_MAG_COL = "phot_g_mean_mag"
 def difference_pattern_from_paths(science_path, template_path, base_path=None):
     """Create a stable, filesystem-safe pair identifier without detector metadata.
 
-    Relative paths are resolved against ``base_path``. The path hash distinguishes
-    inputs with the same basename in different directories.
+    The identifier uses input basenames without ASDF or FITS extensions; directory
+    names and ``base_path`` do not affect it.
     """
     def identifier(path):
-        path = Path(path)
-        if not path.is_absolute():
-            path = Path(base_path or ".") / path
-        path = path.resolve()
-        name = re.sub(r"[^A-Za-z0-9._-]", "_", path.name)
-        digest = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
-        return f"{name[:55]}_{digest}"
+        name = re.sub(r"(?i)(?:\.fits(?:\.gz)?|\.asdf)$", "", Path(path).name)
+        return re.sub(r"[^A-Za-z0-9._-]", "_", name)
 
     return f"{identifier(science_path)}_-_{identifier(template_path)}"
 

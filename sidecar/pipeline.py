@@ -1181,7 +1181,7 @@ def main():
     parser.add_argument(
         "--path-identity",
         action="store_true",
-        help="Identify an explicit science/template pair by paths instead of detector metadata. "
+        help="Identify an explicit science/template pair by filename stems instead of detector metadata. "
         "Requires both paths; truth matching and database saving are unsupported.",
     )
     parser.add_argument(
