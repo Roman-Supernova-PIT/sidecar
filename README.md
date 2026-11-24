@@ -59,6 +59,14 @@ image_path=/dvs_ro/cfs/cdirs/lsst/shared/external/roman-desc-sims/Roman_data/Rom
 python sidecar/pipeline.py --image-collection ou2024 --science-path ${image_path} --output-dir /dia_out_dir
 ```
 
+For an explicit pair of paths, `--path-identity` avoids parsing detector identifiers from
+the filenames. Supply both `--science-path` and `--template-path` and an image collection
+that supports those files. Product names use the input filenames and hashes of their resolved
+paths; moving an input therefore changes the product name. Detector-based naming remains the
+default. Truth matching and database saving are not supported in this mode. This option only
+changes identification and naming: the image reader, PSF, and subtraction must still support
+the inputs. In particular, Roman L3 skycell mosaics are not yet supported by `manual_rdm`.
+
 Nov 2025 example
 ```
 python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2024 --image-process load_ou2024_image --observation-id 36846 --sca 15 --band H158 --output-dir /dia_out_dir

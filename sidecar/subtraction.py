@@ -608,6 +608,7 @@ class Pipeline:
         resample_method="bilinear",
         sfft_kwargs=None,
         pre_smooth_sigma=None,
+        diff_pattern=None,
     ):
         """Subtraction pipeline object.  Initialize and then run to produce subtracted image.
 
@@ -649,6 +650,9 @@ class Pipeline:
             phases differ at the pixel level in a way no single convolution kernel can model; smoothing removes
             this.  The noise and sky rms are rescaled assuming white input noise (the noise correlation introduced
             is not modelled by the SFFT decorrelation).
+        diff_pattern: str or None
+            Explicit product identifier for path-based inputs. If None, retain
+            the detector-based product naming convention.
         """
         self.pre_smooth_sigma = pre_smooth_sigma
         self.pre_smooth_kernel = _gaussian_smoothing_kernel(pre_smooth_sigma) if pre_smooth_sigma is not None else None
@@ -690,7 +694,7 @@ class Pipeline:
         if template_observation_id is not None:
             self.template_image.observation_id = template_observation_id
 
-        self.diff_pattern = (
+        self.diff_pattern = diff_pattern if diff_pattern is not None else (
             f"{self.science_image.band}_{self.science_image.observation_id}_{self.science_image.sca}"
             f"_-_{self.template_image.band}_{self.template_image.observation_id}_{self.template_image.sca}"
         )

@@ -7,6 +7,7 @@ from pathlib import Path
 import tempfile
 
 import numpy as np
+import pandas as pd
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.table import Table
@@ -153,9 +154,13 @@ class Detection:
         square_pixel_min_snr=DEFAULT_SQUARE_PIXEL_MIN_SNR,
         square_pixel_min_1_over_3=DEFAULT_SQUARE_PIXEL_MIN_1_OVER_3,
         square_pixel_min_3_over_5=DEFAULT_SQUARE_PIXEL_MIN_3_OVER_5,
+        path_identity=False,
+        input_base_path=None,
     ):
         if output_format not in OUTPUT_FORMATS:
             raise ValueError(f"output_format must be one of {OUTPUT_FORMATS}")
+        if path_identity and save_candidates_to_database:
+            raise ValueError("Path-based identity does not support database saving")
         if not np.isfinite(cleaned_score_min_snr) or cleaned_score_min_snr < 0:
             raise ValueError("cleaned_score_min_snr must be finite and nonnegative")
         if cleaned_simple_min_snr is not None and (
@@ -192,6 +197,8 @@ class Detection:
         )
 
         self.image_collection = image_collection
+        self.path_identity = path_identity
+        self.input_base_path = input_base_path
         self.output_format = output_format
         self.data_records = data_records
         self.psf_type = psf_type
@@ -493,8 +500,15 @@ class Detection:
     def path_helper(self, science_id, template_id, science_image_path=None, template_image_path=None):
         file_path = {}
 
-        difference_id = self.__class__.get_difference_id(science_id, template_id)
-        diff_pattern = self.DIFF_PATTERN.format(**difference_id)
+        if self.path_identity:
+            if science_image_path is None or template_image_path is None:
+                raise ValueError("Path-based identity requires both science and template paths")
+            diff_pattern = util.difference_pattern_from_paths(
+                science_image_path, template_image_path, self.input_base_path
+            )
+        else:
+            difference_id = self.__class__.get_difference_id(science_id, template_id)
+            diff_pattern = self.DIFF_PATTERN.format(**difference_id)
         file_path["full_output_dir"] = Path(self.output_dir, diff_pattern)
         os.makedirs(file_path["full_output_dir"], exist_ok=True)
 
@@ -539,8 +553,9 @@ class Detection:
             self.STAR_CATALOG_PREFIX + diff_pattern + ".ecsv",
         )
         # truth retrieval (only used for matching to simulated transients)
-        file_path["science_truth_path"] = self.INPUT_TRUTH_PATTERN.format(**science_id)
-        file_path["template_truth_path"] = self.INPUT_TRUTH_PATTERN.format(**template_id)
+        if not self.path_identity:
+            file_path["science_truth_path"] = self.INPUT_TRUTH_PATTERN.format(**science_id)
+            file_path["template_truth_path"] = self.INPUT_TRUTH_PATTERN.format(**template_id)
         file_path["difference_truth_path"] = Path(
             file_path["full_output_dir"],
             self.DIFF_TRUTH_PREFIX + diff_pattern + ".ecsv",
@@ -719,6 +734,7 @@ class Detection:
             resample_method=self.resample_method,
             sfft_kwargs=self.sfft_kwargs,
             pre_smooth_sigma=self.pre_smooth_sigma,
+            **({"diff_pattern": file_path["full_output_dir"].name} if self.path_identity else {}),
         )
         SNLogger.info("Finished subtraction")
 
@@ -1048,6 +1064,8 @@ class Detection:
             )
 
     def run_match_truth(self):
+        if self.path_identity:
+            raise ValueError("Path-based identity does not support truth matching")
         os.makedirs(self.output_dir, exist_ok=True)
 
         for _, row in self.data_records.iterrows():
@@ -1062,6 +1080,8 @@ class Detection:
             )
 
     def save_candidates_to_database(self):
+        if self.path_identity:
+            raise ValueError("Path-based identity does not support database saving")
         for _, row in self.data_records.iterrows():
             science_band = row["science_band"]
             science_observation_id = row["science_observation_id"]
@@ -1157,6 +1177,12 @@ def main():
         type=str,
         default=None,
         help="Pass a template image by file path.  Optional.  Only used with --science-path.",
+    )
+    parser.add_argument(
+        "--path-identity",
+        action="store_true",
+        help="Identify an explicit science/template pair by paths instead of detector metadata. "
+        "Requires both paths; truth matching and database saving are unsupported.",
     )
     parser.add_argument(
         "--science-observation-id",
@@ -1510,6 +1536,16 @@ def main():
     cfg.parse_args(args)
 
     # Validate consistency
+    if args.path_identity:
+        if not args.science_image_path or not args.template_image_path or args.data_records_path:
+            parser.error("--path-identity requires --science-path and --template-path, without --data-records")
+        if any(value is not None for value in (
+            args.science_observation_id, args.science_sca, args.science_band,
+            args.template_observation_id, args.template_sca, args.template_band,
+        )):
+            parser.error("--path-identity cannot be combined with detector identifiers")
+        if args.match_truth or args.save_candidates_to_database:
+            parser.error("--path-identity does not support truth matching or database saving")
     if args.data_records_path is not None and (
         (args.science_image_path is not None)
         or (args.science_observation_id is not None)
@@ -1540,6 +1576,12 @@ def main():
                 science_sca=data_records["science_sca"],
                 science_band=data_records["science_band"],
             )
+    elif args.path_identity:
+        data_records = pd.DataFrame([{
+            "science_band": None, "science_observation_id": None, "science_sca": None,
+            "template_band": None, "template_observation_id": None, "template_sca": None,
+            "science_image_path": args.science_image_path, "template_image_path": args.template_image_path,
+        }])
     elif args.science_image_path is not None:
         # If the template_image path is not specified, then a template will be searched for.
         data_records = make_data_records_from_image_path(
@@ -1639,6 +1681,8 @@ def main():
             )
             if value is not None
         },
+        path_identity=args.path_identity,
+        input_base_path=args.base_path,
     )
     detection.run_subtractions()
 

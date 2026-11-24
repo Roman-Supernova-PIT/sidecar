@@ -563,6 +563,90 @@ def test_pipeline_output_paths_follow_format(monkeypatch, tmp_path, output_forma
     assert paths["difference_image_path"].suffix == ".fits"
 
 
+def test_path_identity_keeps_product_names_consistent_without_detector_ids(monkeypatch, tmp_path):
+    class TestConfig:
+        def value(self, key, default=None):
+            if key == "system.ou24.tds_base":
+                raise ValueError("not configured")
+            return default
+
+    class Image:
+        def __init__(self, path):
+            self.path = path
+
+        @property
+        def band(self):
+            raise AssertionError("Detector metadata must not be accessed for product naming")
+
+    class Collection:
+        def get_image(self, path):
+            return Image(path)
+
+    monkeypatch.setattr(pipeline.Config, "get", lambda: TestConfig())
+    collection = Collection()
+    instance = Detection(
+        collection, [], temp_dir=tmp_path, output_dir=tmp_path, path_identity=True, input_base_path=tmp_path
+    )
+    science = "one/skycell.asdf"
+    template = "two/skycell.asdf"
+    empty_id = {"band": None, "observation_id": None, "sca": None}
+    paths = instance.path_helper(empty_id, empty_id, science_image_path=science, template_image_path=template)
+    subtraction = pipeline.subtraction.Pipeline(
+        collection, None, None, None, None, None, None,
+        science_image_path=science, template_image_path=template,
+        out_dir=paths["full_output_dir"], diff_pattern=paths["full_output_dir"].name,
+    )
+    assert subtraction.diff_path == paths["difference_image_path"]
+    first, second = subtraction.diff_pattern.split("_-_")
+    assert first != second
+    assert subtraction.diff_pattern == pipeline.util.difference_pattern_from_paths(
+        tmp_path / science, tmp_path / template
+    )
+    with pytest.raises(ValueError, match="both science and template"):
+        instance.path_helper(empty_id, empty_id, science_image_path=science)
+    with pytest.raises(ValueError, match="truth matching"):
+        instance.run_match_truth()
+
+
+def test_path_identity_cli_uses_explicit_paths(monkeypatch, tmp_path):
+    class TestConfig:
+        def value(self, key, default=None):
+            if key == "system.ou24.tds_base":
+                raise ValueError("not configured")
+            return default
+
+        def augment_argparse(self, parser):
+            pass
+
+        def parse_args(self, args):
+            pass
+
+    monkeypatch.setattr(pipeline.Config, "get", lambda *args, **kwargs: TestConfig())
+    monkeypatch.setattr(pipeline.ImageCollection, "get_collection", lambda **kwargs: None)
+    monkeypatch.setattr(
+        pipeline, "make_data_records_from_image_path", lambda **kwargs: pytest.fail("Parsed a detector filename")
+    )
+    results = []
+    monkeypatch.setattr(Detection, "run_subtractions", lambda self: results.append(self))
+    args = [
+        "pipeline", "--path-identity", "--science-path", "science.asdf", "--template-path", "template.asdf",
+        "--base-path", str(tmp_path), "--temp-dir", str(tmp_path), "--output-dir", str(tmp_path),
+    ]
+    monkeypatch.setattr(sys, "argv", args)
+    pipeline.main()
+    detection = results[0]
+    row = detection.data_records.iloc[0]
+    assert detection.path_identity
+    assert row["science_observation_id"] is None
+    assert row["science_sca"] is None
+    assert row["science_image_path"] == "science.asdf"
+    assert row["template_image_path"] == "template.asdf"
+
+    monkeypatch.setattr(sys, "argv", args + ["--match-truth"])
+    with pytest.raises(SystemExit):
+        pipeline.main()
+
+
 @pytest.mark.parametrize("output_format", ["ecsv", "parquet"])
 @pytest.mark.parametrize(
     "radius,options",

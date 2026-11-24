@@ -1,3 +1,4 @@
+import hashlib
 import re
 from pathlib import Path
 
@@ -14,6 +15,24 @@ from snappl.dbclient import SNPITDBClient
 from snappl.imagecollection import ImageCollection
 
 DEFAULT_STAR_MAG_COL = "phot_g_mean_mag"
+
+
+def difference_pattern_from_paths(science_path, template_path, base_path=None):
+    """Create a stable, filesystem-safe pair identifier without detector metadata.
+
+    Relative paths are resolved against ``base_path``. The path hash distinguishes
+    inputs with the same basename in different directories.
+    """
+    def identifier(path):
+        path = Path(path)
+        if not path.is_absolute():
+            path = Path(base_path or ".") / path
+        path = path.resolve()
+        name = re.sub(r"[^A-Za-z0-9._-]", "_", path.name)
+        digest = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
+        return f"{name[:55]}_{digest}"
+
+    return f"{identifier(science_path)}_-_{identifier(template_path)}"
 
 
 def star_rejection_radii(mags, match_radius, ref_mag=None, scale=0.2, max_radius=None):
