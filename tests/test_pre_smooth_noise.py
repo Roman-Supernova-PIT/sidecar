@@ -1,6 +1,9 @@
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
+from sidecar import pipeline
 from sidecar.subtraction import _filter_variance_with_kernel, _gaussian_smoothing_kernel
 
 
@@ -40,3 +43,44 @@ def test_filter_variance_uses_squared_weights_and_reflect_edges():
             )
 
     np.testing.assert_allclose(_filter_variance_with_kernel(variance, kernel), expected)
+
+
+@pytest.mark.parametrize("reuse", [False, True])
+def test_subtraction_completion_log_matches_execution(monkeypatch, tmp_path, reuse):
+    class TestConfig:
+        def value(self, key, default=None):
+            return default if default is not None else ""
+
+    messages = []
+    calls = []
+    monkeypatch.setattr(pipeline.Config, "get", lambda: TestConfig())
+    monkeypatch.setattr(pipeline.SNLogger, "info", messages.append)
+    monkeypatch.setattr(
+        pipeline.subtraction, "Pipeline",
+        lambda **kwargs: SimpleNamespace(run=lambda: calls.append("run"), detection_kwargs={}),
+    )
+    paths = {key: tmp_path / key for key in (
+        "full_output_dir", "science_image_path", "template_image_path", "difference_image_path"
+    )}
+    monkeypatch.setattr(pipeline.Detection, "path_helper", lambda *args, **kwargs: paths)
+
+    def stop_after_subtraction(path):
+        raise RuntimeError("stopped after subtraction")
+
+    monkeypatch.setattr(pipeline.Detection, "load_product_image", staticmethod(stop_after_subtraction))
+    detection = pipeline.Detection(
+        image_collection=None, data_records=[], temp_dir=tmp_path, output_dir=tmp_path,
+        detection_kwargs={"gaia_mag_limit": None}, backend4subtract="Numpy",
+    )
+    with pytest.raises(RuntimeError, match="stopped after subtraction"):
+        detection.run_one_subtraction(
+            SimpleNamespace(get_image=lambda path: object()),
+            "F062", 1, 1, "F062", 2, 1,
+            reject_known_stars=False, assume_subtraction_has_been_run=reuse,
+        )
+    assert calls == ([] if reuse else ["run"])
+    assert ("Finished subtraction" in messages) is not reuse
+    assert ("Skipping subtraction; using existing products" in messages) is reuse
+    assert messages.index("Finding and measuring sources") > messages.index(
+        "Skipping subtraction; using existing products" if reuse else "Finished subtraction"
+    )

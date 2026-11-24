@@ -77,6 +77,15 @@ their bilinear interpolation support is covered. Missing data or noise also
 counts as no coverage. Interpolated values are still used internally by SFFT;
 the mask does not model convolution leakage near coverage boundaries.
 
+Subtraction runs log per-stage wall-clock timings at INFO level under
+`Subtraction timing [pair]`, including the SFFT kernel fit and subtraction
+(including any compilation), resampling, score and variance calculation,
+product writing, and the total for `subtraction.Pipeline.run()`. The total
+does not include input collection setup, Gaia retrieval, or subsequent
+candidate detection. GPU work can be asynchronous, so individual GPU stage
+times are host-side elapsed times rather than synchronized device timings.
+No timings are emitted when an existing subtraction is reused.
+
 Nov 2025 example
 ```
 python sidecar/pipeline.py --image-collection snpitdb --image-provenance-tag ou2024 --image-process load_ou2024_image --observation-id 36846 --sca 15 --band H158 --output-dir /dia_out_dir

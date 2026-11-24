@@ -736,9 +736,6 @@ class Detection:
             pre_smooth_sigma=self.pre_smooth_sigma,
             **({"diff_pattern": file_path["full_output_dir"].name} if self.path_identity else {}),
         )
-        SNLogger.info("Finished subtraction")
-
-        SNLogger.info("Finding and measuring sources")
         # One star catalog serves both source selection for SFFT and rejecting candidates.
         gaia_mag_limit = self.detection_kwargs.get("gaia_mag_limit", subtraction.DEFAULT_GAIA_MAG_LIMIT)
         stars = None
@@ -755,7 +752,11 @@ class Detection:
 
         if not assume_subtraction_has_been_run:
             subtract.run()
+            SNLogger.info("Finished subtraction")
+        else:
+            SNLogger.info("Skipping subtraction; using existing products")
 
+        SNLogger.info("Finding and measuring sources")
         # Load files
         # Load from image collection
         science_image = self.science_image = image_collection.get_image(path=file_path["science_image_path"])

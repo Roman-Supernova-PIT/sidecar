@@ -1,5 +1,6 @@
 import inspect
 import os
+import time
 import warnings
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from roman_datamodels import dqflags
 
 from sfft.SpaceSFFTFlow import SpaceSFFT_Flow
 from sidecar.star_retrieval import retrieve_gaia_stars_for_image
+from snappl.logger import SNLogger
 from snappl.psf import PSF
 
 # dqflags.pixel.DO_NOT_USE + dqflags.pixel.NONLINEAR + dqflags.pixel.HOT,
@@ -784,7 +786,18 @@ class Pipeline:
         sfftifier.PixA_resamp_object = resampled
         sfftifier.BlankMask = resampled == 0.0
 
+    def _log_timing(self, stage, started):
+        now = time.perf_counter()
+        SNLogger.info(f"Subtraction timing [{self.diff_pattern}] {stage}: {now - started:.3f} s")
+        return now
+
     def run(self):
+        started = time.perf_counter()
+        SNLogger.info(
+            f"Subtraction timing [{self.diff_pattern}] starting: backend={self.backend4subtract}, "
+            f"resample={self.resample_method}, cross_convolve={self.cross_convolve}, sfft_kwargs={self.sfft_kwargs}"
+        )
+        stage_started = time.perf_counter()
         os.makedirs(self.out_dir, exist_ok=True)
 
         science_psf = get_psf_kernel(self.science_image, psf_type=self.psf_type, psf_size=self.psf_size)
@@ -794,6 +807,7 @@ class Pipeline:
             fits.writeto(self.science_psf_path, science_psf, overwrite=True)
             fits.writeto(self.template_psf_path, template_psf, overwrite=True)
 
+        stage_started = self._log_timing("PSFs", stage_started)
         science_no_coverage = _image_no_coverage(self.science_image)
         template_no_coverage = _image_no_coverage(self.template_image)
 
@@ -820,6 +834,7 @@ class Pipeline:
         )
         template_noise = np.asarray(template_noise, dtype=np.float32)
 
+        stage_started = self._log_timing("coverage and interpolation", stage_started)
         # sky subtraction and source detection
         science_skysubim_data, science_detmask_data, science_skyrms, _, _ = sky_subtract_and_detect(
             self.science_image, coverage_mask=science_no_coverage, **self.detection_kwargs
@@ -828,6 +843,7 @@ class Pipeline:
             self.template_image, coverage_mask=template_no_coverage, **self.detection_kwargs
         )
 
+        stage_started = self._log_timing("sky subtraction and detection masks", stage_started)
         # SFFT needs FITS headers with a WCS and with NAXIS[12]
         # "header" here just means a dictionary where the keys are FITS keywords
         # and the values are the corresponding values.  There's nothing otherwise "FITS" about this.
@@ -869,6 +885,7 @@ class Pipeline:
             science_skyrms = science_skyrms * noise_scale
             template_skyrms = template_skyrms * noise_scale
 
+        stage_started = self._log_timing("WCS, debug inputs and smoothing", stage_started)
         sfftifier = SpaceSFFT_Flow(
             science_hdr,
             template_hdr,
@@ -888,6 +905,7 @@ class Pipeline:
             **self.sfft_kwargs,
         )
 
+        stage_started = self._log_timing("SFFT initialization", stage_started)
         sfftifier.resample_image_mask_psf()
         if self.resample_method != "bilinear":
             self._spline_resample_template(sfftifier, science_hdr, template_hdr, template_skysubim_data)
@@ -898,12 +916,16 @@ class Pipeline:
             if template_no_coverage is not None:
                 no_coverage |= _project_no_coverage(template_no_coverage, template_hdr, science_hdr)
             sfftifier.BlankMask |= sfftifier.op.asarray(sfftifier.op.transpose_if_needed(no_coverage))
+        stage_started = self._log_timing("resampling and coverage", stage_started)
         if self.cross_convolve:
             sfftifier.cross_convolve()
+            stage_started = self._log_timing("cross convolution", stage_started)
 
         sfftifier.sfft_subtract()
+        stage_started = self._log_timing("SFFT kernel fit and subtraction", stage_started)
         sfftifier.find_decorrelation()
 
+        stage_started = self._log_timing("decorrelation kernel", stage_started)
         decorr_diff = sfftifier.apply_decorrelation(sfftifier.PixA_DIFF)
 
         if self.cross_convolve:
@@ -911,14 +933,17 @@ class Pipeline:
         else:
             decorr_psf = sfftifier.apply_decorrelation(sfftifier.PSF_target)
 
+        stage_started = self._log_timing("decorrelated image and PSF", stage_started)
         # create_score_image has to come after find_decorrelation
         # because the create_score_image uses FKDECO_GPU
         # which is calculated in find_decorrelation
         # and saved as an attribute of instance
         score_image = sfftifier.create_score_image()
 
+        stage_started = self._log_timing("score image", stage_started)
         diff = sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_DIFF))
         diff_noise = np.sqrt(sfftifier.create_variance_image())
+        stage_started = self._log_timing("difference variance", stage_started)
         # I conceptually want to do the following, but I need resampled template flags and mask to do it.
         # For now, just use the science image flags and mask.
         # diff_flags = self.template_image.flags | self.science_image.flags
@@ -936,7 +961,6 @@ class Pipeline:
             mask=diff_interpolated_mask,
             coverage_mask=no_coverage,
         )
-
         _save_products_as_fits(
             path=self.score_image_path,
             hdr=sfftifier.hdr_target,
@@ -946,6 +970,8 @@ class Pipeline:
             mask=diff_interpolated_mask,
             coverage_mask=no_coverage,
         )
+        self._log_timing("product writing", stage_started)
+        self._log_timing("total", started)
         fits.writeto(self.decorr_psf_path, decorr_psf, header=None, overwrite=True)
 
         _save_products_as_fits(
