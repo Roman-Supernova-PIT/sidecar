@@ -4,13 +4,12 @@ Works on the output of `sidecar.match_catalogs.match_catalogs_nested` (a nested-
 frame with one row per object and the per-subtraction rows in ``sources``).  The
 per-detection flag cuts are applied earlier, as ``--row-filter`` options of
 `sidecar.match_catalogs`; the cuts here need all of an object's detections.
-The nested input is Parquet; the optional reference-star catalog and the selected
-object output can be ECSV or Parquet.  Output defaults to Parquet.
+The nested input and selected object output are Parquet, including the ``sources``
+light curves. The optional reference-star catalog can be ECSV or Parquet.
 
 Example
 -------
     python -m sidecar.candidates matched.parquet -o candidates.parquet --region-file candidates.reg
-    python -m sidecar.candidates matched.parquet -o candidates.ecsv --catalog-output-format ecsv
 
 Cuts (all configurable), on median values over an object's sources:
 
@@ -35,7 +34,6 @@ import numpy as np
 import pandas as pd
 from scipy.spatial import cKDTree
 
-from sidecar.catalog_io import OUTPUT_FORMATS, write_catalog
 from snappl.logger import SNLogger
 
 DEFAULT_NOISE = 0.21  # empirical scatter of the diff r3 flux on empty sky in program 01062
@@ -202,16 +200,15 @@ def select_candidates(
 
 
 def write_candidates(candidates, path, region_file=None, output_format="parquet"):
-    """Write object-level columns to Parquet or ECSV, and optionally a ds9 region file.
+    """Write the nested candidates to Parquet and optionally a ds9 region file.
 
     Regions are 1" circles, green for brightening (z > 0) and red for fading, labelled with z.
     """
-    from astropy.table import Table
+    from sidecar.match_catalogs import write_nested_catalog
 
-    flat_columns = [c for c in candidates.columns if c != "sources"]
-    table = Table.from_pandas(pd.DataFrame(candidates[flat_columns]).reset_index())
-    table.meta["noise"] = candidates.attrs.get("noise")
-    write_catalog(table, path, overwrite=True, output_format=output_format)
+    if output_format != "parquet" or Path(path).suffix.lower() not in (".parquet", ".pq"):
+        raise ValueError("Nested candidate catalogs must be written as Parquet (.parquet or .pq)")
+    write_nested_catalog(candidates, path)
 
     if region_file is not None:
         with open(region_file, "w") as f:
@@ -219,9 +216,10 @@ def write_candidates(candidates, path, region_file=None, output_format="parquet"
             for _, row in candidates.sort_values("snr_med", key=abs, ascending=False).iterrows():
                 color = "green" if row["snr_med"] > 0 else "red"
                 f.write(
-                    f'circle({row["ra"]:.7f},{row["dec"]:.7f},1") # color={color} text={{snr_med={row["snr_med"]:.1f}}}\n'
+                    f'circle({row["ra"]:.7f},{row["dec"]:.7f},1") '
+                    f'# color={color} text={{snr_med={row["snr_med"]:.1f}}}\n'
                 )
-    return table
+    return candidates
 
 
 def main():
@@ -232,7 +230,7 @@ def main():
     parser.add_argument("-o", "--output", required=True, help="Output catalog of selected objects")
     parser.add_argument(
         "--catalog-output-format",
-        choices=OUTPUT_FORMATS,
+        choices=("parquet",),
         default="parquet",
         help="Catalog output format (default: %(default)s).",
     )
@@ -274,9 +272,8 @@ def main():
     )
     args = parser.parse_args()
 
-    allowed_suffixes = (".parquet", ".pq") if args.catalog_output_format == "parquet" else (".ecsv",)
-    if Path(args.output).suffix.lower() not in allowed_suffixes:
-        parser.error("--output extension must match --catalog-output-format")
+    if Path(args.output).suffix.lower() not in (".parquet", ".pq"):
+        parser.error("nested candidate output must use a .parquet or .pq extension")
 
     from sidecar.match_catalogs import read_nested_catalog
 

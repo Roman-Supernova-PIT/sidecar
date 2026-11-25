@@ -572,7 +572,8 @@ def write_ds9_regions_from_catalog(
     astropy.table.Table
         Filtered `astropy.table.Table` containing only rows with
         `peak_value` greater than `peak_value_threshold`. The returned table
-        preserves the original catalog columns in the `catalog_path` file.
+        preserves the original catalog columns for flat catalogs; for nested
+        Parquet catalogs it contains only top-level columns.
 
     Notes
     -----
@@ -580,7 +581,22 @@ def write_ds9_regions_from_catalog(
     or if peak_value_threshold is None,
     then all sources are written to the DS9 region file.
     """
-    catalog = read_catalog(catalog_path)
+    path = Path(catalog_path)
+    if path.suffix.lower() in (".parquet", ".pq"):
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        schema = pq.read_schema(path)
+        nested_columns = [field.name for field in schema if pa.types.is_struct(field.type)]
+        if nested_columns:
+            from astropy.table import Table
+
+            columns = [field.name for field in schema if field.name not in nested_columns]
+            catalog = Table.from_pandas(pq.read_table(path, columns=columns).to_pandas(ignore_metadata=True))
+        else:
+            catalog = read_catalog(path)
+    else:
+        catalog = read_catalog(path)
 
     # Normalize the CLI-style "none" string once so the rest only checks for None.
     # if peak_value_column is already None, then this preserves that (by doing nothing).

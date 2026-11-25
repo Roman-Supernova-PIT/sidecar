@@ -183,13 +183,12 @@ sidecar/examples/perlmutter/test_sidecar_asdf_manualrdm.sh
   `--no-reject-square-pixel` does not disable the circular cut, and vice versa. The square cut runs after
   the circular cut, and its experimental thresholds require broader validation.
 - Standalone star rejection accepts ECSV or Parquet for both detections and reference stars:
-  `python -m sidecar.reject_stars detections.parquet stars.ecsv`. Both this command and
-  `sidecar.pipeline` accept `--catalog-output-format parquet|ecsv|both` (default `parquet`) for catalog
-  outputs. `both` writes ECSV and a Parquet companion with the same stem; the ECSV path is
-  the primary path. For standalone star rejection, `--output` must have the `.parquet` extension
-  for `parquet`, or `.ecsv` for `ecsv` and `both`. Without `--output`, the name is
-  `cleaned_<input stem>` with the appropriate extension. Pipeline truth, detection, star, cleaned,
-  and matching catalogs use the selected format; FITS images are unaffected.
+  `python -m sidecar.reject_stars detections.parquet stars.ecsv`. Its output preserves the input
+  format, including nested Parquet light curves; without `--output` it is named
+  `cleaned_<input filename>`. The output extension and any `--catalog-output-format` must match
+  the input format. `sidecar.pipeline` accepts `--catalog-output-format parquet|ecsv` (default
+  `parquet`) for catalog outputs. Pipeline truth, detection, star, cleaned, and matching catalogs
+  use the selected format; FITS images are unaffected.
 - Truth Retrieval: Retrieve truth tables of the science image and template image.
 - Truth Matching: Match the truth information to the detected sources for evaluating efficiency. Match the detected sources to truth for evaluating purity.
 - Evaluation: Evaluate efficiency and purity.
@@ -198,6 +197,10 @@ sidecar/examples/perlmutter/test_sidecar_asdf_manualrdm.sh
 
 To cross-match sources across detection catalogs on `ra` and `dec`, use `sidecar.match_catalogs`.
 Entries must satisfy `template_in_bounds == True` by default. Additional boolean and numeric comparison cuts (`==`, `!=`, `>`, `<`, `>=`, `<=`) can be supplied with `--row-filter`.
+
+`sidecar.candidates` reads a nested Parquet catalog from `--nested-output` and writes the selected
+objects, statistics, and their full `sources` light curves as nested Parquet. Its optional DS9
+region file remains a separate `.reg` file.
 
 ### Example: Multi-Filter Matching
 

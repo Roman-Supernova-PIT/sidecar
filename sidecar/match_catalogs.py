@@ -110,18 +110,18 @@ def _detectors_from_path(path):
     return None
 
 
-def _table_detector(table):
-    """Per-row detector IDs from a 'detector' column or table.meta['detector'] (-1 if unknown)."""
-    if "detector" in table.colnames:
-        return np.asarray(table["detector"], int)
-    return np.full(len(table), int(table.meta.get("detector", -1)), dtype=int)
+def _table_detector(table, column="detector"):
+    """Per-row detector IDs from a column or metadata (-1 if unknown)."""
+    if column in table.colnames:
+        return np.ma.filled(np.ma.asarray(table[column], dtype=int), -1)
+    return np.full(len(table), int(table.meta.get(column, -1)), dtype=int)
 
 
 def _count_distinct_positions(xy, detector, tolerance, stop_at=None):
     """Count distinct (detector, x, y) positions.
 
     Detections on the same detector within `tolerance` pixels of an already-seen
-    position belong to that position, so repeats at the same position (e.g.
+    position belong to that position, so repeats at the same position (e.g.,
     other filters) count once.  If `stop_at` is given, counting stops early
     once that many positions are found.
     """
@@ -229,11 +229,19 @@ def _group_detections(filtered_tables, radius, min_matches, min_pixel_separation
         detector = (
             np.concatenate([_table_detector(t) for t in filtered_tables]) if filtered_tables else np.array([], int)
         )
+        template_detector = (
+            np.concatenate([_table_detector(t, "template_detector") for t in filtered_tables])
+            if filtered_tables else np.array([], int)
+        )
+        if min_distinct_template_positions > 1 and np.any(template_detector < 0):
+            raise ValueError("template_detector column or metadata is required for distinct template positions")
         template_xy = (
             np.column_stack(
                 [
-                    np.concatenate([np.asarray(t["template_x"], float) for t in filtered_tables]),
-                    np.concatenate([np.asarray(t["template_y"], float) for t in filtered_tables]),
+                    np.concatenate([np.ma.filled(np.ma.asarray(t["template_x"], dtype=float), np.nan)
+                                    for t in filtered_tables]),
+                    np.concatenate([np.ma.filled(np.ma.asarray(t["template_y"], dtype=float), np.nan)
+                                    for t in filtered_tables]),
                 ]
             )
             if filtered_tables
@@ -264,8 +272,10 @@ def _group_detections(filtered_tables, radius, min_matches, min_pixel_separation
             n_positions = _count_distinct_positions(
                 xy[members], detector[members], min_pixel_separation, min_distinct_positions
             )
+            valid_template = members[np.all(np.isfinite(template_xy[members]), axis=1)]
             n_template_positions = _count_distinct_positions(
-                template_xy[members], detector[members], min_pixel_separation, min_distinct_template_positions
+                template_xy[valid_template], template_detector[valid_template], min_pixel_separation,
+                min_distinct_template_positions,
             )
             if n_positions < min_distinct_positions or n_template_positions < min_distinct_template_positions:
                 keep[g] = False
@@ -507,7 +517,10 @@ def match_catalog_files(
     for p, table in zip(input_paths, tables):
         table.meta.update(parse_catalog_path(p))
         # Add detector numbers from the file name if not already in the table.
-        detector, template_detector = _detectors_from_path(p)
+        detectors = _detectors_from_path(p)
+        if detectors is None:
+            continue
+        detector, template_detector = detectors
         if detector is not None and "detector" not in table.colnames:
             table.meta["detector"] = detector
         if template_detector is not None and "template_detector" not in table.colnames:

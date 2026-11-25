@@ -2,14 +2,15 @@ import sys
 
 import astropy.units as u
 import numpy as np
+import pandas as pd
 import pytest
 from astropy.table import Table
 
 pytest.importorskip("nested_pandas")
 
 from sidecar.candidates import add_object_statistics, main, select_candidates, write_candidates  # noqa: E402
-from sidecar.catalog_io import read_catalog, write_catalog  # noqa: E402
-from sidecar.match_catalogs import match_catalogs_nested, parse_catalog_path, write_nested_catalog  # noqa: E402
+from sidecar.catalog_io import write_catalog  # noqa: E402
+from sidecar.match_catalogs import match_catalogs_nested, parse_catalog_path, read_nested_catalog, write_nested_catalog  # noqa: E402
 
 BANDS = ["F062", "F087", "F106", "F129", "F158"]
 
@@ -80,38 +81,39 @@ def test_cut_parameters(nested):
     assert len(select_candidates(nested, noise=0.2, min_frac_change=0.0)) == 2
 
 
-@pytest.mark.parametrize("output_format", ["ecsv", "parquet"])
 @pytest.mark.parametrize("empty", [False, True])
-def test_write_candidates(nested, tmp_path, output_format, empty):
+def test_write_candidates(nested, tmp_path, empty):
     selected = select_candidates(nested, noise=0.2)
     if empty:
         selected = selected.iloc[:0]
-    path = tmp_path / f"c.{output_format}"
-    table = write_candidates(selected, path, tmp_path / "c.reg", output_format=output_format)
-    restored = read_catalog(path)
-    assert len(table) == len(restored) == (0 if empty else 1)
-    assert "sources" not in restored.colnames
-    assert restored.meta["noise"] == pytest.approx(0.2)
+    path = tmp_path / "c.parquet"
+    result = write_candidates(selected, path, tmp_path / "c.reg")
+    restored = read_nested_catalog(path)
+    assert len(result) == len(restored) == (0 if empty else 1)
+    assert restored.index.tolist() == selected.index.tolist()
+    np.testing.assert_allclose(restored["snr_med"], selected["snr_med"])
+    actual_sources = restored["sources"].nest.to_flat()
+    expected_sources = selected["sources"].nest.to_flat()
+    assert actual_sources.index.tolist() == expected_sources.index.tolist()
+    pd.testing.assert_frame_equal(actual_sources.reset_index(drop=True), expected_sources.reset_index(drop=True))
     assert (tmp_path / "c.reg").read_text().count("circle(") == len(selected)
 
 
 @pytest.mark.parametrize("star_format", ["ecsv", "parquet"])
-@pytest.mark.parametrize("output_format", ["ecsv", "parquet"])
-def test_cli_catalog_formats(nested, tmp_path, monkeypatch, star_format, output_format):
+def test_cli_catalog_formats(nested, tmp_path, monkeypatch, star_format):
     nested_path = tmp_path / "nested.parquet"
     write_nested_catalog(nested, nested_path)
     star_path = tmp_path / f"stars.{star_format}"
     stars = Table({"ra": [10.0, 14.0], "dec": [0.0, 0.0], "phot_g_mean_mag": [20.0, 20.0]})
     write_catalog(stars, star_path, output_format=star_format)
-    output = tmp_path / f"c.{output_format}"
+    output = tmp_path / "c.parquet"
     args = ["candidates", str(nested_path), "-o", str(output), "--star-catalog", str(star_path), "--noise", "0.2"]
-    if output_format == "ecsv":
-        args += ["--catalog-output-format", "ecsv"]
     monkeypatch.setattr(sys, "argv", args)
     main()
-    result = read_catalog(output)
+    result = read_nested_catalog(output)
     assert len(result) == 1
-    assert result["ra"][0] == pytest.approx(14.0 + 10 / 3600)
+    assert result["ra"].iloc[0] == pytest.approx(14.0 + 10 / 3600)
+    assert len(result["sources"].nest.to_flat()) == 5
 
 
 def test_cli_min_abs_snr(nested, tmp_path, monkeypatch):
@@ -122,7 +124,9 @@ def test_cli_min_abs_snr(nested, tmp_path, monkeypatch):
         sys, "argv", ["candidates", str(nested_path), "-o", str(output), "--noise", "0.2", "--min-abs-snr", "11"]
     )
     main()
-    assert len(read_catalog(output)) == 0
+    result = read_nested_catalog(output)
+    assert len(result) == 0
+    assert "sources" in result.columns
 
 
 @pytest.mark.parametrize("output,format_option", [("c.ecsv", []), ("c.parquet", ["--catalog-output-format", "ecsv"])])

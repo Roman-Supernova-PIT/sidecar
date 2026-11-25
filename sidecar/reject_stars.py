@@ -1,7 +1,10 @@
 import argparse
 from pathlib import Path
 
-from sidecar.catalog_io import OUTPUT_FORMATS, read_catalog, write_catalog
+import numpy as np
+from astropy.table import Table
+
+from sidecar.catalog_io import OUTPUT_FORMATS, SUFFIXES, read_catalog, write_catalog
 from sidecar.star_retrieval import read_star_catalog
 from sidecar.util import DEFAULT_STAR_MAG_COL, reject_stars
 from snappl.logger import SNLogger
@@ -20,13 +23,13 @@ def main():
         "--output",
         type=str,
         default=None,
-        help="Output catalog path. Default: cleaned_<catalog stem> with the appropriate extension.",
+        help="Output catalog path. Default: cleaned_<input filename>.",
     )
     parser.add_argument(
         "--catalog-output-format",
         choices=OUTPUT_FORMATS,
-        default="parquet",
-        help="Output format (default: %(default)s)",
+        default=None,
+        help="Output format; must match the input catalog format.",
     )
     parser.add_argument("--match-radius", type=float, default=5.0, help="Base rejection radius in arcsec")
     parser.add_argument("--ref-mag", type=float, default=None, help="Stars brighter than this get a larger radius")
@@ -41,13 +44,34 @@ def main():
     args = parser.parse_args()
 
     catalog_path = Path(args.catalog)
-    suffix = ".parquet" if args.catalog_output_format == "parquet" else ".ecsv"
-    output = Path(args.output) if args.output else catalog_path.with_name("cleaned_" + catalog_path.stem + suffix)
-    allowed_suffixes = (".parquet", ".pq") if args.catalog_output_format == "parquet" else (".ecsv",)
+    input_suffix = catalog_path.suffix.lower()
+    if input_suffix in SUFFIXES["parquet"]:
+        input_format = "parquet"
+        allowed_suffixes = SUFFIXES["parquet"]
+    elif input_suffix == ".ecsv":
+        input_format = "ecsv"
+        allowed_suffixes = (".ecsv",)
+    else:
+        parser.error("input catalog must have an .ecsv, .parquet, or .pq extension")
+    if args.catalog_output_format is not None and args.catalog_output_format != input_format:
+        parser.error("--catalog-output-format must match the input catalog format")
+    output = Path(args.output) if args.output else catalog_path.with_name("cleaned_" + catalog_path.name)
     if output.suffix.lower() not in allowed_suffixes:
-        parser.error("--output extension must match --catalog-output-format")
+        parser.error("--output extension must match the input catalog format")
 
-    detection = read_catalog(catalog_path)
+    parquet = None
+    if input_format == "parquet":
+        import pyarrow.parquet as pq
+
+        parquet = pq.read_table(catalog_path)
+        coordinates = parquet.select(list(dict.fromkeys((args.ra_column, args.dec_column))))
+        detection = Table.from_pandas(coordinates.to_pandas(ignore_metadata=True))
+        row_column = "_sidecar_row_index"
+        while row_column in detection.colnames:
+            row_column += "_"
+        detection[row_column] = np.arange(len(detection))
+    else:
+        detection = read_catalog(catalog_path)
     stars = read_star_catalog(args.star_catalog)
     cleaned = reject_stars(
         detection,
@@ -63,7 +87,10 @@ def main():
         scale=args.scale,
         max_radius=args.max_radius,
     )
-    write_catalog(cleaned, output, overwrite=True, output_format=args.catalog_output_format)
+    if parquet is not None:
+        pq.write_table(parquet.take(np.asarray(cleaned[row_column], dtype=np.int64)), output)
+    else:
+        write_catalog(cleaned, output, overwrite=True, output_format=input_format)
     SNLogger.info(f"Kept {len(cleaned)} of {len(detection)} sources; wrote {output}")
 
 
