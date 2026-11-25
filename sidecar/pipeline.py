@@ -1509,6 +1509,12 @@ def main():
     )
     # The default values for these --sfft... options is None, so that we can detect if they are specified.
     # If unspecified, the SFFT defaults will be used.
+    parser.add_argument(
+        "--sfft-sci-is-target",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="SFFT: the science image is the target image.",
+    )
     parser.add_argument("--sfft-ker-hw", type=int, default=None, help="SFFT kernel half-width (GKerHW).")
     parser.add_argument("--sfft-ker-poly-order", type=int, default=None, help="SFFT spatial kernel polynomial order.")
     parser.add_argument(
@@ -1656,6 +1662,7 @@ def main():
         sfft_kwargs={
             key: value
             for key, value in (
+                ("sci_is_target", args.sfft_sci_is_target),
                 ("GKerHW", args.sfft_ker_hw),
                 ("KerPolyOrder", args.sfft_ker_poly_order),
                 ("BGPolyOrder", args.sfft_bg_poly_order),
