@@ -185,6 +185,19 @@ sidecar/examples/perlmutter/test_sidecar_asdf_manualrdm.sh
   `--no-reject-square-pixel` does not disable the circular cut, and vice versa. The square cut runs after
   the circular cut, and its experimental thresholds require broader validation. Existing detection
   catalogs lack the new peak-in-3x3 measurement and must be regenerated before applying this cut.
+- Detection catalogs also contain adaptive Gaussian-windowed second moments for each measured image:
+  `<image>_moment_T` (Ixx + Iyy in pixels squared, window bias removed; 2 sigma^2 for a Gaussian) and
+  `<image>_moment_e` (ellipticity, sqrt(e1^2 + e2^2)). Negative residuals are handled by sign. They are NaN
+  if the central 5x5 is masked or nonfinite, over 10% of the 21x21 stamp is unusable, the stamp leaves the
+  image, or the window centroid drifts more than 3 pixels. Moments are biased high at low S/N.
+  The optional moment cut (`--moment-reference-size PIXELS2`, off by default) flags rows whose product
+  `moment_T` / reference is outside `[--moment-min-size-ratio, --moment-max-size-ratio]` (defaults 0.5, 3)
+  or whose ellipticity exceeds `--moment-max-ellipticity` (default 0.3), when |product r=3 S/N| >=
+  `--moment-min-snr` (default 5). Unmeasured rows are retained and logged. The reference must be measured
+  with `sidecar.source_detection.measure_second_moments` on bright stars in the same kind of image: the
+  STPSF PSF files are optical only and omit detector sampling, so their size (about 0.37) is far too small.
+  In `test_gkerhw_2`, bright science stars give about 1.0 and resampled-template stars about 1.4. Existing
+  catalogs lack these columns and must be regenerated before applying this cut.
 - Standalone star rejection accepts ECSV or Parquet for both detections and reference stars:
   `python -m sidecar.reject_stars detections.parquet stars.ecsv`. Its output preserves the input
   format, including nested Parquet light curves; without `--output` it is named

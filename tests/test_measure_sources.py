@@ -10,7 +10,9 @@ from sidecar.pipeline import Detection
 from sidecar.source_detection import (
     detect_and_measure_sources,
     detect_sources_in_subtraction,
+    find_moment_suspects,
     find_square_pixel_suspects,
+    measure_second_moments,
     measure_sources,
     measure_square_fluxes,
 )
@@ -187,6 +189,58 @@ def test_square_pixel_suspects_use_correct_input_and_keep_inconclusive():
     cat.remove_column("template_square_peak_3_over_3")
     with pytest.raises(ValueError, match="regenerate detection catalogs"):
         find_square_pixel_suspects(cat, "diff")
+
+
+@pytest.mark.parametrize("sigma", [1.0, 1.5, 2.5])
+@pytest.mark.parametrize("sign", [1, -1])
+def test_second_moments_recover_gaussian_size_and_sign(sigma, sign):
+    yy, xx = np.mgrid[:61, :61]
+    rng = np.random.default_rng(3)
+    data = 5.0 + sign * 80 * np.exp(-((xx - 30.3) ** 2 + (yy - 29.8) ** 2) / (2 * sigma**2))
+    data = data + rng.normal(0, 0.3, data.shape)
+    result = measure_second_moments(data, [30.0], [30.0], background=5.0)
+    assert result["moment_T"][0] == pytest.approx(2 * sigma**2, rel=0.08)
+    assert result["moment_e"][0] < 0.05
+
+
+def test_second_moments_elongation_and_unmeasurable_sources():
+    yy, xx = np.mgrid[:61, :61]
+    data = 50 * np.exp(-((xx - 30) ** 2 / (2 * 3.0**2) + (yy - 30) ** 2 / (2 * 1.2**2)))
+    result = measure_second_moments(data, [30.0, 3.0], [30.0, 30.0])
+    assert result["moment_e"][0] == pytest.approx((9 - 1.44) / (9 + 1.44), rel=0.05)
+    assert np.isnan(result["moment_T"][1])  # stamp leaves the image
+    mask = np.zeros(data.shape, dtype=bool)
+    mask[29:32, 29:32] = True
+    assert np.isnan(measure_second_moments(data, [30.0], [30.0], mask=mask)["moment_T"][0])
+    nonfinite = data.copy()
+    nonfinite[30, 31] = np.nan
+    assert np.isnan(measure_second_moments(nonfinite, [30.0], [30.0])["moment_T"][0])
+
+
+def test_moment_suspects_flag_size_ellipticity_and_keep_inconclusive():
+    cat = Table(
+        {
+            "diff_moment_T": [1.0, 0.2, 5.0, 1.0, np.nan, 0.2],
+            "diff_moment_e": [0.1, 0.1, 0.1, 0.6, 0.1, 0.1],
+            "diff_aper_r3_snr": [10, 10, -10, 10, 10, 2],
+        }
+    )
+    suspect, measurable = find_moment_suspects(cat, "diff", reference_size=1.0)
+    assert suspect.tolist() == [False, True, True, True, False, False]
+    assert measurable.tolist() == [True, True, True, True, False, False]
+    with pytest.raises(ValueError, match="positive"):
+        find_moment_suspects(cat, "diff", reference_size=0)
+    cat.remove_column("diff_moment_e")
+    with pytest.raises(ValueError, match="regenerate detection catalogs"):
+        find_moment_suspects(cat, "diff", reference_size=1.0)
+
+
+def test_pipeline_validates_moment_options(tmp_path):
+    kwargs = dict(image_collection=None, data_records=[], temp_dir=tmp_path, output_dir=tmp_path)
+    assert Detection(**kwargs).moment_options is None
+    assert Detection(**kwargs, moment_reference_size=1.0).moment_options["reference_size"] == 1.0
+    with pytest.raises(ValueError, match="positive"):
+        Detection(**kwargs, moment_reference_size=-1.0)
 
 
 def test_detection_uses_coverage_and_local_rms(tmp_path):

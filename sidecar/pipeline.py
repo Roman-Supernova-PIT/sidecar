@@ -25,9 +25,14 @@ from sidecar.source_detection import (
     DEFAULT_SINGLE_PIXEL_MIN_INPUT_SNR,
     DEFAULT_SINGLE_PIXEL_MIN_PEAK_R3,
     DEFAULT_SINGLE_PIXEL_MIN_R2_R3,
+    DEFAULT_MOMENT_MAX_ELLIPTICITY,
+    DEFAULT_MOMENT_MAX_SIZE_RATIO,
+    DEFAULT_MOMENT_MIN_SIZE_RATIO,
+    DEFAULT_MOMENT_MIN_SNR,
     DEFAULT_SQUARE_PIXEL_MIN_SNR,
     DEFAULT_SQUARE_PIXEL_MIN_1_OVER_3,
     DEFAULT_SQUARE_PIXEL_MIN_3_OVER_5,
+    find_moment_suspects,
     find_single_pixel_suspects,
     find_square_pixel_suspects,
     detect_and_measure_sources,
@@ -153,6 +158,11 @@ class Detection:
         square_pixel_min_snr=DEFAULT_SQUARE_PIXEL_MIN_SNR,
         square_pixel_min_1_over_3=DEFAULT_SQUARE_PIXEL_MIN_1_OVER_3,
         square_pixel_min_3_over_5=DEFAULT_SQUARE_PIXEL_MIN_3_OVER_5,
+        moment_reference_size=None,
+        moment_min_snr=DEFAULT_MOMENT_MIN_SNR,
+        moment_min_size_ratio=DEFAULT_MOMENT_MIN_SIZE_RATIO,
+        moment_max_size_ratio=DEFAULT_MOMENT_MAX_SIZE_RATIO,
+        moment_max_ellipticity=DEFAULT_MOMENT_MAX_ELLIPTICITY,
         max_peak_centroid_distance=None,
     ):
         util.validate_peak_centroid_distance(max_peak_centroid_distance)
@@ -234,6 +244,19 @@ class Detection:
             if not np.isfinite(value) or value < 0:
                 raise ValueError(f"square_pixel_{name} must be finite and nonnegative")
         self.reject_square_pixel = reject_square_pixel
+        self.moment_options = None
+        if moment_reference_size is not None:
+            self.moment_options = {
+                "reference_size": moment_reference_size,
+                "min_snr": moment_min_snr,
+                "min_size_ratio": moment_min_size_ratio,
+                "max_size_ratio": moment_max_size_ratio,
+                "max_ellipticity": moment_max_ellipticity,
+            }
+            # Validate eagerly using the classifier's own checks
+            find_moment_suspects(
+                Table({"p_moment_T": [1.0], "p_moment_e": [0.0], "p_aper_r3_snr": [1.0]}), "p", **self.moment_options
+            )
         self.center_dq_flags = center_dq_flags | (int(dqflags.pixel.JUMP_DET) if reject_center_jump_det else 0)
         self.bad_pixel_columns = (
             ["template_flags_npix_bad", "science_flags_npix_bad", "flags_npix_bad"]
@@ -376,6 +399,8 @@ class Detection:
         output_format="parquet",
         square_pixel_product=None,
         square_pixel_options=None,
+        moment_product=None,
+        moment_options=None,
         max_peak_centroid_distance=None,
         **radius_kwargs,
     ):
@@ -417,6 +442,11 @@ class Detection:
             Rows that cannot be assessed are retained.
         square_pixel_options : dict, optional
             Thresholds passed to `find_square_pixel_suspects`.
+        moment_product : str, optional
+            Product column prefix enabling the second-moment size/ellipticity cut.
+            Rows that cannot be assessed are retained.
+        moment_options : dict, optional
+            Reference size and thresholds passed to `find_moment_suspects`.
         max_peak_centroid_distance : float, optional
             Maximum peak-to-centroid separation in pixels; None disables the cut.
             Masked and nonfinite positions are rejected when enabled.
@@ -487,6 +517,15 @@ class Detection:
             if np.any(~measurable):
                 SNLogger.warning(
                     f"Keeping {np.count_nonzero(~measurable)} candidates with inconclusive square-flux measurements"
+                )
+            cleaned_detection = cleaned_detection[~suspects]
+
+        if moment_product is not None:
+            suspects, measurable = find_moment_suspects(cleaned_detection, moment_product, **moment_options)
+            SNLogger.info(f"Removing {np.count_nonzero(suspects)} candidates with non-PSF second moments")
+            if np.any(~measurable):
+                SNLogger.warning(
+                    f"Keeping {np.count_nonzero(~measurable)} candidates with inconclusive second-moment measurements"
                 )
             cleaned_detection = cleaned_detection[~suspects]
 
@@ -835,6 +874,8 @@ class Detection:
                     single_pixel_options=self.single_pixel_options,
                     square_pixel_product="simple_diff" if self.reject_square_pixel else None,
                     square_pixel_options=self.square_pixel_options,
+                    moment_product="simple_diff" if self.moment_options else None,
+                    moment_options=self.moment_options,
                     output_format=self.output_format,
                     max_peak_centroid_distance=self.max_peak_centroid_distance,
                     **self.star_rejection_options,
@@ -854,6 +895,8 @@ class Detection:
                     single_pixel_options=self.single_pixel_options,
                     square_pixel_product="diff" if self.reject_square_pixel else None,
                     square_pixel_options=self.square_pixel_options,
+                    moment_product="diff" if self.moment_options else None,
+                    moment_options=self.moment_options,
                     output_format=self.output_format,
                     max_peak_centroid_distance=self.max_peak_centroid_distance,
                     **self.star_rejection_options,
@@ -880,6 +923,8 @@ class Detection:
                     single_pixel_options=self.single_pixel_options,
                     square_pixel_product="score" if self.reject_square_pixel else None,
                     square_pixel_options=self.square_pixel_options,
+                    moment_product="score" if self.moment_options else None,
+                    moment_options=self.moment_options,
                     output_format=self.output_format,
                     max_peak_centroid_distance=self.max_peak_centroid_distance,
                     **self.star_rejection_options,
@@ -1393,6 +1438,39 @@ def main():
         help="Minimum input-image 3x3/5x5 flux ratio for rejection (default %(default)s).",
     )
     parser.add_argument(
+        "--moment-reference-size",
+        type=float,
+        default=None,
+        metavar="PIXELS2",
+        help="Enable the second-moment cut; point-source Ixx+Iyy in pixels^2 as measured by "
+        "sidecar.source_detection.measure_second_moments on bright stars (detector sampling included, so "
+        "not the optical PSF). Disabled by default.",
+    )
+    parser.add_argument(
+        "--moment-min-snr",
+        type=float,
+        default=DEFAULT_MOMENT_MIN_SNR,
+        help="Minimum |difference r=3 S/N| for the moment cut to be assessed (default %(default)s).",
+    )
+    parser.add_argument(
+        "--moment-min-size-ratio",
+        type=float,
+        default=DEFAULT_MOMENT_MIN_SIZE_RATIO,
+        help="Reject if difference size / reference size is below this (default %(default)s).",
+    )
+    parser.add_argument(
+        "--moment-max-size-ratio",
+        type=float,
+        default=DEFAULT_MOMENT_MAX_SIZE_RATIO,
+        help="Reject if difference size / reference size is above this (default %(default)s).",
+    )
+    parser.add_argument(
+        "--moment-max-ellipticity",
+        type=float,
+        default=DEFAULT_MOMENT_MAX_ELLIPTICITY,
+        help="Reject if difference-image ellipticity exceeds this (default %(default)s).",
+    )
+    parser.add_argument(
         "--cross-convolve",
         default=False,
         action=argparse.BooleanOptionalAction,
@@ -1654,6 +1732,11 @@ def main():
         square_pixel_min_snr=args.square_pixel_min_snr,
         square_pixel_min_1_over_3=args.square_pixel_min_1_over_3,
         square_pixel_min_3_over_5=args.square_pixel_min_3_over_5,
+        moment_reference_size=args.moment_reference_size,
+        moment_min_snr=args.moment_min_snr,
+        moment_min_size_ratio=args.moment_min_size_ratio,
+        moment_max_size_ratio=args.moment_max_size_ratio,
+        moment_max_ellipticity=args.moment_max_ellipticity,
         max_peak_centroid_distance=args.max_peak_centroid_distance,
         detection_kwargs=detection_kwargs,
         input_star_catalog_path=args.star_catalog,

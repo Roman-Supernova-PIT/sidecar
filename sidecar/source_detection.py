@@ -20,6 +20,11 @@ DEFAULT_SINGLE_PIXEL_AREA_ATOL = 0.1
 DEFAULT_SQUARE_PIXEL_MIN_SNR = 10.0
 DEFAULT_SQUARE_PIXEL_MIN_1_OVER_3 = 0.5
 DEFAULT_SQUARE_PIXEL_MIN_3_OVER_5 = 0.9
+DEFAULT_MOMENT_HALF_WIDTH = 10
+DEFAULT_MOMENT_MIN_SNR = 5.0
+DEFAULT_MOMENT_MIN_SIZE_RATIO = 0.5
+DEFAULT_MOMENT_MAX_SIZE_RATIO = 3.0
+DEFAULT_MOMENT_MAX_ELLIPTICITY = 0.3
 
 
 def measure_square_fluxes(data, x, y, background=0.0, mask=None, error=None):
@@ -110,6 +115,155 @@ def measure_square_fluxes(data, x, y, background=0.0, mask=None, error=None):
     np.divide(peak3, flux3, out=ratio, where=np.isfinite(peak3) & np.isfinite(flux3) & (flux3 > 0))
     result["square_peak_3_over_3"] = ratio
     return result
+
+
+def measure_second_moments(data, x, y, background=0.0, mask=None, half_width=DEFAULT_MOMENT_HALF_WIDTH, niter=8):
+    """Measure adaptive Gaussian-windowed second moments of sources.
+
+    For each source the stamp (sign-flipped if its central 3x3 flux is negative, so negative residuals
+    work) is weighted by a Gaussian that is re-centered and re-sized each iteration to the measured
+    moments, starting at sigma^2 = 4 pixels^2 and clamped to 1-12 pixels^2. The window's contribution is
+    removed analytically, ``M^-1 = M_measured^-1 - W^-1``, so ``moment_T`` is the unwindowed size
+    ``Ixx + Iyy`` (pixels^2; 2 sigma^2 for a Gaussian). Moments are biased high at low S/N.
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        Image; the local ``background`` is subtracted here.
+    x, y : numpy.ndarray
+        0-based pixel positions.
+    background : float or numpy.ndarray
+        Local background per source.
+    mask : numpy.ndarray of bool, optional
+        True for unusable pixels. A source is unmeasured if the central 5x5 is masked, more than 10% of
+        its stamp is masked, the stamp leaves the image, or the window centroid moves more than 3 pixels.
+    half_width : int
+        Stamp half-width in pixels.
+
+    Returns
+    -------
+    dict
+        ``moment_T`` (Ixx + Iyy) and ``moment_e`` (``sqrt(e1^2 + e2^2)`` with
+        ``e1 = (Ixx - Iyy) / T`` and ``e2 = 2 Ixy / T``); NaN where unmeasured.
+    """
+    x = np.atleast_1d(np.asarray(x, dtype=float))
+    y = np.atleast_1d(np.asarray(y, dtype=float))
+    bkg = np.broadcast_to(np.asarray(background, dtype=float), x.shape)
+    size = np.full(x.shape, np.nan)
+    ellipticity = np.full(x.shape, np.nan)
+    h = half_width
+    yy, xx = np.mgrid[-h:h + 1, -h:h + 1].astype(float)
+    for i in range(len(x)):
+        if not (np.isfinite(x[i]) and np.isfinite(y[i]) and np.isfinite(bkg[i])):
+            continue
+        xi, yi = int(np.rint(x[i])), int(np.rint(y[i]))
+        if xi - h < 0 or yi - h < 0 or xi + h >= data.shape[1] or yi + h >= data.shape[0]:
+            continue
+        window = (slice(yi - h, yi + h + 1), slice(xi - h, xi + h + 1))
+        stamp = np.asarray(data[window], dtype=float) - bkg[i]
+        good = np.isfinite(stamp)
+        if mask is not None:
+            good &= ~mask[window]
+        if good.mean() < 0.9 or not good[h - 2:h + 3, h - 2:h + 3].all():
+            continue
+        stamp = np.where(good, stamp, 0.0)
+        if stamp[h - 1:h + 2, h - 1:h + 2].sum() < 0:
+            stamp = -stamp
+        result = _windowed_moments(stamp, xx, yy, x[i] - xi, y[i] - yi, niter)
+        if result is not None:
+            size[i], ellipticity[i] = result
+    return {"moment_T": size, "moment_e": ellipticity}
+
+
+def _windowed_moments(stamp, xx, yy, x0, y0, niter):
+    sigma2 = 4.0
+    for _ in range(niter):
+        weight = np.exp(-((xx - x0) ** 2 + (yy - y0) ** 2) / (2 * sigma2))
+        flux = stamp * weight
+        total = flux.sum()
+        if not total > 0:
+            return None
+        x0 += 2 * (flux * (xx - x0)).sum() / total
+        y0 += 2 * (flux * (yy - y0)).sum() / total
+        if abs(x0) > 3 or abs(y0) > 3:
+            return None
+        weight = np.exp(-((xx - x0) ** 2 + (yy - y0) ** 2) / (2 * sigma2))
+        flux = stamp * weight
+        total = flux.sum()
+        if not total > 0:
+            return None
+        ixx = (flux * (xx - x0) ** 2).sum() / total
+        iyy = (flux * (yy - y0) ** 2).sum() / total
+        ixy = (flux * (xx - x0) * (yy - y0)).sum() / total
+        measured = np.array([[ixx, ixy], [ixy, iyy]])
+        try:
+            moments = np.linalg.inv(np.linalg.inv(measured) - np.eye(2) / sigma2)
+        except np.linalg.LinAlgError:
+            return None
+        if not (moments[0, 0] > 0 and moments[1, 1] > 0):
+            return None
+        size = moments[0, 0] + moments[1, 1]
+        sigma2 = min(max(size, 1.0), 12.0)
+    return size, np.hypot(moments[0, 0] - moments[1, 1], 2 * moments[0, 1]) / size
+
+
+def find_moment_suspects(
+    catalog,
+    product,
+    reference_size,
+    min_snr=DEFAULT_MOMENT_MIN_SNR,
+    min_size_ratio=DEFAULT_MOMENT_MIN_SIZE_RATIO,
+    max_size_ratio=DEFAULT_MOMENT_MAX_SIZE_RATIO,
+    max_ellipticity=DEFAULT_MOMENT_MAX_ELLIPTICITY,
+):
+    """Flag detections whose difference-image second moments are inconsistent with a point source.
+
+    A row is flagged if ``<product>_moment_T / reference_size`` is outside
+    ``[min_size_ratio, max_size_ratio]`` or ``<product>_moment_e`` exceeds ``max_ellipticity``.
+    Rows with |product r=3 S/N| below ``min_snr`` or an unmeasured size are unassessable, not flagged.
+
+    ``reference_size`` is the expected ``Ixx + Iyy`` of a point source *as measured by
+    `measure_second_moments` on the real data*. It must include detector sampling, so it should come from
+    bright stars on the same image type, not from an optical-only PSF model.
+
+    Parameters
+    ----------
+    catalog : astropy.table.Table
+        Catalog from ``measure_sources``. Older catalogs need regeneration to provide moments.
+    product : str
+        Difference-image prefix (e.g. ``simple_diff`` or ``score``).
+    reference_size : float
+        Point-source ``moment_T`` in pixels^2.
+
+    Returns
+    -------
+    suspect, measurable : tuple of numpy.ndarray
+        Boolean arrays identifying flagged and assessable rows.
+    """
+    if not np.isfinite(reference_size) or reference_size <= 0:
+        raise ValueError("reference_size must be finite and positive")
+    if not (0 <= min_size_ratio <= max_size_ratio):
+        raise ValueError("Require 0 <= min_size_ratio <= max_size_ratio")
+    if not np.isfinite(max_ellipticity) or max_ellipticity < 0 or not np.isfinite(min_snr) or min_snr < 0:
+        raise ValueError("max_ellipticity and min_snr must be finite and nonnegative")
+    columns = (f"{product}_moment_T", f"{product}_moment_e")
+    missing = [c for c in columns if c not in catalog.colnames]
+    if missing:
+        raise ValueError(
+            f"Moment rejection requires {', '.join(missing)}; "
+            "regenerate detection catalogs with the current source measurement code."
+        )
+
+    def values(column):
+        return np.ma.filled(np.ma.asarray(catalog[column], dtype=float), np.nan)
+
+    size = values(columns[0])
+    ellipticity = values(columns[1])
+    snr = values(f"{product}_aper_r3_snr")
+    measurable = np.isfinite(size) & np.isfinite(ellipticity) & np.isfinite(snr) & (np.abs(snr) >= min_snr)
+    ratio = size / reference_size
+    outside = (ratio < min_size_ratio) | (ratio > max_size_ratio) | (ellipticity > max_ellipticity)
+    return outside, measurable
 
 
 def find_square_pixel_suspects(
@@ -409,6 +563,8 @@ def _measure_aperture(img, name, x, y, good, radii, bkg_radii, flag_radius, bad_
         column("square_peak_3_flux")
         column("square_peak_3_over_3")
         column("square_3_over_5")
+        column("moment_T")
+        column("moment_e")
         column("npix_nonfinite_in_aperture", dtype=int, fill=-1)
         if img.flags is not None:
             column("flags_center", dtype=np.int64, fill=-1)
@@ -438,6 +594,10 @@ def _measure_aperture(img, name, x, y, good, radii, bkg_radii, flag_radius, bad_
         square_mask |= (flags & bad_pixel_flags) != 0
     squares = measure_square_fluxes(data, x[good], y[good], background=bkg, mask=square_mask, error=error)
     for suffix, values in squares.items():
+        column(suffix)[good] = values
+
+    moments = measure_second_moments(data, x[good], y[good], background=bkg, mask=square_mask)
+    for suffix, values in moments.items():
         column(suffix)[good] = values
 
     for r in radii:
