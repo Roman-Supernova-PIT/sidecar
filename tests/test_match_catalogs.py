@@ -135,10 +135,12 @@ def test_pipeline_cuts_are_applied_before_matching(tmp_path, product):
         table[f"{image}_square_3_flux"] = np.full(n, 10.0)
         table[f"{image}_square_3_snr"] = np.full(n, 20.0)
         table[f"{image}_square_1_over_3"] = np.full(n, 0.2)
+        table[f"{image}_square_peak_3_over_3"] = np.full(n, 0.2)
         table[f"{image}_square_3_over_5"] = np.full(n, 0.95)
     table["science_aper_r2_flux"][5] = 9.8
     table["science_peak"][5] = 8.0
     table["science_square_1_over_3"][6] = 0.8
+    table["science_square_peak_3_over_3"][6] = 0.8
     table["template_square_3_snr"][8] = np.nan
     paths = [tmp_path / "a.parquet", tmp_path / "b.parquet"]
     write_catalog(table, paths[0])

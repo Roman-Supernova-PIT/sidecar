@@ -173,15 +173,18 @@ sidecar/examples/perlmutter/test_sidecar_asdf_manualrdm.sh
   3x3, and 5x5 squares centered on the pixel nearest the candidate's position in that image.
   Their `_flux_err` and `_snr` columns use the image noise plane and ignore correlations and
   background-estimation uncertainty. `_square_1_over_3` and `_square_3_over_5` are the corresponding
-  flux ratios. A square with a bad, masked, nonfinite, or out-of-image pixel is unmeasured (NaN);
+  flux ratios. `_square_peak_3_flux` is the maximum pixel in the centroid-centered 3x3 square after
+  local background subtraction, and `_square_peak_3_over_3` is its fraction of the 3x3 flux.
+  A square with a bad, masked, nonfinite, or out-of-image pixel is unmeasured (NaN);
   ratios are NaN if either sum is unavailable or the denominator is nonpositive.
   The experimental square-flux cut flags rows with input-image
-  3x3 S/N >= 20, 1x1/3x3 >= 0.8, and 3x3/5x5 >= 0.9, using science for positive and template for
+  3x3 S/N >= 10, peak-in-3x3/3x3 >= 0.5, and 3x3/5x5 >= 0.9, using science for positive and template for
   negative detections. Set the thresholds with `--square-pixel-min-snr`,
   `--square-pixel-min-1-over-3`, and `--square-pixel-min-3-over-5`. The product peak and r=3 S/N
   must agree in sign. Inconclusive measurements are retained and logged; disabling the square cut with
   `--no-reject-square-pixel` does not disable the circular cut, and vice versa. The square cut runs after
-  the circular cut, and its experimental thresholds require broader validation.
+  the circular cut, and its experimental thresholds require broader validation. Existing detection
+  catalogs lack the new peak-in-3x3 measurement and must be regenerated before applying this cut.
 - Standalone star rejection accepts ECSV or Parquet for both detections and reference stars:
   `python -m sidecar.reject_stars detections.parquet stars.ecsv`. Its output preserves the input
   format, including nested Parquet light curves; without `--output` it is named

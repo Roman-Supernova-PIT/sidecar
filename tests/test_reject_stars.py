@@ -487,9 +487,11 @@ def test_square_pixel_rejection_thresholds_and_inconclusive(tmp_path, product, o
     for image in ("science", "template"):
         table[f"{image}_square_3_flux"] = [10.0] * 4
         table[f"{image}_square_3_snr"] = [25.0, 25.0, 25.0, np.nan]
-        table[f"{image}_square_1_over_3"] = [0.85, 0.85, 0.5, 0.85]
+        table[f"{image}_square_1_over_3"] = [0.85, 0.85, 0.49, 0.85]
+        table[f"{image}_square_peak_3_over_3"] = [0.85, 0.85, 0.49, 0.85]
         table[f"{image}_square_3_over_5"] = [0.95] * 4
     table["science_square_1_over_3"][1] = 0.5
+    table["science_square_peak_3_over_3"][1] = 0.5
     path = tmp_path / "input.ecsv"
     out = tmp_path / f"cleaned.{output_format}"
     write_catalog(table, path, output_format="ecsv")
@@ -738,6 +740,7 @@ def test_pipeline_uses_configured_columns_when_cleaning(monkeypatch, tmp_path, o
         detections[f"{image}_square_3_flux"] = [10.0] * 4
         detections[f"{image}_square_3_snr"] = [25.0] * 4
         detections[f"{image}_square_1_over_3"] = [0.5, 0.5, 0.5, 0.9 if image == "template" else 0.5]
+        detections[f"{image}_square_peak_3_over_3"] = [0.5, 0.5, 0.5, 0.9 if image == "template" else 0.5]
         detections[f"{image}_square_3_over_5"] = [0.95] * 4
         for r in (2, 3, 5):
             detections[f"{image}_aper_r{r}_npix_valid"] = [np.pi * r**2] * 4

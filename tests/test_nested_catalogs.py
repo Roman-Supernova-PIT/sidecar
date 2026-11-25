@@ -80,6 +80,32 @@ def test_nested_matches_flat(tables):
         "F087_0103_14_-_F087_0202_14",
     }
     assert sources["source_id"].is_unique
+    assert set(sources["template_detector"]) == {14}
+
+
+def test_nested_matching_uses_template_detector(tables):
+    pair = [tables[0][:1], tables[1][:1]]
+    for table in pair:
+        table["template_x"] = [50.0]
+        table["template_y"] = [60.0]
+    pair[1].meta["detector"] = 10
+    args = dict(min_pixel_separation=25, min_distinct_template_positions=2)
+    assert len(match_catalogs_nested(pair, **args)) == 0
+    pair[1].meta["template_detector"] = 2
+    nested = match_catalogs_nested(pair, **args)
+    assert len(nested) == 1
+    assert set(nested.iloc[0]["sources"]["template_detector"]) == {14, 2}
+
+
+def test_nested_cut_filters_sources_before_matching(tables):
+    tables[1]["x_centroid"][0] = 100.0
+    flat = match_catalogs(tables, min_matches=2)
+    nested = match_catalogs_nested(tables, min_matches=2)
+    assert len(flat) == len(nested) == 2
+    obj = nested.loc[nested["ra"].sub(10.0).abs().idxmin()]
+    assert obj["n_match"] == obj["n_sources"] == 2
+    assert set(obj["sources"]["science_id"]) == {"0102", "0103"}
+    assert "F087_0103_14_-_F087_0201_14" not in set(obj["sources"]["subtraction_id"])
 
 
 def test_ids_unique_and_findable(tables):

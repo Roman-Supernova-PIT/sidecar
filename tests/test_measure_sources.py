@@ -102,6 +102,7 @@ def test_measure_sources_out_of_bounds_and_empty(tmp_path):
     empty = measure_sources(Table({"ra": [], "dec": []}), {"sci": sci})
     assert len(empty) == 0 and "sci_aper_r3_flux" in empty.colnames
     assert "sci_square_1_over_3" in empty.colnames
+    assert "sci_square_peak_3_over_3" in empty.colnames
 
 
 def test_square_fluxes_background_mask_edges_and_noise():
@@ -115,19 +116,44 @@ def test_square_fluxes_background_mask_edges_and_noise():
     assert result["square_5_flux"][0] == 100
     assert result["square_1_over_3"][0] == pytest.approx(0.9)
     assert result["square_3_over_5"][0] == pytest.approx(1.0)
+    assert result["square_peak_3_flux"][0] == 90
+    assert result["square_peak_3_over_3"][0] == pytest.approx(0.9)
     assert result["square_3_flux_err"][0] == pytest.approx(6)
     assert np.isnan(result["square_3_flux"][1:]).all()
+    assert np.isnan(result["square_peak_3_over_3"][1:]).all()
     mask = np.zeros(data.shape, dtype=bool)
     mask[3, 3] = True
     masked = measure_square_fluxes(data, [4], [4], background=10, mask=mask, error=error)
     assert masked["square_1_flux"][0] == 90
     assert np.isnan(masked["square_3_flux"][0])
     assert np.isnan(masked["square_1_over_3"][0])
+    assert np.isnan(masked["square_peak_3_over_3"][0])
     error[3, 3] = 0
     invalid_noise = measure_square_fluxes(data, [4], [4], background=10, error=error)
     assert np.isnan(invalid_noise["square_3_flux"][0])
+    assert np.isnan(invalid_noise["square_peak_3_flux"][0])
+    data[3, 3] = np.nan
+    nonfinite = measure_square_fluxes(data, [4], [4], background=10)
+    assert np.isnan(nonfinite["square_peak_3_over_3"][0])
     blank = measure_square_fluxes(np.zeros((5, 5)), [2], [2])
     assert np.isnan(blank["square_1_over_3"][0])
+
+
+@pytest.mark.parametrize("offset", [(0, 1), (-1, 0), (1, 1), (0, 0)])
+def test_square_peak_finds_displaced_hot_pixel(offset):
+    data = np.full((9, 9), 10.0)
+    dy, dx = offset
+    data[4 + dy, 4 + dx] += 100.0
+    result = measure_square_fluxes(data, [4.1], [4.1], background=10, error=np.ones_like(data))
+    assert result["square_peak_3_flux"][0] == 100
+    assert result["square_peak_3_over_3"][0] == 1
+    assert result["square_3_over_5"][0] == 1
+    assert result["square_1_flux"][0] == (100 if offset == (0, 0) else 0)
+    cat = Table({"peak_value": [-1], "diff_aper_r3_snr": [-20]})
+    for image in ("science", "template"):
+        for key in ("square_3_flux", "square_3_snr", "square_peak_3_over_3", "square_3_over_5"):
+            cat[f"{image}_{key}"] = result[key]
+    assert find_square_pixel_suspects(cat, "diff")[0].tolist() == [True]
 
 
 def test_measure_sources_square_fluxes_use_native_position_and_flags(tmp_path):
@@ -148,16 +174,19 @@ def test_square_pixel_suspects_use_correct_input_and_keep_inconclusive():
     for image in ("science", "template"):
         cat[f"{image}_square_3_snr"] = [30.0] * 5
         cat[f"{image}_square_3_flux"] = [100.0] * 5
-        cat[f"{image}_square_1_over_3"] = [0.95] * 5
+        cat[f"{image}_square_peak_3_over_3"] = [0.95] * 5
         cat[f"{image}_square_3_over_5"] = [0.98] * 5
-    cat["science_square_1_over_3"][1] = 0.3
-    cat["template_square_1_over_3"][2] = 0.3
+    cat["science_square_peak_3_over_3"][1] = 0.3
+    cat["template_square_peak_3_over_3"][2] = 0.3
     cat["science_square_3_snr"][3] = 5
     suspect, measurable = find_square_pixel_suspects(cat, "diff")
     assert suspect.tolist() == [True, True, True, False, False]
     assert measurable.tolist() == [True, True, True, False, False]
-    cat["science_square_1_over_3"][2] = 0.3
+    cat["science_square_peak_3_over_3"][2] = 0.3
     assert not find_square_pixel_suspects(cat, "diff")[0][2]
+    cat.remove_column("template_square_peak_3_over_3")
+    with pytest.raises(ValueError, match="regenerate detection catalogs"):
+        find_square_pixel_suspects(cat, "diff")
 
 
 def test_detection_uses_coverage_and_local_rms(tmp_path):

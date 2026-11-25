@@ -50,7 +50,8 @@ def measure_square_fluxes(data, x, y, background=0.0, mask=None, error=None):
     dict of str to ndarray
         ``square_1_flux``, ``square_3_flux``, ``square_5_flux``, corresponding
         ``_flux_err`` and ``_snr`` values, and ``square_1_over_3`` and
-        ``square_3_over_5`` ratios.
+        ``square_3_over_5`` ratios, plus ``square_peak_3_flux`` and
+        ``square_peak_3_over_3`` for the maximum pixel in the 3x3 square.
     """
     data = np.asarray(data)
     if data.ndim != 2:
@@ -68,6 +69,7 @@ def measure_square_fluxes(data, x, y, background=0.0, mask=None, error=None):
         if error.shape != data.shape:
             raise ValueError("error must have the same shape as data")
     result = {}
+    peak3 = np.full(x.shape, np.nan)
     ny, nx = data.shape
     for size in (1, 3, 5):
         flux = np.full(x.shape, np.nan)
@@ -89,6 +91,8 @@ def measure_square_fluxes(data, x, y, background=0.0, mask=None, error=None):
                 if not np.all(np.isfinite(errors) & (errors > 0)):
                     continue
                 flux_err[i] = np.sqrt(np.sum(np.square(errors, dtype=float)))
+            if size == 3:
+                peak3[i] = np.max(pixels) - background[i]
             flux[i] = np.sum(pixels, dtype=float) - size**2 * background[i]
         result[f"square_{size}_flux"] = flux
         result[f"square_{size}_flux_err"] = flux_err
@@ -100,6 +104,11 @@ def measure_square_fluxes(data, x, y, background=0.0, mask=None, error=None):
         ratio = np.full(x.shape, np.nan)
         np.divide(a, b, out=ratio, where=np.isfinite(a) & np.isfinite(b) & (b > 0))
         result[f"square_{numerator}_over_{denominator}"] = ratio
+    result["square_peak_3_flux"] = peak3
+    ratio = np.full(x.shape, np.nan)
+    flux3 = result["square_3_flux"]
+    np.divide(peak3, flux3, out=ratio, where=np.isfinite(peak3) & np.isfinite(flux3) & (flux3 > 0))
+    result["square_peak_3_over_3"] = ratio
     return result
 
 
@@ -125,7 +134,8 @@ def find_square_pixel_suspects(
     product : str
         Difference-image prefix (e.g. ``simple_diff`` or ``score``).
     min_snr, min_1_over_3, min_3_over_5 : float
-        Minimum input 3x3 S/N and square flux ratios for flagging.
+        Minimum input 3x3 S/N, peak-in-3x3 / 3x3 flux, and 3x3 / 5x5 flux
+        for flagging. Older catalogs need remeasurement to provide the peak.
 
     Returns
     -------
@@ -146,9 +156,16 @@ def find_square_pixel_suspects(
     def input_values(suffix):
         return np.where(positive, values(f"science_{suffix}"), values(f"template_{suffix}"))
 
+    missing = [f"{image}_square_peak_3_over_3" for image in ("science", "template")
+               if f"{image}_square_peak_3_over_3" not in catalog.colnames]
+    if missing:
+        raise ValueError(
+            f"Square-pixel rejection requires {', '.join(missing)}; "
+            "regenerate detection catalogs with the current source measurement code."
+        )
     snr = input_values("square_3_snr")
     flux3 = input_values("square_3_flux")
-    ratio13 = input_values("square_1_over_3")
+    ratio13 = input_values("square_peak_3_over_3")
     ratio35 = input_values("square_3_over_5")
     measurable = (
         np.isfinite(peak)
@@ -389,6 +406,8 @@ def _measure_aperture(img, name, x, y, good, radii, bkg_radii, flag_radius, bad_
             for name in ("flux", "flux_err", "snr"):
                 column(f"square_{size}_{name}")
         column("square_1_over_3")
+        column("square_peak_3_flux")
+        column("square_peak_3_over_3")
         column("square_3_over_5")
         column("npix_nonfinite_in_aperture", dtype=int, fill=-1)
         if img.flags is not None:
@@ -520,6 +539,8 @@ def measure_sources(
         - `<name>_local_bkg`, `<name>_local_bkg_std`: sigma-clipped annulus median and std
         - `<name>_square_<1|3|5>_flux`, `_flux_err`, `_snr`: background-subtracted square sums
         - `<name>_square_1_over_3`, `<name>_square_3_over_5`: square flux ratios
+        - `<name>_square_peak_3_flux`, `<name>_square_peak_3_over_3`: maximum
+          background-subtracted pixel in the 3x3 square and its fraction of the 3x3 flux
         - `<name>_peak`, `<name>_peak_snr`: background-subtracted maximum within the smallest aperture
         - `<name>_npix_nonfinite_in_aperture`: NaN/inf pixels within `flag_radius`
         - `<name>_flags_center`, `_flags_or`, `_flags_npix_any`, `_flags_npix_bad`, `_flags_npix`: DQ flag
