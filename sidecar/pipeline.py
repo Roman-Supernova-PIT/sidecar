@@ -153,7 +153,9 @@ class Detection:
         square_pixel_min_snr=DEFAULT_SQUARE_PIXEL_MIN_SNR,
         square_pixel_min_1_over_3=DEFAULT_SQUARE_PIXEL_MIN_1_OVER_3,
         square_pixel_min_3_over_5=DEFAULT_SQUARE_PIXEL_MIN_3_OVER_5,
+        max_peak_centroid_distance=None,
     ):
+        util.validate_peak_centroid_distance(max_peak_centroid_distance)
         if output_format not in OUTPUT_FORMATS:
             raise ValueError(f"output_format must be one of {OUTPUT_FORMATS}")
         if not np.isfinite(cleaned_score_min_snr) or cleaned_score_min_snr < 0:
@@ -193,6 +195,7 @@ class Detection:
 
         self.image_collection = image_collection
         self.output_format = output_format
+        self.max_peak_centroid_distance = max_peak_centroid_distance
         self.data_records = data_records
         self.psf_type = psf_type
         self.psf_size = psf_size
@@ -373,6 +376,7 @@ class Detection:
         output_format="parquet",
         square_pixel_product=None,
         square_pixel_options=None,
+        max_peak_centroid_distance=None,
         **radius_kwargs,
     ):
         """Reject stars from subtraction detection catalogs
@@ -413,6 +417,9 @@ class Detection:
             Rows that cannot be assessed are retained.
         square_pixel_options : dict, optional
             Thresholds passed to `find_square_pixel_suspects`.
+        max_peak_centroid_distance : float, optional
+            Maximum peak-to-centroid separation in pixels; None disables the cut.
+            Masked and nonfinite positions are rejected when enabled.
         radius_kwargs :
             ref_mag, scale, max_radius, mag_col for a magnitude-dependent radius; see util.reject_stars
 
@@ -427,6 +434,10 @@ class Detection:
         if center_dq_flags and not isinstance(center_flag_columns, str) and len(center_flag_columns) == 0:
             raise ValueError("center_flag_columns must not be empty when center_dq_flags is nonzero")
         detection = read_catalog(difference_detection_path)
+        if max_peak_centroid_distance is not None:
+            good = util.peak_centroid_mask(detection, max_peak_centroid_distance)
+            SNLogger.info(f"Removing {np.count_nonzero(~good)} detections with invalid or distant centroids")
+            detection = detection[good]
         cleaned_detection = util.reject_stars(
             detection, stars, match_radius, frame=frame, ra_col=ra_col, dec_col=dec_col, **radius_kwargs
         )
@@ -825,6 +836,7 @@ class Detection:
                     square_pixel_product="simple_diff" if self.reject_square_pixel else None,
                     square_pixel_options=self.square_pixel_options,
                     output_format=self.output_format,
+                    max_peak_centroid_distance=self.max_peak_centroid_distance,
                     **self.star_rejection_options,
                 )
 
@@ -843,6 +855,7 @@ class Detection:
                     square_pixel_product="diff" if self.reject_square_pixel else None,
                     square_pixel_options=self.square_pixel_options,
                     output_format=self.output_format,
+                    max_peak_centroid_distance=self.max_peak_centroid_distance,
                     **self.star_rejection_options,
                 )
             except FileNotFoundError:
@@ -868,6 +881,7 @@ class Detection:
                     square_pixel_product="score" if self.reject_square_pixel else None,
                     square_pixel_options=self.square_pixel_options,
                     output_format=self.output_format,
+                    max_peak_centroid_distance=self.max_peak_centroid_distance,
                     **self.star_rejection_options,
                 )
             except FileNotFoundError:
@@ -1352,6 +1366,15 @@ def main():
         help="Reject experimental square-flux single-pixel candidates from cleaned catalogs (default on).",
     )
     parser.add_argument(
+        "--max-peak-centroid-distance",
+        nargs="?",
+        const=util.DEFAULT_MAX_PEAK_CENTROID_DISTANCE,
+        type=float,
+        default=None,
+        metavar="PIXELS",
+        help="Reject cleaned detections farther than PIXELS from their peak (10 if omitted); disabled by default.",
+    )
+    parser.add_argument(
         "--square-pixel-min-snr",
         type=float,
         default=DEFAULT_SQUARE_PIXEL_MIN_SNR,
@@ -1361,7 +1384,7 @@ def main():
         "--square-pixel-min-1-over-3",
         type=float,
         default=DEFAULT_SQUARE_PIXEL_MIN_1_OVER_3,
-        help="Minimum input-image 1x1/3x3 flux ratio for rejection (default %(default)s).",
+        help="Minimum input-image peak-in-3x3 / 3x3 flux ratio for rejection (default %(default)s).",
     )
     parser.add_argument(
         "--square-pixel-min-3-over-5",
@@ -1625,6 +1648,7 @@ def main():
         square_pixel_min_snr=args.square_pixel_min_snr,
         square_pixel_min_1_over_3=args.square_pixel_min_1_over_3,
         square_pixel_min_3_over_5=args.square_pixel_min_3_over_5,
+        max_peak_centroid_distance=args.max_peak_centroid_distance,
         detection_kwargs=detection_kwargs,
         input_star_catalog_path=args.star_catalog,
         resample_method=args.resample_method,

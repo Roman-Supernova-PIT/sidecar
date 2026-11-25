@@ -28,6 +28,7 @@ from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 
 from sidecar.catalog_io import OUTPUT_FORMATS, read_catalogs, write_catalog
+from sidecar.util import DEFAULT_MAX_PEAK_CENTROID_DISTANCE, peak_centroid_mask, validate_peak_centroid_distance
 from snappl.logger import SNLogger
 
 DEFAULT_ROW_FILTERS = (("template_in_bounds", "==", True),)
@@ -39,7 +40,7 @@ COMPARISON_OPERATORS = {
     ">=": operator.ge,
     "<=": operator.le,
 }
-DEFAULT_MIN_PIXEL_SEPARATION = 10.0
+DEFAULT_MIN_PIXEL_SEPARATION = 25.0  # pixels
 
 
 def _to_deg(col):
@@ -135,7 +136,9 @@ def _count_distinct_positions(xy, detector, tolerance, stop_at=None):
 
 
 def match_catalogs(
-    tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=None, min_pixel_separation=None, min_distinct_positions=2, min_distinct_template_positions=1
+    tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=None, min_pixel_separation=None,
+    min_distinct_positions=2, min_distinct_template_positions=1,
+    max_peak_centroid_distance=DEFAULT_MAX_PEAK_CENTROID_DISTANCE,
 ):
     """Cross-match catalogs on ra, dec and keep objects found in enough of them.
 
@@ -172,9 +175,13 @@ def match_catalogs(
         Minimum number of distinct x, y positions on difference image; only used when
         `min_pixel_separation` is given.
     min_distinct_template_positions : int
-        Minimum number of distinct template detector positions; only used when
-        `min_pixel_separation` is given and the template position is known (from
-        ['template_x', 'template_y'] columns).
+        Minimum number of distinct template detector positions. When greater
+        than one, requires template detector IDs in the `template_detector`
+        column or table metadata, as well as `template_x` and `template_y`.
+        Nonfinite or masked template coordinates do not count as positions.
+    max_peak_centroid_distance : float or None
+        Maximum Euclidean peak-to-centroid separation in pixels (inclusive, default 10).
+        Masked or nonfinite positions are rejected. None disables this cut.
 
     Returns
     -------
@@ -183,8 +190,13 @@ def match_catalogs(
         (number of catalogs containing it).
     """
     normalized_filters = _normalize_row_filters(row_filters)
+    validate_peak_centroid_distance(max_peak_centroid_distance)
     filtered_tables = [_apply_row_filters(table, normalized_filters) for table in tables]
-    grouping = _group_detections(filtered_tables, radius, min_matches, min_pixel_separation, min_distinct_positions, min_distinct_template_positions)
+    filtered_tables = [table[peak_centroid_mask(table, max_peak_centroid_distance)] for table in filtered_tables]
+    grouping = _group_detections(
+        filtered_tables, radius, min_matches, min_pixel_separation, min_distinct_positions,
+        min_distinct_template_positions,
+    )
     if grouping is None:
         return Table({"ra": [], "dec": [], "n_match": []}, dtype=[float, float, int])
 
@@ -197,7 +209,9 @@ def match_catalogs(
     return out
 
 
-def _group_detections(filtered_tables, radius, min_matches, min_pixel_separation, min_distinct_positions, min_distinct_template_positions):
+def _group_detections(
+    filtered_tables, radius, min_matches, min_pixel_separation, min_distinct_positions, min_distinct_template_positions
+):
     """Group the rows of already-filtered tables into objects; None if there are no rows.
 
     Returns a dict with per-row 'ra', 'dec', 'cat_index', 'labels' (group of each row),
@@ -363,11 +377,15 @@ def _sources_frame(table, index):
         frame.insert(position, key, value)
     if "detector" not in frame:
         frame["detector"] = _table_detector(table)
+    if "template_detector" not in frame:
+        frame["template_detector"] = _table_detector(table, "template_detector")
     return frame
 
 
 def match_catalogs_nested(
-    tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=None, min_pixel_separation=None, min_distinct_positions=2, min_distinct_template_positions=1
+    tables, radius=1.0 * u.arcsec, min_matches=2, row_filters=None, min_pixel_separation=None,
+    min_distinct_positions=2, min_distinct_template_positions=1,
+    max_peak_centroid_distance=DEFAULT_MAX_PEAK_CENTROID_DISTANCE,
 ):
     """Like `match_catalogs`, but keep the per-subtraction rows of every object.
 
@@ -381,15 +399,19 @@ def match_catalogs_nested(
         input order) with columns 'ra', 'dec' (mean, degrees), 'n_match', 'n_sources' and
         a nested column ``sources``: one row per source with all catalog columns plus
         'source_id' (`make_source_id`), 'catalog_kind', 'subtraction_id', 'band',
-        'science_id', 'template_id' and 'detector' (from ``table.meta``; set by
-        `match_catalog_files` from the file names).  ``obj['sources']`` is the per-object
+        'science_id', 'template_id', 'detector' and 'template_detector' (from columns or
+        ``table.meta``; set by `match_catalog_files` from file names). ``obj['sources']`` is the per-object
         table; ``nf['sources'].nest.to_flat()`` is every source with its ``object_id`` index.
     """
     from nested_pandas import NestedFrame
 
     normalized_filters = _normalize_row_filters(row_filters)
+    validate_peak_centroid_distance(max_peak_centroid_distance)
     filtered = [_apply_row_filters(table, normalized_filters) for table in tables]
-    grouping = _group_detections(filtered, radius, min_matches, min_pixel_separation, min_distinct_positions, min_distinct_template_positions)
+    filtered = [table[peak_centroid_mask(table, max_peak_centroid_distance)] for table in filtered]
+    grouping = _group_detections(
+        filtered, radius, min_matches, min_pixel_separation, min_distinct_positions, min_distinct_template_positions
+    )
     kept_groups = grouping["kept_groups"] if grouping is not None else np.array([], int)
 
     mean_ra, mean_dec = _group_mean_positions(grouping) if grouping is not None else (np.array([]), np.array([]))
@@ -462,6 +484,7 @@ def match_catalog_files(
     output_format="ecsv",
     pipeline_cuts=None,
     star_catalog=None,
+    max_peak_centroid_distance=DEFAULT_MAX_PEAK_CENTROID_DISTANCE,
 ):
     """Read ECSV or Parquet catalogs, match them with `match_catalogs`, and write the result.
 
@@ -533,6 +556,7 @@ def match_catalog_files(
         min_pixel_separation=min_pixel_separation,
         min_distinct_positions=min_distinct_positions,
         min_distinct_template_positions=min_distinct_template_positions,
+        max_peak_centroid_distance=max_peak_centroid_distance,
     )
     write_catalog(matched, output_path, overwrite=overwrite, output_format=output_format)
     if nested_output_path is not None:
@@ -545,6 +569,7 @@ def match_catalog_files(
                 min_pixel_separation=min_pixel_separation,
                 min_distinct_positions=min_distinct_positions,
                 min_distinct_template_positions=min_distinct_template_positions,
+                max_peak_centroid_distance=max_peak_centroid_distance,
             ),
             nested_output_path,
         )
@@ -582,6 +607,13 @@ examples:
     parser.add_argument("--star-catalog", help="Reference star catalog; required with --pipeline-cuts.")
     parser.add_argument("-r", "--radius", type=float, default=1.0, help="Match radius in arcsec")
     parser.add_argument("-n", "--min-matches", type=int, default=2, help="Minimum number of catalogs per object")
+    parser.add_argument(
+        "--max-peak-centroid-distance",
+        type=lambda value: None if value.lower() == "none" else float(value),
+        default=DEFAULT_MAX_PEAK_CENTROID_DISTANCE,
+        metavar="PIXELS",
+        help="Maximum peak-to-centroid distance in pixels (default 10); use 'none' to disable.",
+    )
     parser.add_argument(
         "--row-filter",
         action="append",
@@ -659,6 +691,7 @@ examples:
         output_format=args.catalog_output_format,
         pipeline_cuts=args.pipeline_cuts,
         star_catalog=stars,
+        max_peak_centroid_distance=args.max_peak_centroid_distance,
     )
     SNLogger.info(f"Wrote {len(matched)} objects to {args.output}")
 

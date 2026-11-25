@@ -1,3 +1,4 @@
+import subprocess
 import sys
 from types import SimpleNamespace
 
@@ -55,6 +56,50 @@ def test_radius_function():
     np.testing.assert_allclose(radii.to_value(u.arcsec), [100.0, 5.0, 5.0, 5.0])
 
 
+def test_pipeline_cleaned_catalog_peak_centroid_cut(tmp_path):
+    detection, stars = _tables()
+    detection["x_peak"] = np.zeros(len(detection))
+    detection["y_peak"] = np.zeros(len(detection))
+    detection["x_centroid"] = [0, 10, 0, 10.01, np.nan, 1]
+    detection["y_centroid"] = np.zeros(len(detection))
+    path = tmp_path / "detections.parquet"
+    write_catalog(detection, path)
+    output = tmp_path / "cleaned.parquet"
+    result = Detection.reject_stars(stars[:0], path, 5.0, output, max_peak_centroid_distance=10)
+    assert list(result["id"]) == [0, 1, 2, 5]
+    assert list(read_catalog(output)["id"]) == [0, 1, 2, 5]
+    unchanged = Detection.reject_stars(stars[:0], path, 5.0, output)
+    assert len(unchanged) == len(detection)
+
+
+@pytest.mark.parametrize("option,expected", [([], None), (["--max-peak-centroid-distance"], 10),
+                                              (["--max-peak-centroid-distance", "4"], 4)])
+def test_pipeline_peak_centroid_cli(monkeypatch, tmp_path, option, expected):
+    class TestConfig:
+        def value(self, key, default=None):
+            if key == "system.ou24.tds_base":
+                raise ValueError("not configured")
+            return default
+
+        def augment_argparse(self, parser):
+            pass
+
+        def parse_args(self, args):
+            pass
+
+    monkeypatch.setattr(pipeline.Config, "get", lambda *args, **kwargs: TestConfig())
+    monkeypatch.setattr(pipeline.ImageCollection, "get_collection", lambda **kwargs: None)
+    monkeypatch.setattr(pipeline, "make_data_records_from_image_path", lambda **kwargs: [1])
+    results = []
+    monkeypatch.setattr(Detection, "run_subtractions", lambda self: results.append(self))
+    monkeypatch.setattr(
+        sys, "argv",
+        ["pipeline", "--science-path", "science", "--temp-dir", str(tmp_path), "--output-dir", str(tmp_path), *option],
+    )
+    pipeline.main()
+    assert results[0].max_peak_centroid_distance == expected
+
+
 def test_empty():
     detection, stars = _tables()
     assert len(reject_stars(detection, stars[:0], 5.0)) == len(detection)
@@ -98,35 +143,86 @@ def test_invalid_pipeline_star_rejection_options(tmp_path, kwargs):
 
 @pytest.mark.parametrize("detection_format", ["ecsv", "parquet"])
 @pytest.mark.parametrize("star_format", ["ecsv", "parquet"])
-@pytest.mark.parametrize("output_format", ["ecsv", "parquet"])
-def test_reject_stars_cli_catalog_formats(tmp_path, monkeypatch, detection_format, star_format, output_format):
+def test_reject_stars_cli_catalog_formats(tmp_path, monkeypatch, detection_format, star_format):
     detection, stars = _tables()
     detection_path = tmp_path / f"detections.{detection_format}"
     star_path = tmp_path / f"stars.{star_format}"
     write_catalog(detection, detection_path, output_format=detection_format)
     write_catalog(stars, star_path, output_format=star_format)
-    monkeypatch.setattr(
-        sys, "argv", ["reject_stars", str(detection_path), str(star_path), "--catalog-output-format", output_format]
-    )
+    monkeypatch.setattr(sys, "argv", ["reject_stars", str(detection_path), str(star_path)])
     reject_stars_cli.main()
     ecsv = tmp_path / "cleaned_detections.ecsv"
     parquet = tmp_path / "cleaned_detections.parquet"
-    assert ecsv.exists() == (output_format in ("ecsv",))
-    assert parquet.exists() == (output_format in ("parquet",))
-    output = parquet if output_format == "parquet" else ecsv
+    assert ecsv.exists() == (detection_format == "ecsv")
+    assert parquet.exists() == (detection_format == "parquet")
+    output = parquet if detection_format == "parquet" else ecsv
     assert list(read_catalog(output)["id"]) == [0, 1, 3, 5]
 
 
-def test_reject_stars_cli_default_parquet(tmp_path, monkeypatch):
+def test_reject_stars_cli_rejects_format_conversion(tmp_path, monkeypatch):
     detection, stars = _tables()
     detection_path = tmp_path / "detections.ecsv"
     star_path = tmp_path / "stars.ecsv"
     write_catalog(detection, detection_path, output_format="ecsv")
     write_catalog(stars, star_path, output_format="ecsv")
-    monkeypatch.setattr(sys, "argv", ["reject_stars", str(detection_path), str(star_path)])
+    monkeypatch.setattr(
+        sys, "argv", ["reject_stars", str(detection_path), str(star_path), "--catalog-output-format", "parquet"]
+    )
+    with pytest.raises(SystemExit) as exc:
+        reject_stars_cli.main()
+    assert exc.value.code == 2
+    assert not (tmp_path / "cleaned_detections.parquet").exists()
+
+
+@pytest.mark.parametrize("case", ["partial", "empty", "all_rejected"])
+def test_reject_stars_cli_nested_parquet(tmp_path, monkeypatch, case):
+    npd = pytest.importorskip("nested_pandas")
+    import pandas as pd
+    import pyarrow.parquet as pq
+
+    from sidecar.match_catalogs import read_nested_catalog, write_nested_catalog
+
+    objects = pd.DataFrame(
+        {"alpha": [10.0, 11.0, 12.0], "delta": [0.0, 0.0, 0.0], "ra": [10.0, 11.0, 12.0], "dec": [0.0] * 3},
+        index=pd.Index(["first", "second", "third"], name="object_id"),
+    )
+    sources = pd.DataFrame(
+        {"flux": [1.0, 2.0, 3.0, 4.0]},
+        index=pd.Index(["first", "first", "second", "third"], name="object_id"),
+    )
+    nested = npd.NestedFrame(objects).join_nested(sources, "sources")
+    if case == "empty":
+        nested = nested.iloc[:0]
+    path = tmp_path / "objects.pq"
+    write_nested_catalog(nested, path)
+    stars = Table({"ra": [10.0 + 20 / 3600], "dec": [0.0], "phot_g_mean_mag": [12.0]})
+    if case == "all_rejected":
+        stars.add_row([11.0, 0.0, 20.0])
+        stars.add_row([12.0, 0.0, 20.0])
+    star_path = tmp_path / "stars.ecsv"
+    write_catalog(stars, star_path, output_format="ecsv")
+    monkeypatch.setattr(
+        sys, "argv",
+        ["reject_stars", str(path), str(star_path), "--ra-column", "alpha", "--dec-column", "delta",
+         "--ref-mag", "18", "--max-radius", "30"],
+    )
     reject_stars_cli.main()
-    assert list(read_catalog(tmp_path / "cleaned_detections.parquet")["id"]) == [0, 1, 3, 5]
-    assert not (tmp_path / "cleaned_detections.ecsv").exists()
+    output = tmp_path / "cleaned_objects.pq"
+    result = read_nested_catalog(output)
+    expected = nested.iloc[1:] if case == "partial" else nested.iloc[:0]
+    assert pq.read_schema(path).equals(pq.read_schema(output), check_metadata=True)
+    assert result.index.tolist() == expected.index.tolist()
+    actual_sources = result["sources"].nest.to_flat()
+    expected_sources = expected["sources"].nest.to_flat()
+    assert actual_sources.index.tolist() == expected_sources.index.tolist()
+    pd.testing.assert_frame_equal(actual_sources.reset_index(drop=True), expected_sources.reset_index(drop=True))
+    region_file = tmp_path / "cleaned.reg"
+    subprocess.run(
+        [sys.executable, "-m", "sidecar.catalog_to_ds9_region_file", str(output),
+         "--peak-value-column", "none", "--ds9-region-path", str(region_file)],
+        check=True,
+    )
+    assert region_file.read_text().count("circle(") == len(expected)
 
 
 def test_read_star_catalog_text_compatibility(tmp_path):

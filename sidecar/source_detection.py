@@ -28,8 +28,9 @@ def measure_square_fluxes(data, x, y, background=0.0, mask=None, error=None):
     Squares are centered on the pixel nearest each (x, y) position using
     ``numpy.rint``. An incomplete square, including a masked or nonfinite
     pixel, has NaN flux and error. The ratios are NaN unless both fluxes are
-    finite and the denominator is positive. Flux errors ignore background
-    estimation uncertainty and pixel correlations.
+    finite and the denominator is positive. The peak in the 3x3 square is
+    measured separately; it does not change the square centers. Flux errors
+    ignore background estimation uncertainty and pixel correlations.
 
     Parameters
     ----------

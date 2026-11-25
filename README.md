@@ -197,6 +197,14 @@ sidecar/examples/perlmutter/test_sidecar_asdf_manualrdm.sh
 
 To cross-match sources across detection catalogs on `ra` and `dec`, use `sidecar.match_catalogs`.
 Entries must satisfy `template_in_bounds == True` by default. Additional boolean and numeric comparison cuts (`==`, `!=`, `>`, `<`, `>=`, `<=`) can be supplied with `--row-filter`.
+Before grouping, detections must also have finite, unmasked peak and centroid coordinates
+within 10 pixels of one another. Set `--max-peak-centroid-distance PIXELS` to change this
+inclusive limit, or `--max-peak-centroid-distance none` to disable it. The cut requires
+`x_peak`, `y_peak`, `x_centroid`, and `y_centroid` columns.
+
+For new cleaned subtraction catalogs, `sidecar.pipeline --max-peak-centroid-distance`
+enables the same 10-pixel cut; supply a numeric value to change it. Pipeline cleaning leaves
+the cut disabled by default, and existing catalogs are not changed.
 
 `sidecar.candidates` reads a nested Parquet catalog from `--nested-output` and writes the selected
 objects, statistics, and their full `sources` light curves as nested Parquet. Its optional DS9

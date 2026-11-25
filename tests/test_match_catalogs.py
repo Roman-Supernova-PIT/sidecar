@@ -24,7 +24,7 @@ def test_match_catalogs_applies_template_in_bounds_filter():
         }
     )
 
-    out = match_catalogs([t1, t2], radius=1.0 * u.arcsec, min_matches=2)
+    out = match_catalogs([t1, t2], radius=1.0 * u.arcsec, min_matches=2, max_peak_centroid_distance=None)
 
     assert len(out) == 1
     assert out["n_match"][0] == 2
@@ -54,6 +54,7 @@ def test_match_catalogs_supports_numeric_row_filters():
         radius=1.0 * u.arcsec,
         min_matches=2,
         row_filters=[("score_peak_snr", ">", 10.0)],
+        max_peak_centroid_distance=None,
     )
 
     assert len(out) == 1
@@ -82,6 +83,10 @@ def _cat(ra, x, y):
             "template_in_bounds": [True],
             "x_peak": [x],
             "y_peak": [y],
+            "x_centroid": [x],
+            "y_centroid": [y],
+            "template_x": [x],
+            "template_y": [y],
         }
     )
 
@@ -142,7 +147,8 @@ def test_pipeline_cuts_are_applied_before_matching(tmp_path, product):
     stars = Table({"ra": [11.0], "dec": [0.0], "phot_g_mean_mag": [17.0]})
     output = tmp_path / "matched.parquet"
     matched = match_catalog_files(
-        paths, output, min_matches=2, output_format="parquet", pipeline_cuts=product, star_catalog=stars
+        paths, output, min_matches=2, output_format="parquet", pipeline_cuts=product, star_catalog=stars,
+        max_peak_centroid_distance=None,
     )
     assert sorted(matched["ra"]) == pytest.approx([18.0])
     assert sorted(read_catalog(output)["ra"]) == pytest.approx([18.0])

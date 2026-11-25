@@ -14,6 +14,27 @@ from snappl.dbclient import SNPITDBClient
 from snappl.imagecollection import ImageCollection
 
 DEFAULT_STAR_MAG_COL = "phot_g_mean_mag"
+DEFAULT_MAX_PEAK_CENTROID_DISTANCE = 10.0
+
+
+def validate_peak_centroid_distance(max_distance):
+    """Validate an optional nonnegative peak-to-centroid distance in pixels."""
+    if max_distance is not None and (not np.isfinite(max_distance) or max_distance < 0):
+        raise ValueError("max_peak_centroid_distance must be finite and nonnegative or None")
+
+
+def peak_centroid_mask(table, max_distance):
+    """Return rows with finite, unmasked peak and centroid positions within the limit."""
+    validate_peak_centroid_distance(max_distance)
+    if max_distance is None:
+        return np.ones(len(table), dtype=bool)
+    columns = ("x_peak", "y_peak", "x_centroid", "y_centroid")
+    missing = [name for name in columns if name not in table.colnames]
+    if missing:
+        raise ValueError(f"Peak-centroid distance requires columns: {', '.join(missing)}")
+    values = [np.ma.asarray(table[name], dtype=float) for name in columns]
+    distance = np.ma.hypot(values[0] - values[2], values[1] - values[3])
+    return np.ma.filled(np.isfinite(distance) & (distance <= max_distance), False)
 
 
 def star_rejection_radii(mags, match_radius, ref_mag=None, scale=0.2, max_radius=None):
