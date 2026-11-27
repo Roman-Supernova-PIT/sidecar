@@ -14,6 +14,7 @@ from astropy.wcs.utils import pixel_to_skycoord
 import astropy.units as u
 from roman_datamodels import dqflags
 
+from sidecar import classifier
 from sidecar import star_retrieval
 from sidecar.catalog_io import OUTPUT_FORMATS, read_catalog, write_catalog
 from sidecar import subtraction
@@ -100,6 +101,7 @@ class Detection:
     CLEANED_SIMPLE_DIFF_DETECTION_PREFIX = "cleaned_" + SIMPLE_DIFF_DETECTION_PREFIX
     CLEANED_DIFF_DETECTION_PREFIX = "cleaned_" + DIFF_DETECTION_PREFIX
     CLEANED_SCORE_DETECTION_PREFIX = "cleaned_" + SCORE_DETECTION_PREFIX
+    REAL_BOGUS_PREFIX = "real_bogus_"
     DIFF_TRUTH_PREFIX = "truth_"
     STAR_CATALOG_PREFIX = "gaia_stars_"
     TRANSIENTS_TO_DETECTION_PREFIX = "transients_to_detection_"
@@ -118,6 +120,7 @@ class Detection:
         psf_type="STPSF",
         psf_size=None,
         reject_known_stars=True,
+        real_bogus=True,
         cross_convolve=False,
         backend4subtract=None,
         save_debug_products=False,
@@ -197,6 +200,7 @@ class Detection:
         self.psf_type = psf_type
         self.psf_size = psf_size
         self.reject_known_stars = reject_known_stars
+        self.real_bogus = real_bogus
         self.star_rejection_match_radius = star_rejection_match_radius
         self.star_rejection_options = {
             "ref_mag": star_rejection_ref_mag,
@@ -576,6 +580,15 @@ class Detection:
             file_path["full_output_dir"],
             self.CLEANED_SCORE_DETECTION_PREFIX + diff_pattern + ".ecsv",
         )
+        # real/bogus classification
+        file_path["real_bogus_score_detection_path"] = Path(
+            file_path["full_output_dir"],
+            self.REAL_BOGUS_PREFIX + self.SCORE_DETECTION_PREFIX + diff_pattern + ".ecsv",
+        )
+        file_path["real_bogus_cleaned_score_detection_path"] = Path(
+            file_path["full_output_dir"],
+            self.REAL_BOGUS_PREFIX + self.CLEANED_SCORE_DETECTION_PREFIX + diff_pattern + ".ecsv",
+        )
         file_path["transients_to_score_detection_path"] = Path(
             file_path["full_output_dir"],
             self.TRANSIENTS_TO_SCORE_DETECTION_PREFIX + diff_pattern + ".ecsv",
@@ -627,6 +640,7 @@ class Detection:
         psf_size=None,
         temp_dir=None,
         reject_known_stars=True,
+        real_bogus=True,
         cross_convolve=False,
         backend4subtract="Cupy",
         assume_subtraction_has_been_run=False,
@@ -674,7 +688,8 @@ class Detection:
         cross_convolve : bool
             Accepted for compatibility; the instance's `self.cross_convolve` is what is passed to the subtraction.
         backend4subtract : str
-            SFFT backend, e.g. "Cupy" or "numpy".
+            SFFT backend, e.g. "Cupy" or "numpy".  Also sets the real/bogus CNN device:
+            "Cupy" runs them on the GPU (cuda), anything else on the CPU.
         assume_subtraction_has_been_run : bool
             Skip the subtraction and use the products already in the output directory.
             This is intended for debugging, particularly of the source detection and measurement stage.
@@ -696,6 +711,11 @@ class Detection:
         SNLogger.info(
             "Processing started for data records " f"| Science ID {science_id} " f"| Template ID {template_id} "
         )
+
+        # Which real/bogus ensemble to use: "diff" (difference image only) or "3ch" (science, template, diff).
+        real_bogus_model = self.config.value("photometry.sidecar.real_bogus.model", default="diff")
+        if real_bogus and real_bogus_model not in ("diff", "3ch"):
+            raise ValueError(f"photometry.sidecar.real_bogus.model must be 'diff' or '3ch', not {real_bogus_model!r}")
 
         SNLogger.info("Processing subtraction")
         subtract = subtraction.Pipeline(
@@ -719,6 +739,7 @@ class Detection:
             resample_method=self.resample_method,
             sfft_kwargs=self.sfft_kwargs,
             pre_smooth_sigma=self.pre_smooth_sigma,
+            save_real_bogus_3ch_inputs=real_bogus and real_bogus_model == "3ch",
         )
         SNLogger.info("Finished subtraction")
 
@@ -903,6 +924,39 @@ class Detection:
             else:
                 SNLogger.warning(f"Skipping database save; catalog not found: {catalog_path}")
 
+        if real_bogus:
+            # Score the star-cleaned catalog when star rejection ran, otherwise the raw
+            # score-image detections. Needs no truth, so this also runs on real data.
+            rb_input_key = "cleaned_score_detection_path" if reject_known_stars else "score_detection_path"
+            rb_catalog_path = file_path[rb_input_key]
+            SNLogger.info(f"Adding {real_bogus_model} real/bogus classifier scores to {rb_catalog_path.name}")
+            # Run the CNNs on the same hardware as the subtraction.
+            rb_device = "cuda" if backend4subtract.lower() == "cupy" else "cpu"
+            # cutout_size is not configurable: it is fixed by the trained models (64x64).
+            if real_bogus_model == "3ch":
+                classifier.process_single_catalog_ensemble_3ch(
+                    catalog_path=rb_catalog_path,
+                    science_path=subtract.rb_science_path,
+                    template_path=subtract.rb_template_path,
+                    diff_path=file_path["difference_image_path"],
+                    output_path=file_path[f"real_bogus_{rb_input_key}"],
+                    model_dir=self.config.value("photometry.sidecar.real_bogus.model_dir_3ch", default=None),
+                    version=self.config.value("photometry.sidecar.real_bogus.version_3ch", default=None),
+                    threshold=self.config.value("photometry.sidecar.real_bogus.threshold_3ch", default=0.5),
+                    device=rb_device,
+                    output_format=self.output_format,
+                )
+            else:
+                classifier.process_single_catalog_ensemble(
+                    catalog_path=rb_catalog_path,
+                    fits_path=file_path["difference_image_path"],
+                    output_path=file_path[f"real_bogus_{rb_input_key}"],
+                    model_dir=self.config.value("photometry.sidecar.real_bogus.model_dir", default=None),
+                    threshold=self.config.value("photometry.sidecar.real_bogus.threshold", default=0.5),
+                    device=rb_device,
+                    output_format=self.output_format,
+                )
+
         SNLogger.info("Processing subtraction finished.")
 
     def run_one_match_truth(
@@ -1043,6 +1097,7 @@ class Detection:
                 psf_size=self.psf_size,
                 temp_dir=temp_dir,
                 reject_known_stars=self.reject_known_stars,
+                real_bogus=self.real_bogus,
                 backend4subtract=self.backend4subtract,
                 assume_subtraction_has_been_run=self.assume_subtraction_has_been_run,
             )
@@ -1216,6 +1271,15 @@ def main():
         help="Reject known stars.  Requires an available catalog of known stars.",
     )
     parser.add_argument(
+        "--real-bogus",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Add CNN real/bogus scores to the score detection catalog.  "
+        "photometry.sidecar.real_bogus.model picks the ensemble: 'diff' (default) reads it from "
+        "photometry.sidecar.real_bogus.model_dir, '3ch' (science, template, diff) from model_dir_3ch; "
+        "download it once beforehand with 'python -m sidecar.classifier --download-models [--model-type 3ch]'.",
+    )
+    parser.add_argument(
         "--match-truth", default=False, action=argparse.BooleanOptionalAction, help="Match to truth catalog."
     )
     parser.add_argument("-t", "--temp-dir", type=str, default=None, help="Temporary directory.")
@@ -1380,7 +1444,8 @@ def main():
         type=str,
         default="Cupy",
         choices=["Cupy", "Numpy", "cupy", "numpy"],
-        help="Which backend to use for subtraction",
+        help="Which backend to use for subtraction.  Also sets where the real/bogus CNNs run: "
+        "Cupy -> GPU (cuda), Numpy -> CPU.",
     )
     parser.add_argument(
         "--max-peak",
@@ -1596,6 +1661,7 @@ def main():
         psf_type=args.psf_type,
         psf_size=args.psf_size,
         reject_known_stars=args.reject_known_stars,
+        real_bogus=args.real_bogus,
         temp_dir=args.temp_dir,
         output_dir=args.output_dir,
         output_format=args.catalog_output_format,

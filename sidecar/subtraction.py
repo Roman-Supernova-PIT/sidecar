@@ -608,6 +608,7 @@ class Pipeline:
         resample_method="bilinear",
         sfft_kwargs=None,
         pre_smooth_sigma=None,
+        save_real_bogus_3ch_inputs=False,
     ):
         """Subtraction pipeline object.  Initialize and then run to produce subtracted image.
 
@@ -649,7 +650,12 @@ class Pipeline:
             phases differ at the pixel level in a way no single convolution kernel can model; smoothing removes
             this.  The noise and sky rms are rescaled assuming white input noise (the noise correlation introduced
             is not modelled by the SFFT decorrelation).
+        save_real_bogus_3ch_inputs: bool
+            Also write the sky-subtracted science image and the template resampled onto the science grid (before
+            any cross-convolution) to out_dir, default=False.  These are the science and template channels of the
+            3-channel real/bogus classifier.  Template pixels without coverage are written as NaN.
         """
+        self.save_real_bogus_3ch_inputs = save_real_bogus_3ch_inputs
         self.pre_smooth_sigma = pre_smooth_sigma
         self.pre_smooth_kernel = _gaussian_smoothing_kernel(pre_smooth_sigma) if pre_smooth_sigma is not None else None
         self.resample_method = resample_method
@@ -715,6 +721,9 @@ class Pipeline:
         self.diff_path = self.out_dir / f"diff_{self.diff_pattern}.fits"
         self.decorr_diff_path = self.out_dir / f"decorr_diff_{self.diff_pattern}.fits"
         self.decorr_psf_path = self.out_dir / f"decorr_psf_{self.diff_pattern}.fits"
+        # Science and template channels of the 3-channel real/bogus classifier (save_real_bogus_3ch_inputs)
+        self.rb_science_path = self.out_dir / f"rb_science_{self.diff_pattern}.fits"
+        self.rb_template_path = self.out_dir / f"rb_template_{self.diff_pattern}.fits"
 
     def _spline_resample_template(self, sfftifier, science_hdr, template_hdr, template_data):
         """Replace sfftifier.PixA_resamp_object with a spline-interpolated warp of the template image."""
@@ -890,6 +899,16 @@ class Pipeline:
             mask=diff_interpolated_mask,
             coverage_mask=no_coverage,
         )
+
+        if self.save_real_bogus_3ch_inputs:
+            # Unconvolved images on the science grid, the same arrays SFFT subtracted.
+            rb_template = sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_resamp_object))
+            rb_template = np.where(no_coverage, np.nan, rb_template)
+            for path, data in (
+                (self.rb_science_path, sfftifier.op.asnumpy(sfftifier.op.transpose_if_needed(sfftifier.PixA_target))),
+                (self.rb_template_path, rb_template),
+            ):
+                fits.writeto(path, data.astype(np.float32), header=sfftifier.hdr_target, overwrite=True)
 
         if self.save_debug_products:
             # I might be saving the Variance instead of the noise.  Check later.

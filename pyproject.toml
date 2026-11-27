@@ -28,8 +28,12 @@ dependencies = [
   "nested-pandas>=0.6",
   "astroquery",
   "photutils",
+  "scipy",
   "roman_snpit_snappl>=0.39",
   "sfft-romansnpit>=1.6.4.dev14",
+  "torch",
+  "huggingface_hub",
+  "timm>=1.0.22",
 ]
 
 license-files = ["LICENSE"]
@@ -39,6 +43,12 @@ file = "README.md"
 content-type = "text/markdown"
 
 [project.optional-dependencies]
+# GPU support: CuPy for `--backend4subtract Cupy` (SFFT) and the CUDA build
+# of PyTorch for the real/bogus CNNs (PyPI's Linux torch wheel is the CUDA one).
+gpu = [
+    "cupy-cuda12x",
+    "torch",
+]
 test = [
     "matplotlib",
     "pytest",

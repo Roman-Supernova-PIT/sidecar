@@ -22,6 +22,100 @@ git clone https://github.com/Roman-Supernova-PIT/sidecar.git
 
 Once cloning is complete, navigate to the 'sidecar' directory.
 
+### Installing outside the container (pip)
+
+The default install is CPU-only. PyPI's Linux `torch` wheel bundles CUDA
+(several GB of `nvidia-*` packages), so install the CPU builds of PyTorch
+and torchvision (needed by `timm`) first; pip then sees they are already
+satisfied and will not fetch the CUDA ones:
+
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install -e .
+```
+
+For GPU (`--backend4subtract Cupy`), install the `gpu` extra instead, which
+adds CuPy and the CUDA build of PyTorch:
+
+```bash
+pip install -e ".[gpu]"
+```
+
+## Real/bogus models (run once per system)
+
+By default the pipeline scores detections with a CNN real/bogus ensemble
+(`--real-bogus`). Pipeline jobs only *read* the models from
+`photometry.sidecar.real_bogus.model_dir`, which defaults to
+`${system.paths.dev_storage}/sidecar/real_bogus_models`. They never download
+them, so many parallel jobs can share one copy without racing to write it.
+
+### Getting access to the models
+
+The models are in the private Hugging Face repository
+[`Roman-Supernova-PIT/transient-real-bogus`](https://huggingface.co/Roman-Supernova-PIT/transient-real-bogus).
+Because it is private, access is granted by adding you to the
+`Roman-Supernova-PIT` Hugging Face organization:
+
+1. Create a free Hugging Face account at https://huggingface.co/join.
+2. Email your Hugging Face username to Dr. Benjamin Rose (ben_rose@baylor.edu) and
+   ask to be added to the `Roman-Supernova-PIT` organization.
+3. Once added, create a read-access token at
+   https://huggingface.co/settings/tokens and log in with `hf auth login`
+   (or `export HF_TOKEN=<your token>`).
+
+### Downloading the models
+
+Before launching a set of jobs on a system, download the models once into
+that directory, from inside the SNPIT environment on a node with network
+access:
+
+```bash
+# The Hugging Face repository is private: log in once or set HF_TOKEN.
+hf auth login            # or: export HF_TOKEN=...
+python -m sidecar.classifier --download-models
+```
+
+Families already present are skipped, so it is safe to run again. Use
+`--model-dir DIR` to download somewhere else, and point
+`photometry.sidecar.real_bogus.model_dir` at the same place. The directory
+must be on storage that every job (container) mounts.
+
+If the models are missing, the pipeline stops with an error explaining how to
+download them. To run without real/bogus scoring, pass `--no-real-bogus`.
+
+The CNNs run on the same device as the subtraction: `--backend4subtract Cupy`
+uses the GPU, `numpy` the CPU.
+
+### 3-channel (science, template, diff) models
+
+A second ensemble,
+[`Roman-Supernova-PIT/Real-Bogus-3ch`](https://huggingface.co/Roman-Supernova-PIT/Real-Bogus-3ch)
+(DenseNet121 + ConvNeXtTiny, 4 members each, same access as above), scores
+each detection on science, template and diff cutouts instead of the diff
+alone. Download it once into `photometry.sidecar.real_bogus.model_dir_3ch`
+(default `${system.paths.dev_storage}/sidecar/real_bogus_3ch_models`):
+
+```bash
+python -m sidecar.classifier --download-models --model-type 3ch
+```
+
+and select it with `photometry.sidecar.real_bogus.model: 3ch` in the config
+(or `--photometry-sidecar-real_bogus-model 3ch` on the command line). The
+subtraction then also writes `rb_science_*.fits` (sky-subtracted science) and
+`rb_template_*.fits` (template resampled onto the science grid) to the output
+directory, and the scores go to the same `real_bogus_*` catalog. Its
+model version is `photometry.sidecar.real_bogus.version_3ch` (default
+`nov_24_2026`, the folder in the Hugging Face repository; the models land in
+`<model_dir_3ch>/<version_3ch>/`), and its
+threshold is `photometry.sidecar.real_bogus.threshold_3ch` (default 0.5, not
+yet tuned on sidecar subtractions).
+
+Cut-and-paste example (SMDC):
+[`examples/smdc/fetch_real_bogus_models.sh`](examples/smdc/fetch_real_bogus_models.sh)
+downloads the models once, then
+[`examples/smdc/asdf49_wfi01_run_one_real_bogus_slurm.sbatch`](examples/smdc/asdf49_wfi01_run_one_real_bogus_slurm.sbatch)
+runs one subtraction with real/bogus scoring.
+
 ## Step 3: Detection
 
 To run the detection pipeline, run the following code in `sidecar` repo of the terminal.

@@ -24,5 +24,25 @@ photometry:
       threshold: 100
       threshold_column: "peak_value"
 
+    real_bogus:
+      # Detections with real_bogus_score >= threshold are labelled "real".
+      threshold: 0.5
+      # Where the Hugging Face model ensemble lives.  Pipeline jobs only read
+      # from here; download the models once beforehand with
+      #   python -m sidecar.classifier --download-models
+      # See the README ("Real/bogus models").
+      model_dir: ${system.paths.dev_storage}/sidecar/real_bogus_models
+      # Which ensemble to use: "diff" (the difference image only, models in
+      # model_dir) or "3ch" (science, template and diff stamps, models in
+      # model_dir_3ch; download with
+      #   python -m sidecar.classifier --download-models --model-type 3ch).
+      model: diff
+      model_dir_3ch: ${system.paths.dev_storage}/sidecar/real_bogus_3ch_models
+      # Model version: the folder in the Hugging Face repository (and in
+      # model_dir_3ch) that holds the 3-channel models.
+      version_3ch: nov_24_2026
+      # threshold for model "3ch"; not tuned yet on sidecar subtractions.
+      threshold_3ch: 0.5
+
     psf:
       type: STPSF
